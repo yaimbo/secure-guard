@@ -1,0 +1,37 @@
+# Build artifacts
+/target/
+debug/
+release/
+
+# Cargo lock (optional - keep for binaries, ignore for libraries)
+# Cargo.lock
+
+# IDE and editor files
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+.DS_Store
+
+# Backup files
+*.bak
+*.orig
+
+# Test and coverage
+*.profraw
+*.profdata
+coverage/
+tarpaulin-report.html
+
+# Documentation build
+/doc/
+
+# Environment and secrets
+.env
+.env.*
+*.pem
+*.key
+
+# OS generated files
+Thumbs.db
