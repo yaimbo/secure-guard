@@ -60,7 +60,6 @@ async fn run(args: Args) -> Result<(), SecureGuardError> {
     tracing::info!("Loading configuration from: {}", config_path);
 
     let config = WireGuardConfig::from_file(&config_path)?;
-    tracing::debug!("Configuration loaded successfully");
 
     // Create client
     let mut client = WireGuardClient::new(config).await?;

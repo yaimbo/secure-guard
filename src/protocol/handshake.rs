@@ -60,49 +60,27 @@ impl InitiatorHandshake {
         let (ephemeral_private, ephemeral_public) = x25519::generate_keypair();
         self.ephemeral_private = ephemeral_private;
 
-        tracing::debug!("Ephemeral public: {:02x?}", &ephemeral_public[..8]);
-        tracing::debug!("Our static public: {:02x?}", &self.static_public[..8]);
-        tracing::debug!("Peer static public: {:02x?}", &self.peer_static[..8]);
-        tracing::debug!("Initial hash: {:02x?}", &self.noise_state.hash[..8]);
-        tracing::debug!("Initial chaining key: {:02x?}", &self.noise_state.chaining_key[..8]);
-
-        // e: First mix ephemeral into hash (matching boringtun order)
-        // Hi := HASH(Hi || ephemeral)
+        // e: Mix ephemeral into hash, then update chaining key
         self.noise_state.mix_hash(&ephemeral_public);
-        tracing::debug!("After mix_hash(e): hash={:02x?}", &self.noise_state.hash[..8]);
-
-        // Then update chaining key with ephemeral public key
-        // Ci := KDF1(Ci, Epub_i)
         self.noise_state.chaining_key = blake2s::kdf1(&self.noise_state.chaining_key, &ephemeral_public);
-        tracing::debug!("After KDF1(ck, e): ck={:02x?}", &self.noise_state.chaining_key[..8]);
 
         // es: DH between our ephemeral and peer's static
         let shared_es = x25519::dh(&ephemeral_private, &self.peer_static);
-        tracing::debug!("DH(e, S_r): {:02x?}", &shared_es[..8]);
         let key = self.noise_state.mix_key(&shared_es);
-        tracing::debug!("After mix_key(es): ck={:02x?}, key={:02x?}",
-            &self.noise_state.chaining_key[..8], &key[..8]);
 
         // s: Encrypt our static public key
         let encrypted_static = self.noise_state.encrypt_and_hash(&key, &self.static_public)?;
-        tracing::debug!("Encrypted static (first 8): {:02x?}", &encrypted_static[..8]);
         let encrypted_static: [u8; 48] = encrypted_static
             .try_into()
             .map_err(|_| CryptoError::Encryption)?;
 
         // ss: DH between our static and peer's static
         let shared_ss = x25519::dh(&self.static_private, &self.peer_static);
-        tracing::debug!("DH(S_i, S_r): {:02x?}", &shared_ss[..8]);
         let key = self.noise_state.mix_key(&shared_ss);
-        tracing::debug!("After mix_key(ss): ck={:02x?}, key={:02x?}",
-            &self.noise_state.chaining_key[..8], &key[..8]);
 
         // Encrypt timestamp (TAI64N)
         let timestamp = Tai64N::now();
-        let timestamp_bytes = timestamp.to_bytes();
-        tracing::debug!("Timestamp bytes: {:02x?}", &timestamp_bytes);
-        let encrypted_timestamp = self.noise_state.encrypt_and_hash(&key, &timestamp_bytes)?;
-        tracing::debug!("Encrypted timestamp (first 8): {:02x?}", &encrypted_timestamp[..8]);
+        let encrypted_timestamp = self.noise_state.encrypt_and_hash(&key, &timestamp.to_bytes())?;
         let encrypted_timestamp: [u8; 28] = encrypted_timestamp
             .try_into()
             .map_err(|_| CryptoError::Encryption)?;
@@ -117,28 +95,13 @@ impl InitiatorHandshake {
 
         // Compute MAC1
         let mac1_key = noise::mac1_key(&self.peer_static);
-        tracing::debug!("MAC1 key: {:02x?}", &mac1_key[..8]);
-        let mac1_data = msg.bytes_for_mac1();
-        msg.mac1 = blake2s::mac(&mac1_key, &mac1_data);
-        tracing::debug!("MAC1: {:02x?}", &msg.mac1);
+        msg.mac1 = blake2s::mac(&mac1_key, &msg.bytes_for_mac1());
         self.last_mac1 = msg.mac1;
 
         // Compute MAC2 (using cookie if available, otherwise zeros)
         if let Some(cookie) = cookie {
-            let mac2_data = msg.bytes_for_mac2();
-            msg.mac2 = blake2s::mac_with_cookie(cookie, &mac2_data);
+            msg.mac2 = blake2s::mac_with_cookie(cookie, &msg.bytes_for_mac2());
         }
-        // else mac2 stays zeros
-
-        // Debug: output full message
-        let full_msg = msg.to_bytes();
-        tracing::debug!("Full handshake init ({} bytes):", full_msg.len());
-        tracing::debug!("  Header: {:02x?}", &full_msg[..8]);
-        tracing::debug!("  Ephemeral[0:8]: {:02x?}", &full_msg[8..16]);
-        tracing::debug!("  EncStatic[0:8]: {:02x?}", &full_msg[40..48]);
-        tracing::debug!("  EncTS[0:8]: {:02x?}", &full_msg[88..96]);
-        tracing::debug!("  MAC1: {:02x?}", &full_msg[116..132]);
-        tracing::debug!("  MAC2: {:02x?}", &full_msg[132..148]);
 
         Ok(msg)
     }

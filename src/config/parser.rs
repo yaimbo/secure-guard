@@ -172,7 +172,6 @@ impl WireGuardConfig {
                         }
                         _ => {
                             // Unknown key, ignore (forward compatibility)
-                            tracing::debug!("Unknown interface key: {}", key);
                         }
                     }
                 }
@@ -213,8 +212,7 @@ impl WireGuardConfig {
                                 })?);
                         }
                         _ => {
-                            // Unknown key, ignore
-                            tracing::debug!("Unknown peer key: {}", key);
+                            // Unknown key, ignore (forward compatibility)
                         }
                     }
                 }

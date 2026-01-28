@@ -219,8 +219,6 @@ impl WireGuardClient {
                     reason: e.to_string(),
                 })?;
 
-            tracing::debug!("Sent handshake initiation to {}", self.peer_endpoint);
-
             // Wait for response with timeout
             let mut buf = [0u8; BUFFER_SIZE];
             let response = tokio::time::timeout(
@@ -338,7 +336,7 @@ impl WireGuardClient {
                     match result {
                         Ok((len, from)) => {
                             if let Err(e) = self.handle_udp_packet(&udp_buf[..len], from).await {
-                                tracing::debug!("Error handling UDP packet: {}", e);
+                                tracing::trace!("Error handling UDP packet: {}", e);
                             }
                         }
                         Err(e) => {
@@ -356,7 +354,7 @@ impl WireGuardClient {
                     }
                 } => {
                     if let Err(e) = self.send_keepalive().await {
-                        tracing::debug!("Keepalive error: {}", e);
+                        tracing::warn!("Keepalive error: {}", e);
                     }
                 }
 
@@ -375,8 +373,6 @@ impl WireGuardClient {
 
     /// Handle a packet from the TUN device (outgoing traffic)
     async fn handle_tun_packet(&mut self, packet: &[u8]) -> Result<(), SecureGuardError> {
-        tracing::debug!("TUN read {} bytes, first byte: {:02x}", packet.len(), packet.get(0).unwrap_or(&0));
-
         // Get current session
         let session = self.sessions.current_mut()
             .ok_or(ProtocolError::NoSession)?;
@@ -384,7 +380,6 @@ impl WireGuardClient {
         // Encrypt and send
         let encrypted = session.transport.encrypt(session.remote_index, packet)?;
         session.mark_sent();
-        tracing::debug!("Sending {} bytes encrypted transport to {}", encrypted.len(), session.endpoint);
 
         self.socket.send_to(&encrypted, session.endpoint).await
             .map_err(|e| NetworkError::SendFailed {
@@ -436,7 +431,6 @@ impl WireGuardClient {
             }
             MessageType::HandshakeInitiation => {
                 // We're a client, ignore initiations
-                tracing::debug!("Ignoring handshake initiation (we're a client)");
                 Ok(())
             }
         }
@@ -448,9 +442,7 @@ impl WireGuardClient {
         packet: &[u8],
         from: SocketAddr,
     ) -> Result<(), SecureGuardError> {
-        tracing::debug!("Received {} bytes transport from {}", packet.len(), from);
         let header = TransportHeader::from_bytes(packet)?;
-        tracing::debug!("Transport header: receiver_index={}, counter={}", header.receiver_index, header.counter);
 
         // Find session by receiver index
         let session = self.sessions.find_by_index(header.receiver_index)
@@ -461,7 +453,6 @@ impl WireGuardClient {
         // Decrypt
         let plaintext = session.transport.decrypt(packet)?;
         session.mark_received();
-        tracing::debug!("Decrypted {} bytes", plaintext.len());
 
         // Update endpoint if changed (roaming)
         if session.endpoint != from {
@@ -471,7 +462,6 @@ impl WireGuardClient {
 
         // Write decrypted IP packet to TUN
         if !plaintext.is_empty() {
-            tracing::debug!("Writing {} bytes to TUN", plaintext.len());
             self.tun.write(&plaintext).await?;
         }
 
@@ -499,7 +489,6 @@ impl WireGuardClient {
                 reason: e.to_string(),
             })?;
 
-        tracing::debug!("Sent keepalive packet");
         Ok(())
     }
 
