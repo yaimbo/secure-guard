@@ -48,3 +48,71 @@ Co-Authored-By: Claude Opus 4.5 <noreply@anthropic.com>
 - NEVER assume the user knows what you're thinking
 - **Always narrate your process** so the user can follow along
 
+
+
+This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
+
+## Build and Run Commands
+
+```bash
+# Build (release)
+cargo build --release
+
+# Run VPN client (requires root/sudo on macOS, root/CAP_NET_ADMIN on Linux)
+sudo ./target/release/secureguard-poc -c docs/clients/vpn.fronthouse.ai.conf
+
+# Run with verbose logging
+sudo ./target/release/secureguard-poc -c docs/clients/vpn.fronthouse.ai.conf -v
+
+# Run tests
+cargo test
+
+# Run a single test
+cargo test test_name
+
+# Check without building
+cargo check
+
+# Linux: Grant capability instead of running as root
+sudo setcap cap_net_admin=eip ./target/release/secureguard-poc
+```
+
+## Architecture
+
+This is a WireGuard-compatible VPN client implementing the Noise IKpsk2 handshake protocol.
+
+### Core Modules
+
+- **crypto/** - Cryptographic primitives
+  - `blake2s.rs` - BLAKE2s hash, HMAC (RFC 2104 via `SimpleHmac`), and KDF functions
+  - `aead.rs` - ChaCha20-Poly1305 and XChaCha20-Poly1305 encryption
+  - `x25519.rs` - X25519 Diffie-Hellman key exchange
+  - `noise.rs` - Noise protocol state machine (MixHash, MixKey, encrypt/decrypt)
+
+- **protocol/** - WireGuard protocol implementation
+  - `messages.rs` - Wire format structs (Handshake Initiation/Response, Transport, Cookie)
+  - `handshake.rs` - Noise IKpsk2 handshake as initiator
+  - `transport.rs` - Encrypted packet send/receive with replay protection
+  - `session.rs` - Session state and rekey timing
+  - `cookie.rs` - Cookie/DoS protection (MAC2)
+
+- **tunnel/** - Cross-platform TUN device
+  - `mod.rs` - TunDevice wrapper and RouteManager for endpoint bypass routing
+
+- **config/** - WireGuard `.conf` file parser
+
+- **client.rs** - Main event loop: TUN ↔ UDP with keepalive and rekey
+
+### Key Implementation Details
+
+1. **HMAC Construction**: Uses `SimpleHmac<Blake2s256>` (RFC 2104) for KDFs, not BLAKE2s keyed mode. This is critical for handshake compatibility.
+
+2. **Endpoint Bypass Routing**: Routes must be set up AFTER handshake completes. A specific route for the VPN endpoint goes through the default gateway to prevent routing loops.
+
+3. **Session Rekey**: Sessions automatically rekey after 120 seconds. Old session remains valid during rekey.
+
+### Debug Binaries
+
+Various verification tools in `src/bin/` for testing crypto primitives against known test vectors.
+
+
