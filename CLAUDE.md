@@ -134,4 +134,69 @@ This is a WireGuard-compatible VPN client/server implementing the Noise IKpsk2 h
 
 Various verification tools in `src/bin/` for testing crypto primitives against known test vectors.
 
+## Flutter Web Management Console
+
+Located in `secureguard_console/`. A Flutter web admin interface for managing VPN clients.
+
+### Build and Run
+
+```bash
+cd secureguard_console
+
+# Get dependencies
+flutter pub get
+
+# Run in development mode
+flutter run -d chrome
+
+# Build for production
+flutter build web --release
+```
+
+### Architecture
+
+- **State Management**: Riverpod (flutter_riverpod)
+- **Routing**: GoRouter with auth redirect
+- **HTTP Client**: Dio with interceptors for auth tokens
+- **Charts**: fl_chart for dashboard visualizations
+
+### Project Structure
+
+```
+secureguard_console/lib/
+├── main.dart              # Entry point
+├── app.dart               # MaterialApp.router setup
+├── config/
+│   ├── theme.dart         # Dark/light theme, semantic colors
+│   └── routes.dart        # GoRouter configuration
+├── services/
+│   └── api_service.dart   # REST API client
+├── providers/
+│   ├── auth_provider.dart     # Authentication state
+│   ├── clients_provider.dart  # Client list management
+│   ├── logs_provider.dart     # Audit/error/connection logs
+│   └── settings_provider.dart # Server config
+├── models/
+│   ├── client.dart        # Client data model
+│   └── logs.dart          # Log entry models
+├── screens/
+│   ├── login_screen.dart
+│   ├── dashboard_screen.dart
+│   ├── clients_screen.dart
+│   ├── client_detail_screen.dart
+│   ├── logs_screen.dart
+│   └── settings_screen.dart
+└── widgets/
+    ├── app_shell.dart     # Navigation rail shell
+    └── stat_card.dart     # Dashboard stat cards
+```
+
+### API Configuration
+
+The API base URL is configured via environment variable:
+```bash
+flutter run --dart-define=API_URL=http://localhost:8080/api/v1
+```
+
+Default: `http://localhost:8080/api/v1`
 
