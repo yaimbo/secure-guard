@@ -54,6 +54,18 @@ impl HandshakeState {
         }
     }
 
+    /// Create a new handshake state for the responder
+    ///
+    /// The responder uses its own public key for the initial hash,
+    /// since in the Noise IK pattern, both parties use the responder's
+    /// static public key as the initial hash input.
+    pub fn new_responder(our_static_public: &[u8; 32]) -> Self {
+        Self {
+            chaining_key: Self::initial_chain_key(),
+            hash: Self::initial_hash(our_static_public),
+        }
+    }
+
     /// MixHash: h = HASH(h || data)
     pub fn mix_hash(&mut self, data: &[u8]) {
         self.hash = blake2s::hash_two(&self.hash, data);
@@ -251,5 +263,18 @@ mod tests {
         // Different messages should produce different MACs
         let other_mac = compute_mac1(&peer_public, b"other message");
         assert_ne!(mac, other_mac);
+    }
+
+    #[test]
+    fn test_responder_initiator_same_initial_state() {
+        let responder_public = [42u8; 32];
+
+        // Both initiator and responder should start with the same hash
+        // when given the same responder public key
+        let initiator_state = HandshakeState::new_initiator(&responder_public);
+        let responder_state = HandshakeState::new_responder(&responder_public);
+
+        assert_eq!(initiator_state.chaining_key, responder_state.chaining_key);
+        assert_eq!(initiator_state.hash, responder_state.hash);
     }
 }

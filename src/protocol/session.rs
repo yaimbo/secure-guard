@@ -2,8 +2,11 @@
 //!
 //! Tracks active sessions and handles rekey timing.
 
-use std::net::SocketAddr;
+use std::collections::HashMap;
+use std::net::{Ipv4Addr, SocketAddr};
 use std::time::{Duration, Instant};
+
+use ipnet::IpNet;
 
 use crate::protocol::transport::TransportState;
 
@@ -273,6 +276,208 @@ pub fn generate_sender_index() -> u32 {
     rand::thread_rng().gen()
 }
 
+// ============================================================================
+// Multi-peer support for server mode
+// ============================================================================
+
+/// Peer state for server mode
+///
+/// Tracks a single peer's session state, allowed IPs, and last known endpoint.
+#[derive(Debug)]
+pub struct PeerState {
+    /// Peer's static public key (identifier)
+    pub public_key: [u8; 32],
+    /// Pre-shared key for this peer (optional)
+    pub psk: Option<[u8; 32]>,
+    /// Allowed IPs for this peer (used for routing)
+    pub allowed_ips: Vec<IpNet>,
+    /// Current session with this peer
+    pub session: Option<Session>,
+    /// Previous session (during rekey)
+    pub previous_session: Option<Session>,
+    /// Last known endpoint (learned from incoming packets)
+    pub endpoint: Option<SocketAddr>,
+    /// Last timestamp seen (replay protection for handshakes)
+    /// TAI64N is 12 bytes
+    pub last_timestamp: Option<[u8; 12]>,
+}
+
+impl PeerState {
+    /// Create a new peer state
+    pub fn new(public_key: [u8; 32], psk: Option<[u8; 32]>, allowed_ips: Vec<IpNet>) -> Self {
+        Self {
+            public_key,
+            psk,
+            allowed_ips,
+            session: None,
+            previous_session: None,
+            endpoint: None,
+            last_timestamp: None,
+        }
+    }
+
+    /// Check if this peer has an active session
+    pub fn has_session(&self) -> bool {
+        self.session.as_ref().map_or(false, |s| !s.is_expired())
+    }
+
+    /// Get the current session (if valid)
+    pub fn current_session(&self) -> Option<&Session> {
+        self.session.as_ref().filter(|s| !s.is_expired())
+    }
+
+    /// Get mutable reference to current session
+    pub fn current_session_mut(&mut self) -> Option<&mut Session> {
+        if self.session.as_ref().map_or(false, |s| !s.is_expired()) {
+            self.session.as_mut()
+        } else {
+            None
+        }
+    }
+
+    /// Find session by local index
+    pub fn find_session_by_index(&mut self, index: u32) -> Option<&mut Session> {
+        if let Some(ref mut session) = self.session {
+            if session.local_index == index && !session.is_expired() {
+                return Some(session);
+            }
+        }
+
+        if let Some(ref mut session) = self.previous_session {
+            if session.local_index == index && !session.is_expired() {
+                return Some(session);
+            }
+        }
+
+        None
+    }
+
+    /// Establish a new session for this peer
+    pub fn establish_session(&mut self, session: Session) {
+        // Move current to previous
+        if let Some(current) = self.session.take() {
+            self.previous_session = Some(current);
+        }
+        self.session = Some(session);
+    }
+
+    /// Check if an IP is in this peer's allowed IPs
+    pub fn allows_ip(&self, ip: Ipv4Addr) -> bool {
+        let ip_addr = std::net::IpAddr::V4(ip);
+        self.allowed_ips.iter().any(|net| net.contains(&ip_addr))
+    }
+
+    /// Validate timestamp (returns true if timestamp is newer than last seen)
+    pub fn validate_timestamp(&mut self, timestamp: &[u8; 12]) -> bool {
+        if let Some(ref last) = self.last_timestamp {
+            // TAI64N: first 8 bytes are seconds, last 4 are nanoseconds
+            // Simply compare as byte arrays (big-endian)
+            if timestamp <= last {
+                return false; // Replay or stale
+            }
+        }
+        self.last_timestamp = Some(*timestamp);
+        true
+    }
+}
+
+/// Manager for multiple peers (server mode)
+///
+/// Maintains peer state indexed by public key and provides session
+/// lookup by index for fast packet processing.
+#[derive(Debug, Default)]
+pub struct PeerManager {
+    /// Map from public key to peer state
+    peers: HashMap<[u8; 32], PeerState>,
+    /// Map from session local_index to public key (for fast lookup on transport)
+    index_to_peer: HashMap<u32, [u8; 32]>,
+}
+
+impl PeerManager {
+    /// Create a new peer manager
+    pub fn new() -> Self {
+        Self {
+            peers: HashMap::new(),
+            index_to_peer: HashMap::new(),
+        }
+    }
+
+    /// Add a peer
+    pub fn add_peer(&mut self, public_key: [u8; 32], psk: Option<[u8; 32]>, allowed_ips: Vec<IpNet>) {
+        self.peers
+            .insert(public_key, PeerState::new(public_key, psk, allowed_ips));
+    }
+
+    /// Get peer by public key
+    pub fn get_peer(&self, public_key: &[u8; 32]) -> Option<&PeerState> {
+        self.peers.get(public_key)
+    }
+
+    /// Get mutable reference to peer by public key
+    pub fn get_peer_mut(&mut self, public_key: &[u8; 32]) -> Option<&mut PeerState> {
+        self.peers.get_mut(public_key)
+    }
+
+    /// Find peer by session local_index (for incoming transport packets)
+    pub fn find_by_index(&mut self, index: u32) -> Option<&mut PeerState> {
+        let public_key = self.index_to_peer.get(&index)?;
+        self.peers.get_mut(public_key)
+    }
+
+    /// Find peer whose allowed IPs contain the given destination
+    pub fn find_by_allowed_ip(&self, ip: Ipv4Addr) -> Option<&PeerState> {
+        self.peers.values().find(|peer| peer.allows_ip(ip))
+    }
+
+    /// Find peer (mutable) whose allowed IPs contain the given destination
+    pub fn find_by_allowed_ip_mut(&mut self, ip: Ipv4Addr) -> Option<&mut PeerState> {
+        self.peers.values_mut().find(|peer| peer.allows_ip(ip))
+    }
+
+    /// Register a session index for a peer (call after establishing session)
+    pub fn register_session_index(&mut self, public_key: &[u8; 32], local_index: u32) {
+        self.index_to_peer.insert(local_index, *public_key);
+    }
+
+    /// Unregister a session index (call when session is removed)
+    pub fn unregister_session_index(&mut self, local_index: u32) {
+        self.index_to_peer.remove(&local_index);
+    }
+
+    /// Establish a session for a peer and register its index
+    pub fn establish_session(&mut self, public_key: &[u8; 32], session: Session) {
+        let local_index = session.local_index;
+        if let Some(peer) = self.peers.get_mut(public_key) {
+            // Unregister old session index if present
+            if let Some(ref old_session) = peer.session {
+                self.index_to_peer.remove(&old_session.local_index);
+            }
+            peer.establish_session(session);
+            self.index_to_peer.insert(local_index, *public_key);
+        }
+    }
+
+    /// Get number of peers
+    pub fn len(&self) -> usize {
+        self.peers.len()
+    }
+
+    /// Check if empty
+    pub fn is_empty(&self) -> bool {
+        self.peers.is_empty()
+    }
+
+    /// Iterate over all peers
+    pub fn iter(&self) -> impl Iterator<Item = &PeerState> {
+        self.peers.values()
+    }
+
+    /// Iterate over all peers mutably
+    pub fn iter_mut(&mut self) -> impl Iterator<Item = &mut PeerState> {
+        self.peers.values_mut()
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -359,5 +564,88 @@ mod tests {
 
         // Should be different (with overwhelming probability)
         assert_ne!(idx1, idx2);
+    }
+
+    #[test]
+    fn test_peer_state_basic() {
+        let public_key = [1u8; 32];
+        let allowed_ips = vec!["10.0.0.0/24".parse().unwrap()];
+        let peer = PeerState::new(public_key, None, allowed_ips);
+
+        assert_eq!(peer.public_key, public_key);
+        assert!(!peer.has_session());
+        assert!(peer.endpoint.is_none());
+
+        // Check allowed IPs
+        assert!(peer.allows_ip(Ipv4Addr::new(10, 0, 0, 5)));
+        assert!(!peer.allows_ip(Ipv4Addr::new(192, 168, 1, 1)));
+    }
+
+    #[test]
+    fn test_peer_state_session() {
+        let public_key = [1u8; 32];
+        let mut peer = PeerState::new(public_key, None, vec![]);
+
+        let session = Session::new(100, 200, [1u8; 32], [2u8; 32], test_endpoint());
+        peer.establish_session(session);
+
+        assert!(peer.has_session());
+        assert_eq!(peer.current_session().unwrap().local_index, 100);
+    }
+
+    #[test]
+    fn test_peer_manager_basic() {
+        let mut manager = PeerManager::new();
+
+        let peer1_key = [1u8; 32];
+        let peer2_key = [2u8; 32];
+
+        manager.add_peer(peer1_key, None, vec!["10.0.0.1/32".parse().unwrap()]);
+        manager.add_peer(peer2_key, None, vec!["10.0.0.2/32".parse().unwrap()]);
+
+        assert_eq!(manager.len(), 2);
+        assert!(manager.get_peer(&peer1_key).is_some());
+        assert!(manager.get_peer(&peer2_key).is_some());
+    }
+
+    #[test]
+    fn test_peer_manager_session_lookup() {
+        let mut manager = PeerManager::new();
+
+        let peer_key = [1u8; 32];
+        manager.add_peer(peer_key, None, vec![]);
+
+        // Establish session
+        let session = Session::new(100, 200, [1u8; 32], [2u8; 32], test_endpoint());
+        manager.establish_session(&peer_key, session);
+
+        // Should be able to find by index
+        let peer = manager.find_by_index(100);
+        assert!(peer.is_some());
+        assert_eq!(peer.unwrap().public_key, peer_key);
+    }
+
+    #[test]
+    fn test_peer_manager_allowed_ip_routing() {
+        let mut manager = PeerManager::new();
+
+        let peer1_key = [1u8; 32];
+        let peer2_key = [2u8; 32];
+
+        manager.add_peer(peer1_key, None, vec!["10.0.0.0/24".parse().unwrap()]);
+        manager.add_peer(peer2_key, None, vec!["192.168.1.0/24".parse().unwrap()]);
+
+        // Route to correct peer
+        let peer = manager.find_by_allowed_ip(Ipv4Addr::new(10, 0, 0, 5));
+        assert!(peer.is_some());
+        assert_eq!(peer.unwrap().public_key, peer1_key);
+
+        let peer = manager.find_by_allowed_ip(Ipv4Addr::new(192, 168, 1, 100));
+        assert!(peer.is_some());
+        assert_eq!(peer.unwrap().public_key, peer2_key);
+
+        // No route
+        let peer = manager.find_by_allowed_ip(Ipv4Addr::new(172, 16, 0, 1));
+        assert!(peer.is_none());
     }
 }

@@ -162,6 +162,55 @@ impl HandshakeResponse {
     /// Size of the handshake response message
     pub const SIZE: usize = 92;
 
+    /// Create a new handshake response (MACs are zeroed, must be computed separately)
+    pub fn new(
+        sender_index: u32,
+        receiver_index: u32,
+        ephemeral_public: [u8; 32],
+        encrypted_nothing: [u8; 16],
+    ) -> Self {
+        Self {
+            sender_index,
+            receiver_index,
+            ephemeral_public,
+            encrypted_nothing,
+            mac1: [0u8; 16],
+            mac2: [0u8; 16],
+        }
+    }
+
+    /// Serialize to bytes
+    pub fn to_bytes(&self) -> [u8; Self::SIZE] {
+        let mut buf = [0u8; Self::SIZE];
+
+        buf[0] = MessageType::HandshakeResponse as u8;
+        // buf[1..4] reserved (zeros)
+        buf[4..8].copy_from_slice(&self.sender_index.to_le_bytes());
+        buf[8..12].copy_from_slice(&self.receiver_index.to_le_bytes());
+        buf[12..44].copy_from_slice(&self.ephemeral_public);
+        buf[44..60].copy_from_slice(&self.encrypted_nothing);
+        buf[60..76].copy_from_slice(&self.mac1);
+        buf[76..92].copy_from_slice(&self.mac2);
+
+        buf
+    }
+
+    /// Get bytes up to (but not including) mac1 for MAC1 computation (owned version)
+    pub fn bytes_for_mac1_owned(&self) -> [u8; 60] {
+        let full = self.to_bytes();
+        let mut result = [0u8; 60];
+        result.copy_from_slice(&full[..60]);
+        result
+    }
+
+    /// Get bytes up to (but not including) mac2 for MAC2 computation (owned version)
+    pub fn bytes_for_mac2_owned(&self) -> [u8; 76] {
+        let full = self.to_bytes();
+        let mut result = [0u8; 76];
+        result.copy_from_slice(&full[..76]);
+        result
+    }
+
     /// Parse from bytes
     pub fn from_bytes(data: &[u8]) -> Result<Self, ProtocolError> {
         if data.len() < Self::SIZE {
@@ -379,5 +428,25 @@ mod tests {
         let data = [99u8; 100]; // Invalid type
         let result = get_message_type(&data);
         assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_handshake_response_roundtrip() {
+        let response = HandshakeResponse::new(
+            0x11223344,
+            0x55667788,
+            [1u8; 32],
+            [2u8; 16],
+        );
+
+        let bytes = response.to_bytes();
+        assert_eq!(bytes.len(), HandshakeResponse::SIZE);
+        assert_eq!(bytes[0], 2); // Type
+
+        let parsed = HandshakeResponse::from_bytes(&bytes).unwrap();
+        assert_eq!(parsed.sender_index, response.sender_index);
+        assert_eq!(parsed.receiver_index, response.receiver_index);
+        assert_eq!(parsed.ephemeral_public, response.ephemeral_public);
+        assert_eq!(parsed.encrypted_nothing, response.encrypted_nothing);
     }
 }

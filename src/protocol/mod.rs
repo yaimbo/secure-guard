@@ -14,9 +14,11 @@ pub mod session;
 pub mod transport;
 
 pub use cookie::CookieState;
-pub use handshake::{HandshakeResult, InitiatorHandshake};
+pub use handshake::{
+    verify_initiation_mac1, HandshakeResult, InitiatorHandshake, ResponderHandshake,
+};
 pub use messages::{
     CookieReply, HandshakeInitiation, HandshakeResponse, MessageType, TransportHeader,
 };
-pub use session::{Session, SessionManager};
+pub use session::{PeerManager, PeerState, Session, SessionManager};
 pub use transport::{ReplayWindow, TransportState};

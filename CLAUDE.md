@@ -75,11 +75,14 @@ cargo check
 
 # Linux: Grant capability instead of running as root
 sudo setcap cap_net_admin=eip ./target/release/secureguard-poc
+
+# macOS: Set up setuid root permissions (run after each build)
+sudo ./setuid.sh
 ```
 
 ## Architecture
 
-This is a WireGuard-compatible VPN client implementing the Noise IKpsk2 handshake protocol.
+This is a WireGuard-compatible VPN client/server implementing the Noise IKpsk2 handshake protocol.
 
 ### Core Modules
 
@@ -91,9 +94,9 @@ This is a WireGuard-compatible VPN client implementing the Noise IKpsk2 handshak
 
 - **protocol/** - WireGuard protocol implementation
   - `messages.rs` - Wire format structs (Handshake Initiation/Response, Transport, Cookie)
-  - `handshake.rs` - Noise IKpsk2 handshake as initiator
+  - `handshake.rs` - Noise IKpsk2 handshake (InitiatorHandshake + ResponderHandshake)
   - `transport.rs` - Encrypted packet send/receive with replay protection
-  - `session.rs` - Session state and rekey timing
+  - `session.rs` - Session state, rekey timing, and PeerManager for multi-peer support
   - `cookie.rs` - Cookie/DoS protection (MAC2)
 
 - **tunnel/** - Cross-platform TUN device
@@ -101,7 +104,23 @@ This is a WireGuard-compatible VPN client implementing the Noise IKpsk2 handshak
 
 - **config/** - WireGuard `.conf` file parser
 
-- **client.rs** - Main event loop: TUN ↔ UDP with keepalive and rekey
+- **client.rs** - Client event loop: TUN ↔ UDP with keepalive and rekey (initiator mode)
+
+- **server.rs** - Server event loop: multi-peer support, incoming handshake handling (responder mode)
+
+### CLI Usage
+
+```bash
+# Client mode (auto-detected if peer has Endpoint)
+./secureguard-poc -c client.conf
+
+# Server mode (auto-detected if ListenPort set and no peer Endpoint)
+./secureguard-poc -c server.conf
+
+# Force specific mode
+./secureguard-poc -c config.conf --server
+./secureguard-poc -c config.conf --client
+```
 
 ### Key Implementation Details
 

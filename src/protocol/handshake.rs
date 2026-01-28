@@ -167,6 +167,183 @@ pub struct HandshakeResult {
     pub receiving_key: [u8; 32],
 }
 
+/// State for processing a handshake (responder side)
+pub struct ResponderHandshake {
+    /// Our static private key (server's key)
+    pub static_private: [u8; 32],
+    /// Our static public key (server's key)
+    pub static_public: [u8; 32],
+    /// Our sender index (newly generated for this handshake)
+    pub sender_index: u32,
+    /// Noise handshake state
+    pub noise_state: noise::HandshakeState,
+    /// Initiator's ephemeral public key (from initiation)
+    pub initiator_ephemeral: [u8; 32],
+    /// Initiator's static public key (decrypted from initiation)
+    pub initiator_static: [u8; 32],
+    /// Initiator's sender index (becomes our receiver_index)
+    pub initiator_index: u32,
+    /// Last MAC1 we sent (needed for cookie processing)
+    pub last_mac1: [u8; 16],
+}
+
+impl ResponderHandshake {
+    /// Create a new responder handshake state
+    pub fn new(static_private: [u8; 32], sender_index: u32) -> Self {
+        let static_public = x25519::public_key(&static_private);
+        Self {
+            static_private,
+            static_public,
+            sender_index,
+            noise_state: noise::HandshakeState::new_responder(&static_public),
+            initiator_ephemeral: [0u8; 32],
+            initiator_static: [0u8; 32],
+            initiator_index: 0,
+            last_mac1: [0u8; 16],
+        }
+    }
+
+    /// Process an incoming handshake initiation (Type 1)
+    ///
+    /// This decrypts and validates the initiation, extracting the peer's
+    /// static public key which can be used to look up the peer.
+    ///
+    /// Returns the initiator's static public key on success.
+    pub fn process_initiation(
+        &mut self,
+        initiation: &HandshakeInitiation,
+    ) -> Result<[u8; 32], SecureGuardError> {
+        // Store initiator's values
+        self.initiator_ephemeral = initiation.ephemeral_public;
+        self.initiator_index = initiation.sender_index;
+
+        // e: Mix initiator's ephemeral into hash, then update chaining key
+        // This mirrors what the initiator did
+        self.noise_state.mix_hash(&initiation.ephemeral_public);
+        self.noise_state.chaining_key =
+            blake2s::kdf1(&self.noise_state.chaining_key, &initiation.ephemeral_public);
+
+        // es: DH between our static and initiator's ephemeral
+        // (Initiator did: DH(ephemeral_private, our_static_public))
+        let shared_es = x25519::dh(&self.static_private, &initiation.ephemeral_public);
+        let key = self.noise_state.mix_key(&shared_es);
+
+        // s: Decrypt initiator's static public key
+        let static_bytes = self
+            .noise_state
+            .decrypt_and_hash(&key, &initiation.encrypted_static)?;
+        self.initiator_static = static_bytes
+            .try_into()
+            .map_err(|_| CryptoError::Decryption)?;
+
+        // ss: DH between our static and initiator's static
+        let shared_ss = x25519::dh(&self.static_private, &self.initiator_static);
+        let key = self.noise_state.mix_key(&shared_ss);
+
+        // Decrypt timestamp (we don't validate it here, caller should)
+        let _timestamp = self
+            .noise_state
+            .decrypt_and_hash(&key, &initiation.encrypted_timestamp)?;
+
+        Ok(self.initiator_static)
+    }
+
+    /// Create the handshake response (Type 2)
+    ///
+    /// This generates the response message and derives the transport keys.
+    /// The PSK is looked up by the caller based on the peer's public key.
+    pub fn create_response(
+        &mut self,
+        psk: Option<[u8; 32]>,
+        cookie: Option<&[u8; 16]>,
+    ) -> Result<(HandshakeResponse, HandshakeResult), SecureGuardError> {
+        let psk = psk.unwrap_or([0u8; 32]);
+
+        // Generate ephemeral keypair
+        let (ephemeral_private, ephemeral_public) = x25519::generate_keypair();
+
+        // e: Mix our ephemeral into hash, then update chaining key
+        self.noise_state.mix_hash(&ephemeral_public);
+        self.noise_state.chaining_key =
+            blake2s::kdf1(&self.noise_state.chaining_key, &ephemeral_public);
+
+        // ee: DH between ephemeral keys
+        let shared_ee = x25519::dh(&ephemeral_private, &self.initiator_ephemeral);
+        self.noise_state.mix_key(&shared_ee);
+
+        // se: DH between our ephemeral and initiator's static
+        let shared_se = x25519::dh(&ephemeral_private, &self.initiator_static);
+        let _key = self.noise_state.mix_key(&shared_se);
+
+        // psk: Mix pre-shared key
+        let key = self.noise_state.mix_key_and_hash(&psk);
+
+        // Encrypt empty payload (just authentication tag)
+        let encrypted_nothing = self.noise_state.encrypt_and_hash(&key, &[])?;
+        let encrypted_nothing: [u8; 16] = encrypted_nothing
+            .try_into()
+            .map_err(|_| CryptoError::Encryption)?;
+
+        // Build response message
+        let mut response = HandshakeResponse::new(
+            self.sender_index,
+            self.initiator_index,
+            ephemeral_public,
+            encrypted_nothing,
+        );
+
+        // Compute MAC1 (using initiator's static public key)
+        let mac1_key = noise::mac1_key(&self.initiator_static);
+        response.mac1 = blake2s::mac(&mac1_key, &response.bytes_for_mac1_owned());
+        self.last_mac1 = response.mac1;
+
+        // Compute MAC2 (using cookie if available, otherwise zeros)
+        if let Some(cookie) = cookie {
+            response.mac2 = blake2s::mac_with_cookie(cookie, &response.bytes_for_mac2_owned());
+        }
+
+        // Derive transport keys (responder swaps send/receive)
+        let keys = noise::TransportKeys::derive_responder(&self.noise_state.chaining_key);
+
+        Ok((
+            response,
+            HandshakeResult {
+                local_index: self.sender_index,
+                remote_index: self.initiator_index,
+                sending_key: keys.sending_key,
+                receiving_key: keys.receiving_key,
+            },
+        ))
+    }
+}
+
+/// Verify MAC1 on a handshake initiation
+///
+/// We are the responder, so MAC1 is computed with OUR public key
+pub fn verify_initiation_mac1(
+    initiation_bytes: &[u8],
+    our_public_key: &[u8; 32],
+) -> Result<(), SecureGuardError> {
+    if initiation_bytes.len() < HandshakeInitiation::SIZE {
+        return Err(ProtocolError::InvalidMessageLength {
+            expected: HandshakeInitiation::SIZE,
+            got: initiation_bytes.len(),
+        }
+        .into());
+    }
+
+    let mac1_key = noise::mac1_key(our_public_key);
+    let mac1_data = &initiation_bytes[..116]; // Everything before MAC1
+    let expected_mac1 = blake2s::mac(&mac1_key, mac1_data);
+
+    let actual_mac1 = &initiation_bytes[116..132];
+    if actual_mac1 != expected_mac1 {
+        return Err(ProtocolError::MacVerificationFailed.into());
+    }
+
+    Ok(())
+}
+
 /// Verify MAC1 on a handshake response
 ///
 /// We are the initiator, so MAC1 is computed with OUR public key
@@ -243,5 +420,82 @@ mod tests {
         let parsed = HandshakeInitiation::from_bytes(&bytes).unwrap();
         assert_eq!(parsed.sender_index, init.sender_index);
         assert_eq!(parsed.ephemeral_public, init.ephemeral_public);
+    }
+
+    #[test]
+    fn test_initiator_responder_handshake() {
+        // Generate keypairs for both sides
+        let (initiator_static_private, initiator_static_public) = x25519::generate_keypair();
+        let (responder_static_private, responder_static_public) = x25519::generate_keypair();
+
+        // Initiator creates handshake initiation
+        let mut initiator =
+            InitiatorHandshake::new(initiator_static_private, responder_static_public, None, 1001);
+        let initiation = initiator.create_initiation(None).unwrap();
+
+        // Verify MAC1 on initiation
+        verify_initiation_mac1(&initiation.to_bytes(), &responder_static_public).unwrap();
+
+        // Responder processes initiation
+        let mut responder = ResponderHandshake::new(responder_static_private, 2002);
+        let peer_public = responder.process_initiation(&initiation).unwrap();
+
+        // Responder should have decrypted initiator's public key
+        assert_eq!(peer_public, initiator_static_public);
+
+        // Responder creates response
+        let (response, responder_result) = responder.create_response(None, None).unwrap();
+
+        // Verify MAC1 on response
+        verify_response_mac1(&response.to_bytes(), &initiator_static_public).unwrap();
+
+        // Initiator processes response
+        let initiator_result = initiator.process_response(&response).unwrap();
+
+        // Both sides should have derived the same keys (but swapped)
+        assert_eq!(
+            initiator_result.sending_key, responder_result.receiving_key,
+            "Initiator's sending key should be responder's receiving key"
+        );
+        assert_eq!(
+            initiator_result.receiving_key, responder_result.sending_key,
+            "Initiator's receiving key should be responder's sending key"
+        );
+
+        // Indices should match
+        assert_eq!(initiator_result.local_index, 1001);
+        assert_eq!(initiator_result.remote_index, 2002);
+        assert_eq!(responder_result.local_index, 2002);
+        assert_eq!(responder_result.remote_index, 1001);
+    }
+
+    #[test]
+    fn test_handshake_with_psk() {
+        let (initiator_static_private, initiator_static_public) = x25519::generate_keypair();
+        let (responder_static_private, responder_static_public) = x25519::generate_keypair();
+        let psk = [42u8; 32];
+
+        // Initiator with PSK
+        let mut initiator = InitiatorHandshake::new(
+            initiator_static_private,
+            responder_static_public,
+            Some(psk),
+            1001,
+        );
+        let initiation = initiator.create_initiation(None).unwrap();
+
+        // Responder processes and responds with same PSK
+        let mut responder = ResponderHandshake::new(responder_static_private, 2002);
+        let peer_public = responder.process_initiation(&initiation).unwrap();
+        assert_eq!(peer_public, initiator_static_public);
+
+        let (response, responder_result) = responder.create_response(Some(psk), None).unwrap();
+
+        // Initiator processes response
+        let initiator_result = initiator.process_response(&response).unwrap();
+
+        // Keys should still match
+        assert_eq!(initiator_result.sending_key, responder_result.receiving_key);
+        assert_eq!(initiator_result.receiving_key, responder_result.sending_key);
     }
 }
