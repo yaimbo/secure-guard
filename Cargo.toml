@@ -1,0 +1,50 @@
+[package]
+name = "secureguard-poc"
+version = "0.1.0"
+edition = "2021"
+description = "WireGuard-compatible VPN client proof of concept"
+license = "Proprietary"
+
+[dependencies]
+# Cryptography - WireGuard Classic Mode
+x25519-dalek = { version = "2.0", features = ["static_secrets"] }
+chacha20poly1305 = "0.10"
+chacha20 = "0.9"
+blake2 = "0.10"
+hmac = "0.12"
+
+# Networking
+tokio = { version = "1.35", features = ["rt-multi-thread", "net", "io-util", "macros", "sync", "time", "process", "signal"] }
+tun-rs = { version = "2", features = ["async_tokio"] }
+socket2 = "0.5"
+
+# Utilities
+base64 = "0.22"
+thiserror = "1.0"
+anyhow = "1.0"
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+clap = { version = "4", features = ["derive"] }
+ipnet = "2.9"
+rand = "0.8"
+hex = "0.4"
+async-trait = "0.1"
+
+# Time handling (TAI64N timestamps)
+tai64 = "4.0"
+
+# Platform-specific: Windows
+[target.'cfg(target_os = "windows")'.dependencies]
+libloading = "0.8"
+tempfile = "3.8"
+winapi = { version = "0.3", features = ["processthreadsapi", "securitybaseapi", "winnt", "handleapi"] }
+
+# Platform-specific: Unix (Linux/macOS)
+[target.'cfg(unix)'.dependencies]
+libc = "0.2"
+
+[profile.release]
+opt-level = 3
+lto = true
+
+[dev-dependencies]
