@@ -1,4 +1,5 @@
 import 'dart:convert';
+import 'dart:math';
 import 'dart:typed_data';
 
 import 'package:cryptography/cryptography.dart';
@@ -26,8 +27,8 @@ class KeyService {
 
   /// Generate a preshared key (32 random bytes)
   Future<String> generatePresharedKey() async {
-    final random = SecureRandom.fast;
-    final bytes = random.nextBytes(32);
+    final random = Random.secure();
+    final bytes = List<int>.generate(32, (i) => random.nextInt(256));
     return base64Encode(Uint8List.fromList(bytes));
   }
 

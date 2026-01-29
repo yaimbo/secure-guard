@@ -30,7 +30,7 @@ class Database {
           password: password,
         ),
         settings: ConnectionSettings(
-          sslMode: SslMode.prefer,
+          sslMode: SslMode.disable, // Use SslMode.require for production
         ),
       );
     }
