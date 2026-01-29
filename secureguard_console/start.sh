@@ -47,8 +47,8 @@ echo -e "\n${YELLOW}Stopping existing services...${NC}"
 # Kill any process on port 8080 (API server)
 kill_port 8080
 
-# Kill any process on port 5000 (Flutter web dev server default)
-kill_port 5000
+# Kill any process on port 5001 (Flutter web dev server - 5000 used by macOS ControlCenter)
+kill_port 5001
 
 # Kill any flutter run processes for this project
 kill_by_pattern "flutter.*secureguard_console"
@@ -126,7 +126,7 @@ fi
 
 # Start Flutter web in Chrome
 echo -e "${GREEN}Launching Flutter web console in Chrome...${NC}"
-flutter run -d chrome --dart-define=API_URL=http://localhost:8080/api/v1
+flutter run -d chrome --web-port=5001
 
 # When Flutter exits, clean up the server
 echo -e "\n${YELLOW}Shutting down API server...${NC}"

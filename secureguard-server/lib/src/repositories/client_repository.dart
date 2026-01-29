@@ -19,38 +19,41 @@ class ClientRepository {
     final offset = (page - 1) * limit;
 
     var whereClauses = <String>[];
-    var params = <String, dynamic>{
-      'limit': limit,
-      'offset': offset,
-    };
+    var whereParams = <String, dynamic>{};
 
     if (status != null) {
       whereClauses.add('status = @status');
-      params['status'] = status;
+      whereParams['status'] = status;
     }
 
     if (search != null && search.isNotEmpty) {
       whereClauses.add('(name ILIKE @search OR user_email ILIKE @search OR user_name ILIKE @search)');
-      params['search'] = '%$search%';
+      whereParams['search'] = '%$search%';
     }
 
     final whereClause =
         whereClauses.isEmpty ? '' : 'WHERE ${whereClauses.join(' AND ')}';
 
-    // Get total count
+    // Get total count (only pass where params, not limit/offset)
     final countResult = await db.execute(
       'SELECT COUNT(*) FROM clients $whereClause',
-      params,
+      whereParams.isEmpty ? null : whereParams,
     );
     final total = countResult.first[0] as int;
 
-    // Get page of clients
+    // Get page of clients (include limit and offset)
+    final queryParams = <String, dynamic>{
+      ...whereParams,
+      'limit': limit,
+      'offset': offset,
+    };
+
     final result = await db.execute('''
       SELECT * FROM clients
       $whereClause
       ORDER BY created_at DESC
       LIMIT @limit OFFSET @offset
-    ''', params);
+    ''', queryParams);
 
     final clients = result.map((row) => Client.fromRow(row.toColumnMap())).toList();
 

@@ -112,14 +112,14 @@ class SecureGuardServer {
     );
 
     // Build handler with middleware
+    // Use '*' for CORS in development - browsers don't support multiple origins
     final handler = Pipeline()
         .addMiddleware(logRequests())
         .addMiddleware(corsHeaders(
           headers: {
-            ACCESS_CONTROL_ALLOW_ORIGIN: config.corsOrigins.join(', '),
+            ACCESS_CONTROL_ALLOW_ORIGIN: '*',
             ACCESS_CONTROL_ALLOW_METHODS: 'GET, POST, PUT, DELETE, PATCH, OPTIONS',
             ACCESS_CONTROL_ALLOW_HEADERS: 'Origin, Content-Type, Authorization',
-            ACCESS_CONTROL_ALLOW_CREDENTIALS: 'true',
           },
         ))
         .addMiddleware(requestLogger())

@@ -1,12 +1,13 @@
 import 'package:flutter/material.dart';
 
 class AppTheme {
-  // Color palette
-  static const _primaryColor = Color(0xFF3B82F6); // Blue
-  static const _connectedColor = Color(0xFF22C55E); // Green
-  static const _disconnectedColor = Color(0xFF6B7280); // Gray
-  static const _warningColor = Color(0xFFF59E0B); // Amber
-  static const _errorColor = Color(0xFFEF4444); // Red
+  // Color palette - Professional business colors
+  static const _primaryColor = Color(0xFF2563EB); // Blue 600 - slightly deeper
+  static const _secondaryColor = Color(0xFF475569); // Slate 600 - neutral
+  static const _connectedColor = Color(0xFF16A34A); // Green 600 - status only
+  static const _disconnectedColor = Color(0xFF6B7280); // Gray 500
+  static const _warningColor = Color(0xFFD97706); // Amber 600
+  static const _errorColor = Color(0xFFDC2626); // Red 600
 
   // Dark theme background colors
   static const _darkBg = Color(0xFF0F172A); // Slate 900
@@ -23,10 +24,13 @@ class AppTheme {
         brightness: Brightness.dark,
         colorScheme: const ColorScheme.dark(
           primary: _primaryColor,
-          secondary: _connectedColor,
+          secondary: _secondaryColor,
+          tertiary: _primaryColor,
           error: _errorColor,
           surface: _darkSurface,
           onSurface: Colors.white,
+          secondaryContainer: Color(0xFF1E3A5F), // Subtle blue for selections
+          onSecondaryContainer: Colors.white,
         ),
         scaffoldBackgroundColor: _darkBg,
         cardTheme: CardThemeData(
@@ -41,10 +45,18 @@ class AppTheme {
           elevation: 0,
           centerTitle: false,
         ),
-        navigationRailTheme: const NavigationRailThemeData(
+        navigationRailTheme: NavigationRailThemeData(
           backgroundColor: _darkSurface,
-          selectedIconTheme: IconThemeData(color: _primaryColor),
-          unselectedIconTheme: IconThemeData(color: Colors.white54),
+          selectedIconTheme: const IconThemeData(color: Colors.white),
+          unselectedIconTheme: const IconThemeData(color: Colors.white54),
+          selectedLabelTextStyle: const TextStyle(
+            color: Colors.white,
+            fontWeight: FontWeight.w500,
+          ),
+          unselectedLabelTextStyle: const TextStyle(
+            color: Colors.white54,
+          ),
+          indicatorColor: _primaryColor.withValues(alpha: 0.2),
         ),
         dataTableTheme: DataTableThemeData(
           headingRowColor: WidgetStateProperty.all(_darkCard),
@@ -93,10 +105,13 @@ class AppTheme {
         brightness: Brightness.light,
         colorScheme: const ColorScheme.light(
           primary: _primaryColor,
-          secondary: _connectedColor,
+          secondary: _secondaryColor,
+          tertiary: _primaryColor,
           error: _errorColor,
           surface: _lightSurface,
           onSurface: Color(0xFF1E293B),
+          secondaryContainer: Color(0xFFDBEAFE), // Light blue for selections
+          onSecondaryContainer: Color(0xFF1E3A8A),
         ),
         scaffoldBackgroundColor: _lightBg,
         cardTheme: CardThemeData(
@@ -112,10 +127,18 @@ class AppTheme {
           centerTitle: false,
           foregroundColor: Color(0xFF1E293B),
         ),
-        navigationRailTheme: const NavigationRailThemeData(
+        navigationRailTheme: NavigationRailThemeData(
           backgroundColor: _lightSurface,
-          selectedIconTheme: IconThemeData(color: _primaryColor),
-          unselectedIconTheme: IconThemeData(color: Colors.black54),
+          selectedIconTheme: const IconThemeData(color: _primaryColor),
+          unselectedIconTheme: const IconThemeData(color: Colors.black54),
+          selectedLabelTextStyle: const TextStyle(
+            color: _primaryColor,
+            fontWeight: FontWeight.w500,
+          ),
+          unselectedLabelTextStyle: const TextStyle(
+            color: Colors.black54,
+          ),
+          indicatorColor: _primaryColor.withValues(alpha: 0.12),
         ),
         inputDecorationTheme: InputDecorationTheme(
           filled: true,

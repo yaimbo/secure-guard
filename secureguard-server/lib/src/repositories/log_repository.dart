@@ -65,44 +65,41 @@ class LogRepository {
   }) async {
     final offset = (page - 1) * limit;
     final whereClauses = <String>[];
-    final params = <String, dynamic>{
-      'limit': limit,
-      'offset': offset,
-    };
+    final whereParams = <String, dynamic>{};
 
     if (startDate != null) {
       whereClauses.add('timestamp >= @start_date');
-      params['start_date'] = startDate;
+      whereParams['start_date'] = startDate;
     }
 
     if (endDate != null) {
       whereClauses.add('timestamp <= @end_date');
-      params['end_date'] = endDate;
+      whereParams['end_date'] = endDate;
     }
 
     if (eventType != null) {
       whereClauses.add('event_type = @event_type');
-      params['event_type'] = eventType;
+      whereParams['event_type'] = eventType;
     }
 
     if (actorType != null) {
       whereClauses.add('actor_type = @actor_type');
-      params['actor_type'] = actorType;
+      whereParams['actor_type'] = actorType;
     }
 
     if (actorId != null) {
       whereClauses.add('actor_id = @actor_id::uuid');
-      params['actor_id'] = actorId;
+      whereParams['actor_id'] = actorId;
     }
 
     if (resourceType != null) {
       whereClauses.add('resource_type = @resource_type');
-      params['resource_type'] = resourceType;
+      whereParams['resource_type'] = resourceType;
     }
 
     if (resourceId != null) {
       whereClauses.add('resource_id = @resource_id::uuid');
-      params['resource_id'] = resourceId;
+      whereParams['resource_id'] = resourceId;
     }
 
     if (search != null && search.isNotEmpty) {
@@ -112,26 +109,32 @@ class LogRepository {
          OR resource_name ILIKE @search
          OR details::text ILIKE @search)
       ''');
-      params['search'] = '%$search%';
+      whereParams['search'] = '%$search%';
     }
 
     final whereClause =
         whereClauses.isEmpty ? '' : 'WHERE ${whereClauses.join(' AND ')}';
 
-    // Get total count
+    // Get total count (only pass where params)
     final countResult = await db.execute(
       'SELECT COUNT(*) FROM audit_log $whereClause',
-      params,
+      whereParams.isEmpty ? null : whereParams,
     );
     final total = countResult.first[0] as int;
 
-    // Get page of events
+    // Get page of events (include limit and offset)
+    final queryParams = <String, dynamic>{
+      ...whereParams,
+      'limit': limit,
+      'offset': offset,
+    };
+
     final result = await db.execute('''
       SELECT * FROM audit_log
       $whereClause
       ORDER BY timestamp DESC
       LIMIT @limit OFFSET @offset
-    ''', params);
+    ''', queryParams);
 
     final events =
         result.map((row) => AuditEvent.fromRow(row.toColumnMap())).toList();
@@ -196,53 +199,56 @@ class LogRepository {
   }) async {
     final offset = (page - 1) * limit;
     final whereClauses = <String>[];
-    final params = <String, dynamic>{
-      'limit': limit,
-      'offset': offset,
-    };
+    final whereParams = <String, dynamic>{};
 
     if (startDate != null) {
       whereClauses.add('timestamp >= @start_date');
-      params['start_date'] = startDate;
+      whereParams['start_date'] = startDate;
     }
 
     if (endDate != null) {
       whereClauses.add('timestamp <= @end_date');
-      params['end_date'] = endDate;
+      whereParams['end_date'] = endDate;
     }
 
     if (severity != null) {
       whereClauses.add('severity = @severity');
-      params['severity'] = severity;
+      whereParams['severity'] = severity;
     }
 
     if (component != null) {
       whereClauses.add('component = @component');
-      params['component'] = component;
+      whereParams['component'] = component;
     }
 
     if (clientId != null) {
       whereClauses.add('client_id = @client_id::uuid');
-      params['client_id'] = clientId;
+      whereParams['client_id'] = clientId;
     }
 
     final whereClause =
         whereClauses.isEmpty ? '' : 'WHERE ${whereClauses.join(' AND ')}';
 
-    // Get total count
+    // Get total count (only pass where params)
     final countResult = await db.execute(
       'SELECT COUNT(*) FROM error_log $whereClause',
-      params,
+      whereParams.isEmpty ? null : whereParams,
     );
     final total = countResult.first[0] as int;
 
-    // Get page of errors
+    // Get page of errors (include limit and offset)
+    final queryParams = <String, dynamic>{
+      ...whereParams,
+      'limit': limit,
+      'offset': offset,
+    };
+
     final result = await db.execute('''
       SELECT * FROM error_log
       $whereClause
       ORDER BY timestamp DESC
       LIMIT @limit OFFSET @offset
-    ''', params);
+    ''', queryParams);
 
     final errors = result.map((row) => row.toColumnMap()).toList();
 
@@ -322,37 +328,44 @@ class LogRepository {
   }) async {
     final offset = (page - 1) * limit;
     final whereClauses = <String>[];
-    final params = <String, dynamic>{
-      'limit': limit,
-      'offset': offset,
-    };
+    final whereParams = <String, dynamic>{};
 
     if (clientId != null) {
-      whereClauses.add('client_id = @client_id::uuid');
-      params['client_id'] = clientId;
+      whereClauses.add('cl.client_id = @client_id::uuid');
+      whereParams['client_id'] = clientId;
     }
 
     if (startDate != null) {
-      whereClauses.add('connected_at >= @start_date');
-      params['start_date'] = startDate;
+      whereClauses.add('cl.connected_at >= @start_date');
+      whereParams['start_date'] = startDate;
     }
 
     if (endDate != null) {
-      whereClauses.add('connected_at <= @end_date');
-      params['end_date'] = endDate;
+      whereClauses.add('cl.connected_at <= @end_date');
+      whereParams['end_date'] = endDate;
     }
 
     final whereClause =
         whereClauses.isEmpty ? '' : 'WHERE ${whereClauses.join(' AND ')}';
 
-    // Get total count
+    // Get total count (only pass where params)
+    // Use a simpler count query without join
+    final countWhereClause = whereClauses.isEmpty
+        ? ''
+        : 'WHERE ${whereClauses.map((c) => c.replaceAll('cl.', '')).join(' AND ')}';
     final countResult = await db.execute(
-      'SELECT COUNT(*) FROM connection_log $whereClause',
-      params,
+      'SELECT COUNT(*) FROM connection_log $countWhereClause',
+      whereParams.isEmpty ? null : whereParams,
     );
     final total = countResult.first[0] as int;
 
-    // Get page of connections with client name
+    // Get page of connections with client name (include limit and offset)
+    final queryParams = <String, dynamic>{
+      ...whereParams,
+      'limit': limit,
+      'offset': offset,
+    };
+
     final result = await db.execute('''
       SELECT cl.*, c.name as client_name
       FROM connection_log cl
@@ -360,7 +373,7 @@ class LogRepository {
       $whereClause
       ORDER BY cl.connected_at DESC
       LIMIT @limit OFFSET @offset
-    ''', params);
+    ''', queryParams);
 
     final connections = result.map((row) => row.toColumnMap()).toList();
 
