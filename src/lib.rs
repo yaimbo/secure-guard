@@ -44,6 +44,7 @@
 pub mod client;
 pub mod config;
 pub mod crypto;
+pub mod daemon;
 pub mod error;
 pub mod protocol;
 pub mod server;
@@ -51,5 +52,6 @@ pub mod tunnel;
 
 pub use client::WireGuardClient;
 pub use config::WireGuardConfig;
+pub use daemon::DaemonService;
 pub use error::SecureGuardError;
 pub use server::WireGuardServer;

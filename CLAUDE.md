@@ -108,6 +108,10 @@ This is a WireGuard-compatible VPN client/server implementing the Noise IKpsk2 h
 
 - **server.rs** - Server event loop: multi-peer support, incoming handshake handling (responder mode)
 
+- **daemon/** - Daemon mode for service/IPC control
+  - `mod.rs` - DaemonService with Unix socket listener
+  - `ipc.rs` - JSON-RPC 2.0 message types and protocol
+
 ### CLI Usage
 
 ```bash
@@ -120,7 +124,28 @@ This is a WireGuard-compatible VPN client/server implementing the Noise IKpsk2 h
 # Force specific mode
 ./secureguard-poc -c config.conf --server
 ./secureguard-poc -c config.conf --client
+
+# Daemon mode (for Flutter UI control via IPC)
+sudo ./secureguard-poc --daemon
+sudo ./secureguard-poc --daemon --socket /custom/path.sock
 ```
+
+### Daemon Mode
+
+The daemon runs as a background service, controlled via Unix socket IPC (JSON-RPC 2.0 protocol).
+
+**Socket path:** `/var/run/secureguard.sock` (default)
+
+**IPC Commands:**
+- `connect` - Start VPN with config: `{"method": "connect", "params": {"config": "<wireguard-config>"}}`
+- `disconnect` - Stop VPN: `{"method": "disconnect"}`
+- `status` - Get connection status: `{"method": "status"}`
+
+**Status notifications** are pushed to connected clients when state changes.
+
+**Platform installers:**
+- macOS: `installer/macos/install.sh` (LaunchDaemon)
+- Linux: `installer/linux/install.sh` (systemd)
 
 ### Key Implementation Details
 
@@ -163,6 +188,10 @@ dart run bin/server.dart
 - `POST /api/v1/auth/refresh` - Refresh JWT token
 - `GET/POST/PUT/DELETE /api/v1/clients/*` - Client management (auth required)
 - `GET /api/v1/logs/*` - Audit/error/connection logs (auth required)
+- `POST /api/v1/enrollment/register` - Device enrollment (returns client_id)
+- `GET /api/v1/enrollment/config` - Fetch WireGuard config (device auth required)
+- `GET /api/v1/enrollment/config/version` - Check config version for updates
+- `POST /api/v1/enrollment/heartbeat` - Report device status
 
 ## Flutter Web Management Console
 

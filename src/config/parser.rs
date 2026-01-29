@@ -68,6 +68,11 @@ impl WireGuardConfig {
     }
 
     /// Parse a WireGuard configuration from a string
+    pub fn from_string(content: &str) -> Result<Self, ConfigError> {
+        Self::parse(content)
+    }
+
+    /// Parse a WireGuard configuration from a string (alias for from_string)
     pub fn parse(content: &str) -> Result<Self, ConfigError> {
         let mut interface: Option<InterfaceConfig> = None;
         let mut peers: Vec<PeerConfig> = Vec::new();

@@ -1,0 +1,77 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <!-- Unique identifier for the service -->
+    <key>Label</key>
+    <string>com.secureguard.vpn-service</string>
+
+    <!-- Program and arguments -->
+    <key>ProgramArguments</key>
+    <array>
+        <string>/Library/PrivilegedHelperTools/secureguard-service</string>
+        <string>--daemon</string>
+    </array>
+
+    <!-- Run at system boot -->
+    <key>RunAtLoad</key>
+    <true/>
+
+    <!-- Restart if the process exits -->
+    <key>KeepAlive</key>
+    <dict>
+        <!-- Restart if the process crashes -->
+        <key>SuccessfulExit</key>
+        <false/>
+    </dict>
+
+    <!-- Throttle restarts (don't restart more than once per 10 seconds) -->
+    <key>ThrottleInterval</key>
+    <integer>10</integer>
+
+    <!-- Socket for IPC communication -->
+    <key>Sockets</key>
+    <dict>
+        <key>SecureGuardSocket</key>
+        <dict>
+            <key>SockPathName</key>
+            <string>/var/run/secureguard.sock</string>
+            <key>SockPathMode</key>
+            <integer>438</integer> <!-- 0666 in octal -->
+        </dict>
+    </dict>
+
+    <!-- Standard output/error logging -->
+    <key>StandardOutPath</key>
+    <string>/var/log/secureguard.log</string>
+    <key>StandardErrorPath</key>
+    <string>/var/log/secureguard.error.log</string>
+
+    <!-- Working directory -->
+    <key>WorkingDirectory</key>
+    <string>/var/lib/secureguard</string>
+
+    <!-- Run as root (required for TUN device) -->
+    <key>UserName</key>
+    <string>root</string>
+    <key>GroupName</key>
+    <string>wheel</string>
+
+    <!-- Environment variables -->
+    <key>EnvironmentVariables</key>
+    <dict>
+        <key>PATH</key>
+        <string>/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin</string>
+        <key>RUST_LOG</key>
+        <string>info</string>
+    </dict>
+
+    <!-- Process limits -->
+    <key>ProcessType</key>
+    <string>Interactive</string>
+
+    <!-- Nice priority (lower = higher priority) -->
+    <key>Nice</key>
+    <integer>-5</integer>
+</dict>
+</plist>

@@ -2,7 +2,7 @@
 //!
 //! A proof-of-concept WireGuard implementation that can operate as either
 //! a client (initiator) or server (responder) using standard WireGuard
-//! configuration files.
+//! configuration files. Can also run as a daemon service for IPC control.
 
 use std::path::PathBuf;
 use std::process::ExitCode;
@@ -11,9 +11,9 @@ use clap::Parser;
 use tracing_subscriber::{fmt, EnvFilter};
 
 use secureguard_poc::error::{ConfigError, NetworkError, ProtocolError, TunnelError};
-use secureguard_poc::{SecureGuardError, WireGuardClient, WireGuardConfig, WireGuardServer};
+use secureguard_poc::{DaemonService, SecureGuardError, WireGuardClient, WireGuardConfig, WireGuardServer};
 
-/// Operating mode
+/// Operating mode for direct VPN connection
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum Mode {
     Client,
@@ -25,21 +25,29 @@ enum Mode {
 #[command(name = "secureguard-poc")]
 #[command(author, version, about, long_about = None)]
 struct Args {
-    /// Path to WireGuard configuration file
-    #[arg(short, long)]
-    config: PathBuf,
+    /// Path to WireGuard configuration file (required for --client/--server modes)
+    #[arg(short, long, required_unless_present = "daemon")]
+    config: Option<PathBuf>,
 
     /// Enable verbose logging
     #[arg(short, long)]
     verbose: bool,
 
     /// Force server mode (listen for incoming connections)
-    #[arg(long, conflicts_with = "client")]
+    #[arg(long, conflicts_with_all = ["client", "daemon"])]
     server: bool,
 
     /// Force client mode (connect to peer endpoint)
-    #[arg(long, conflicts_with = "server")]
+    #[arg(long, conflicts_with_all = ["server", "daemon"])]
     client: bool,
+
+    /// Run as a daemon service (IPC mode for Flutter UI)
+    #[arg(long, conflicts_with_all = ["server", "client"])]
+    daemon: bool,
+
+    /// Socket path for daemon mode (default: /var/run/secureguard.sock)
+    #[arg(long, requires = "daemon")]
+    socket: Option<PathBuf>,
 }
 
 #[tokio::main]
@@ -69,8 +77,17 @@ async fn main() -> ExitCode {
 }
 
 async fn run(args: Args) -> Result<(), SecureGuardError> {
-    // Parse configuration
-    let config_path = args.config.to_string_lossy().to_string();
+    // Check if running in daemon mode
+    if args.daemon {
+        return run_daemon(args).await;
+    }
+
+    // Normal client/server mode requires a config file
+    let config_path = args.config
+        .as_ref()
+        .expect("Config required for client/server mode")
+        .to_string_lossy()
+        .to_string();
     tracing::info!("Loading configuration from: {}", config_path);
 
     let config = WireGuardConfig::from_file(&config_path)?;
@@ -88,6 +105,27 @@ async fn run(args: Args) -> Result<(), SecureGuardError> {
             tracing::info!("SecureGuard WireGuard Server starting...");
             let mut server = WireGuardServer::new(config).await?;
             run_with_cleanup_server(&mut server).await
+        }
+    }
+}
+
+/// Run in daemon mode (IPC service for Flutter UI)
+async fn run_daemon(args: Args) -> Result<(), SecureGuardError> {
+    tracing::info!("SecureGuard Daemon starting...");
+
+    let daemon = DaemonService::new(args.socket);
+
+    // Run with cleanup on Ctrl+C
+    let ctrl_c = tokio::signal::ctrl_c();
+
+    tokio::select! {
+        result = daemon.run() => {
+            result
+        }
+        _ = ctrl_c => {
+            tracing::info!("\nReceived Ctrl+C, shutting down daemon...");
+            daemon.cleanup().await?;
+            Ok(())
         }
     }
 }
