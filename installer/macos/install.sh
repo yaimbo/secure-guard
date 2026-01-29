@@ -1,88 +1,314 @@
 #!/bin/bash
 # SecureGuard VPN Service Installer for macOS
-# This script installs the daemon service with proper permissions
+# This script installs the daemon service with proper permissions and security
 
-set -e
+set -euo pipefail
 
-# Check for root privileges
-if [ "$EUID" -ne 0 ]; then
-    echo "Error: This script must be run as root (sudo)"
-    exit 1
-fi
-
-SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+# Configuration
 SERVICE_NAME="com.secureguard.vpn-service"
 HELPER_TOOLS_DIR="/Library/PrivilegedHelperTools"
 LAUNCH_DAEMONS_DIR="/Library/LaunchDaemons"
+APPLICATION_SUPPORT_DIR="/Library/Application Support/SecureGuard"
 LOG_DIR="/var/log"
 DATA_DIR="/var/lib/secureguard"
+SOCKET_PATH="/var/run/secureguard.sock"
+MIN_MACOS_VERSION="10.15"
 
-echo "=== SecureGuard VPN Service Installer ==="
+# Colors for output
+RED='\033[0;31m'
+GREEN='\033[0;32m'
+YELLOW='\033[1;33m'
+NC='\033[0m' # No Color
+
+# Logging functions
+log_info() { echo -e "${GREEN}[INFO]${NC} $1"; }
+log_warn() { echo -e "${YELLOW}[WARN]${NC} $1"; }
+log_error() { echo -e "${RED}[ERROR]${NC} $1"; }
+
+# Get script directory
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+
+# Print banner
+echo ""
+echo "╔═══════════════════════════════════════════════════════════╗"
+echo "║        SecureGuard VPN Service Installer for macOS        ║"
+echo "╚═══════════════════════════════════════════════════════════╝"
 echo ""
 
-# Find the binary
-BINARY_PATH=""
-if [ -f "$SCRIPT_DIR/../../target/release/secureguard-poc" ]; then
-    BINARY_PATH="$SCRIPT_DIR/../../target/release/secureguard-poc"
-elif [ -f "$SCRIPT_DIR/secureguard-service" ]; then
-    BINARY_PATH="$SCRIPT_DIR/secureguard-service"
-else
-    echo "Error: Could not find secureguard binary"
-    echo "Please build with: cargo build --release"
+# Check for root privileges
+if [ "$EUID" -ne 0 ]; then
+    log_error "This script must be run as root (sudo)"
+    echo "Usage: sudo $0"
     exit 1
 fi
 
-echo "Using binary: $BINARY_PATH"
+# Check macOS version
+check_macos_version() {
+    local current_version
+    current_version=$(sw_vers -productVersion)
+    log_info "Detected macOS version: $current_version"
 
-# Stop existing service if running
-if launchctl list | grep -q "$SERVICE_NAME"; then
-    echo "Stopping existing service..."
-    launchctl unload "$LAUNCH_DAEMONS_DIR/$SERVICE_NAME.plist" 2>/dev/null || true
-fi
+    # Compare versions (basic comparison)
+    if [[ "$(printf '%s\n' "$MIN_MACOS_VERSION" "$current_version" | sort -V | head -n1)" != "$MIN_MACOS_VERSION" ]]; then
+        log_error "macOS $MIN_MACOS_VERSION or higher is required (found $current_version)"
+        exit 1
+    fi
+}
 
-# Create directories
-echo "Creating directories..."
-mkdir -p "$HELPER_TOOLS_DIR"
-mkdir -p "$DATA_DIR"
+# Find the binary
+find_binary() {
+    local binary_path=""
 
-# Copy binary
-echo "Installing binary..."
-cp "$BINARY_PATH" "$HELPER_TOOLS_DIR/secureguard-service"
-chmod 755 "$HELPER_TOOLS_DIR/secureguard-service"
-chown root:wheel "$HELPER_TOOLS_DIR/secureguard-service"
+    # Check various locations
+    if [ -f "$SCRIPT_DIR/../../target/release/secureguard-poc" ]; then
+        binary_path="$SCRIPT_DIR/../../target/release/secureguard-poc"
+    elif [ -f "$SCRIPT_DIR/secureguard-service" ]; then
+        binary_path="$SCRIPT_DIR/secureguard-service"
+    elif [ -f "/tmp/secureguard-service" ]; then
+        binary_path="/tmp/secureguard-service"
+    fi
 
-# Copy plist
-echo "Installing LaunchDaemon..."
-cp "$SCRIPT_DIR/com.secureguard.vpn-service.plist" "$LAUNCH_DAEMONS_DIR/"
-chmod 644 "$LAUNCH_DAEMONS_DIR/$SERVICE_NAME.plist"
-chown root:wheel "$LAUNCH_DAEMONS_DIR/$SERVICE_NAME.plist"
+    if [ -z "$binary_path" ]; then
+        log_error "Could not find secureguard binary"
+        echo ""
+        echo "Please either:"
+        echo "  1. Build with: cargo build --release"
+        echo "  2. Place binary at: $SCRIPT_DIR/secureguard-service"
+        exit 1
+    fi
 
-# Set up log files
-touch "$LOG_DIR/secureguard.log"
-touch "$LOG_DIR/secureguard.error.log"
-chmod 644 "$LOG_DIR/secureguard.log" "$LOG_DIR/secureguard.error.log"
+    echo "$binary_path"
+}
 
-# Load the service
-echo "Starting service..."
-launchctl load "$LAUNCH_DAEMONS_DIR/$SERVICE_NAME.plist"
+# Verify binary architecture
+verify_binary() {
+    local binary_path="$1"
+    local arch
+    arch=$(file "$binary_path")
+
+    log_info "Binary: $binary_path"
+
+    # Check if it's a valid executable
+    if ! file "$binary_path" | grep -q "Mach-O"; then
+        log_error "Binary is not a valid macOS executable"
+        exit 1
+    fi
+
+    # Get current architecture
+    local current_arch
+    current_arch=$(uname -m)
+
+    if [[ "$current_arch" == "arm64" ]] && ! echo "$arch" | grep -q "arm64"; then
+        log_warn "Binary may not be optimized for Apple Silicon"
+    fi
+
+    log_info "Binary architecture verified"
+}
+
+# Calculate SHA256 hash
+calculate_hash() {
+    local file_path="$1"
+    shasum -a 256 "$file_path" | awk '{print $1}'
+}
+
+# Backup existing installation
+backup_existing() {
+    local backup_dir="/tmp/secureguard-backup-$(date +%Y%m%d-%H%M%S)"
+
+    if [ -f "$HELPER_TOOLS_DIR/secureguard-service" ] || [ -f "$LAUNCH_DAEMONS_DIR/$SERVICE_NAME.plist" ]; then
+        log_info "Backing up existing installation to $backup_dir"
+        mkdir -p "$backup_dir"
+
+        [ -f "$HELPER_TOOLS_DIR/secureguard-service" ] && \
+            cp "$HELPER_TOOLS_DIR/secureguard-service" "$backup_dir/" 2>/dev/null || true
+        [ -f "$LAUNCH_DAEMONS_DIR/$SERVICE_NAME.plist" ] && \
+            cp "$LAUNCH_DAEMONS_DIR/$SERVICE_NAME.plist" "$backup_dir/" 2>/dev/null || true
+
+        log_info "Backup saved to: $backup_dir"
+    fi
+}
+
+# Stop existing service
+stop_existing_service() {
+    if launchctl list 2>/dev/null | grep -q "$SERVICE_NAME"; then
+        log_info "Stopping existing service..."
+        launchctl bootout system/"$SERVICE_NAME" 2>/dev/null || \
+        launchctl unload "$LAUNCH_DAEMONS_DIR/$SERVICE_NAME.plist" 2>/dev/null || true
+        sleep 2
+    fi
+
+    # Remove stale socket
+    if [ -S "$SOCKET_PATH" ]; then
+        rm -f "$SOCKET_PATH"
+    fi
+}
+
+# Create required directories
+create_directories() {
+    log_info "Creating directories..."
+
+    mkdir -p "$HELPER_TOOLS_DIR"
+    mkdir -p "$APPLICATION_SUPPORT_DIR"
+    mkdir -p "$DATA_DIR"
+
+    # Set permissions on data directory
+    chmod 700 "$DATA_DIR"
+}
+
+# Install binary
+install_binary() {
+    local binary_path="$1"
+    local dest="$HELPER_TOOLS_DIR/secureguard-service"
+
+    log_info "Installing binary..."
+
+    # Copy binary
+    cp "$binary_path" "$dest"
+
+    # Set ownership and permissions
+    chown root:wheel "$dest"
+    chmod 755 "$dest"
+
+    # Verify installation
+    local src_hash dest_hash
+    src_hash=$(calculate_hash "$binary_path")
+    dest_hash=$(calculate_hash "$dest")
+
+    if [ "$src_hash" != "$dest_hash" ]; then
+        log_error "Binary verification failed! Installation may be corrupted."
+        exit 1
+    fi
+
+    log_info "Binary installed and verified (SHA256: ${dest_hash:0:16}...)"
+}
+
+# Install plist and sandbox profile
+install_configs() {
+    log_info "Installing LaunchDaemon configuration..."
+
+    # Install plist
+    cp "$SCRIPT_DIR/com.secureguard.vpn-service.plist" "$LAUNCH_DAEMONS_DIR/"
+    chown root:wheel "$LAUNCH_DAEMONS_DIR/$SERVICE_NAME.plist"
+    chmod 644 "$LAUNCH_DAEMONS_DIR/$SERVICE_NAME.plist"
+
+    # Install sandbox profile (if exists)
+    if [ -f "$SCRIPT_DIR/com.secureguard.vpn-service.sb" ]; then
+        log_info "Installing sandbox profile..."
+        cp "$SCRIPT_DIR/com.secureguard.vpn-service.sb" "$APPLICATION_SUPPORT_DIR/"
+        chown root:wheel "$APPLICATION_SUPPORT_DIR/com.secureguard.vpn-service.sb"
+        chmod 644 "$APPLICATION_SUPPORT_DIR/com.secureguard.vpn-service.sb"
+    fi
+}
+
+# Set up logging
+setup_logging() {
+    log_info "Setting up logging..."
+
+    touch "$LOG_DIR/secureguard.log"
+    touch "$LOG_DIR/secureguard.error.log"
+
+    # Secure log permissions
+    chmod 640 "$LOG_DIR/secureguard.log" "$LOG_DIR/secureguard.error.log"
+    chown root:wheel "$LOG_DIR/secureguard.log" "$LOG_DIR/secureguard.error.log"
+}
+
+# Start the service
+start_service() {
+    log_info "Starting service..."
+
+    # Use bootstrap for modern macOS
+    if launchctl bootstrap system "$LAUNCH_DAEMONS_DIR/$SERVICE_NAME.plist" 2>/dev/null; then
+        log_info "Service bootstrapped successfully"
+    else
+        # Fallback to legacy load
+        launchctl load "$LAUNCH_DAEMONS_DIR/$SERVICE_NAME.plist"
+    fi
+
+    # Wait for service to start
+    sleep 2
+}
 
 # Verify service is running
-sleep 1
-if launchctl list | grep -q "$SERVICE_NAME"; then
+verify_service() {
+    log_info "Verifying service..."
+
+    # Check if service is registered
+    if ! launchctl list 2>/dev/null | grep -q "$SERVICE_NAME"; then
+        log_error "Service not found in launchctl list"
+        return 1
+    fi
+
+    # Check if socket exists
+    local retries=5
+    while [ $retries -gt 0 ]; do
+        if [ -S "$SOCKET_PATH" ]; then
+            log_info "IPC socket created successfully"
+            return 0
+        fi
+        sleep 1
+        ((retries--))
+    done
+
+    log_warn "Socket not created yet, but service may still be starting"
+    return 0
+}
+
+# Print success message
+print_success() {
     echo ""
-    echo "=== Installation Complete ==="
+    echo "╔═══════════════════════════════════════════════════════════╗"
+    echo "║            Installation Complete Successfully!            ║"
+    echo "╚═══════════════════════════════════════════════════════════╝"
     echo ""
-    echo "Service installed and running."
-    echo "Socket: /var/run/secureguard.sock"
-    echo "Logs: /var/log/secureguard.log"
+    echo "Service Details:"
+    echo "  Binary:  $HELPER_TOOLS_DIR/secureguard-service"
+    echo "  Socket:  $SOCKET_PATH"
+    echo "  Logs:    $LOG_DIR/secureguard.log"
+    echo "  Data:    $DATA_DIR"
     echo ""
-    echo "Commands:"
-    echo "  Stop:    sudo launchctl unload $LAUNCH_DAEMONS_DIR/$SERVICE_NAME.plist"
-    echo "  Start:   sudo launchctl load $LAUNCH_DAEMONS_DIR/$SERVICE_NAME.plist"
+    echo "Management Commands:"
     echo "  Status:  sudo launchctl list | grep secureguard"
-    echo "  Logs:    tail -f /var/log/secureguard.log"
-else
+    echo "  Stop:    sudo launchctl bootout system/$SERVICE_NAME"
+    echo "  Start:   sudo launchctl bootstrap system $LAUNCH_DAEMONS_DIR/$SERVICE_NAME.plist"
+    echo "  Logs:    tail -f $LOG_DIR/secureguard.log"
     echo ""
-    echo "Warning: Service may not have started correctly."
-    echo "Check logs: tail /var/log/secureguard.error.log"
-fi
+}
+
+# Print failure message
+print_failure() {
+    echo ""
+    log_error "Installation may have encountered issues."
+    echo ""
+    echo "Troubleshooting:"
+    echo "  Check logs:  tail $LOG_DIR/secureguard.error.log"
+    echo "  Check service: sudo launchctl list | grep secureguard"
+    echo "  Verify binary: $HELPER_TOOLS_DIR/secureguard-service --version"
+    echo ""
+}
+
+# Main installation flow
+main() {
+    check_macos_version
+
+    local binary_path
+    binary_path=$(find_binary)
+    verify_binary "$binary_path"
+
+    backup_existing
+    stop_existing_service
+    create_directories
+    install_binary "$binary_path"
+    install_configs
+    setup_logging
+    start_service
+
+    if verify_service; then
+        print_success
+    else
+        print_failure
+        exit 1
+    fi
+}
+
+# Run main
+main "$@"

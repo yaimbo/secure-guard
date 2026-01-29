@@ -1,0 +1,61 @@
+;; SecureGuard VPN Service Sandbox Profile
+;; This profile restricts the daemon to only the capabilities it needs
+
+(version 1)
+
+;; Deny everything by default
+(deny default)
+
+;; Allow basic process operations
+(allow process-fork)
+(allow process-exec* (literal "/Library/PrivilegedHelperTools/secureguard-service"))
+
+;; Allow network operations (required for VPN)
+(allow network-outbound)
+(allow network-inbound)
+(allow network-bind)
+(allow system-socket)
+
+;; Allow TUN device operations
+(allow file-read* file-write*
+    (literal "/dev/tun0")
+    (literal "/dev/tun1")
+    (literal "/dev/tun2")
+    (literal "/dev/tun3")
+    (regex #"^/dev/tun[0-9]+$"))
+
+;; Allow IPC socket operations
+(allow file-read* file-write* file-ioctl
+    (literal "/var/run/secureguard.sock"))
+
+;; Allow reading/writing to data directory
+(allow file-read* file-write*
+    (subpath "/var/lib/secureguard"))
+
+;; Allow reading/writing logs
+(allow file-read* file-write*
+    (literal "/var/log/secureguard.log")
+    (literal "/var/log/secureguard.error.log"))
+
+;; Allow reading system configuration
+(allow file-read*
+    (literal "/etc/resolv.conf")
+    (subpath "/etc/hosts")
+    (subpath "/private/etc"))
+
+;; Allow signal handling
+(allow signal (target self))
+
+;; Allow mach lookups for system services
+(allow mach-lookup
+    (global-name "com.apple.system.logger")
+    (global-name "com.apple.system.notification_center"))
+
+;; Allow sysctl reads (for network info)
+(allow sysctl-read)
+
+;; Allow reading from standard library paths
+(allow file-read*
+    (subpath "/usr/lib")
+    (subpath "/System/Library")
+    (subpath "/Library/Frameworks"))

@@ -11,33 +11,39 @@
     <array>
         <string>/Library/PrivilegedHelperTools/secureguard-service</string>
         <string>--daemon</string>
+        <string>--socket</string>
+        <string>/var/run/secureguard.sock</string>
     </array>
 
     <!-- Run at system boot -->
     <key>RunAtLoad</key>
     <true/>
 
-    <!-- Restart if the process exits -->
+    <!-- Restart policy -->
     <key>KeepAlive</key>
     <dict>
-        <!-- Restart if the process crashes -->
+        <!-- Restart if the process crashes (non-zero exit) -->
         <key>SuccessfulExit</key>
         <false/>
+        <!-- Restart if network becomes available -->
+        <key>NetworkState</key>
+        <true/>
     </dict>
 
     <!-- Throttle restarts (don't restart more than once per 10 seconds) -->
     <key>ThrottleInterval</key>
     <integer>10</integer>
 
-    <!-- Socket for IPC communication -->
+    <!-- Socket for IPC communication (launchd manages the socket) -->
     <key>Sockets</key>
     <dict>
         <key>SecureGuardSocket</key>
         <dict>
             <key>SockPathName</key>
             <string>/var/run/secureguard.sock</string>
+            <!-- 0660 - owner/group read-write only -->
             <key>SockPathMode</key>
-            <integer>438</integer> <!-- 0666 in octal -->
+            <integer>432</integer>
         </dict>
     </dict>
 
@@ -51,11 +57,15 @@
     <key>WorkingDirectory</key>
     <string>/var/lib/secureguard</string>
 
-    <!-- Run as root (required for TUN device) -->
+    <!-- Run as root (required for TUN device creation) -->
     <key>UserName</key>
     <string>root</string>
     <key>GroupName</key>
     <string>wheel</string>
+
+    <!-- File creation mask (stricter permissions on created files) -->
+    <key>Umask</key>
+    <integer>63</integer> <!-- 0077 in octal - owner only -->
 
     <!-- Environment variables -->
     <key>EnvironmentVariables</key>
@@ -64,14 +74,62 @@
         <string>/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin</string>
         <key>RUST_LOG</key>
         <string>info</string>
+        <key>RUST_BACKTRACE</key>
+        <string>1</string>
     </dict>
 
-    <!-- Process limits -->
+    <!-- Process type for resource scheduling -->
     <key>ProcessType</key>
     <string>Interactive</string>
 
-    <!-- Nice priority (lower = higher priority) -->
+    <!-- Nice priority (lower = higher priority, -5 for VPN responsiveness) -->
     <key>Nice</key>
     <integer>-5</integer>
+
+    <!-- Timeout for graceful shutdown (seconds) -->
+    <key>ExitTimeOut</key>
+    <integer>30</integer>
+
+    <!-- Enable sandbox (requires sandbox profile) -->
+    <!-- Note: Uncomment when sandbox profile is tested and verified -->
+    <!-- <key>SandboxProfile</key> -->
+    <!-- <string>/Library/Application Support/SecureGuard/com.secureguard.vpn-service.sb</string> -->
+
+    <!-- Soft resource limits -->
+    <key>SoftResourceLimits</key>
+    <dict>
+        <!-- Max open files -->
+        <key>NumberOfFiles</key>
+        <integer>1024</integer>
+    </dict>
+
+    <!-- Hard resource limits -->
+    <key>HardResourceLimits</key>
+    <dict>
+        <!-- Max open files -->
+        <key>NumberOfFiles</key>
+        <integer>4096</integer>
+    </dict>
+
+    <!-- Session type - run in system session -->
+    <key>LimitLoadToSessionType</key>
+    <array>
+        <string>System</string>
+    </array>
+
+    <!-- Enable mach service for on-demand activation -->
+    <key>MachServices</key>
+    <dict>
+        <key>com.secureguard.vpn-service</key>
+        <true/>
+    </dict>
+
+    <!-- Don't wait for debugger -->
+    <key>WaitForDebugger</key>
+    <false/>
+
+    <!-- Abandon process group on termination -->
+    <key>AbandonProcessGroup</key>
+    <false/>
 </dict>
 </plist>
