@@ -74,6 +74,13 @@ fi
 echo -e "\n${YELLOW}Starting Dart API server...${NC}"
 cd "$SERVER_DIR"
 
+# Check for .env file
+if [ ! -f ".env" ]; then
+    echo -e "${RED}Error: .env file not found in $SERVER_DIR${NC}"
+    echo "Copy .env.example to .env and configure your database settings"
+    exit 1
+fi
+
 # Get dependencies if needed
 if [ ! -d ".dart_tool" ]; then
     echo "Running dart pub get for server..."
@@ -93,8 +100,16 @@ for i in {1..30}; do
         echo -e "${GREEN}API server is ready!${NC}"
         break
     fi
+    # Check if server process is still running
+    if ! kill -0 $SERVER_PID 2>/dev/null; then
+        echo -e "${RED}Error: Server process died. Check logs:${NC}"
+        tail -20 /tmp/secureguard-server.log
+        exit 1
+    fi
     if [ $i -eq 30 ]; then
-        echo -e "${YELLOW}Warning: API server may not be fully ready yet${NC}"
+        echo -e "${RED}Error: Server failed to start within 30 seconds${NC}"
+        tail -20 /tmp/secureguard-server.log
+        exit 1
     fi
     sleep 1
 done
