@@ -35,3 +35,9 @@ tarpaulin-report.html
 
 # OS generated files
 Thumbs.db
+
+# Dart/Flutter build artifacts
+.dart_tool/
+.packages
+*.freezed.dart
+*.g.dart
