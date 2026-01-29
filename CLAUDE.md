@@ -287,3 +287,88 @@ Default: `http://localhost:8080/api/v1`
 - Client key regeneration UI exists but action not connected
 - Logout doesn't invalidate refresh tokens in Redis (Redis not yet integrated)
 
+## Flutter Desktop Client
+
+Located in `secureguard_client/`. A Flutter desktop app for end-users to control the VPN connection.
+
+### Quick Start
+
+```bash
+cd secureguard_client
+
+# Get dependencies
+flutter pub get
+
+# Run in development mode (daemon must be running)
+flutter run -d macos   # or -d linux, -d windows
+
+# Build for production
+flutter build macos --release
+```
+
+### Architecture
+
+- **State Management**: Riverpod (flutter_riverpod)
+- **IPC**: Unix socket communication with Rust daemon (JSON-RPC 2.0)
+- **System Tray**: tray_manager for menu bar/system tray integration
+- **Window Management**: window_manager for custom title bar
+
+### Project Structure
+
+```
+secureguard_client/lib/
+├── main.dart              # Entry point, service initialization
+├── screens/
+│   └── home_screen.dart   # Main VPN control screen
+├── services/
+│   ├── ipc_client.dart    # Unix socket IPC to Rust daemon
+│   ├── tray_service.dart  # System tray integration
+│   ├── api_client.dart    # HTTP client for server API
+│   └── update_service.dart # Auto-update functionality
+├── providers/
+│   └── vpn_provider.dart  # VPN state management
+└── widgets/
+    ├── status_card.dart       # Connection status display
+    ├── traffic_stats.dart     # Bytes sent/received
+    ├── connection_button.dart # Connect/disconnect button
+    └── config_dialog.dart     # WireGuard config input
+```
+
+### IPC Communication
+
+The client communicates with the Rust daemon via Unix socket at `/var/run/secureguard.sock`.
+
+**JSON-RPC Commands:**
+- `connect` - Connect with WireGuard config
+- `disconnect` - Disconnect VPN
+- `status` - Get current connection status
+
+### Auto-Update Service
+
+The client automatically checks for updates:
+- **Config version check**: Every 5 minutes
+- **Binary update check**: Every 1 hour
+
+When a config update is detected, the client:
+1. Fetches new config from server
+2. If connected, seamlessly reconnects with new config
+3. If disconnected, stores config for next connection
+
+Binary updates:
+1. Download update with SHA256 verification
+2. Ed25519 signature verification (requires UPDATE_SIGNING_PUBLIC_KEY at build time)
+3. Platform-specific installation
+
+### System Tray
+
+The app minimizes to system tray on close:
+- **Icons**: Shield icons in green/gray/amber/red for connection states
+- **Menu**: Connect, Disconnect, Show Window, Quit
+- **Click**: Shows/focuses the main window
+
+### Known Limitations (TODOs)
+
+- Ed25519 signature verification is a placeholder (validates lengths only)
+- For production, implement via flutter_rust_bridge or platform channels
+- Device enrollment flow not yet integrated with SSO
+
