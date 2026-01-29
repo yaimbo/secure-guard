@@ -335,17 +335,17 @@ class ClientRoutes {
 
   Future<Response> _getQrCode(Request request, String id) async {
     try {
-      final qrData = await clientService.generateQrCode(id);
+      final qrPng = await clientService.generateQrCode(id);
 
-      if (qrData == null) {
+      if (qrPng == null) {
         return Response(404,
             body: jsonEncode({'error': 'Client not found'}),
             headers: {'content-type': 'application/json'});
       }
 
       return Response.ok(
-        jsonEncode({'qr_data': qrData}),
-        headers: {'content-type': 'application/json'},
+        qrPng,
+        headers: {'content-type': 'image/png'},
       );
     } catch (e) {
       return Response.internalServerError(

@@ -4,9 +4,11 @@ import 'dart:io';
 import 'dart:typed_data';
 
 import 'package:crypto/crypto.dart';
+import 'package:cryptography/cryptography.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import 'api_client.dart';
+import 'ipc_client.dart';
 
 /// Service for handling config and binary updates
 class UpdateService {
@@ -191,7 +193,7 @@ class UpdateService {
       }
 
       // Verify Ed25519 signature
-      if (!_verifySignature(bytes, updateInfo.signature)) {
+      if (!await _verifySignature(bytes, updateInfo.signature)) {
         await tempDir.delete(recursive: true);
         return DownloadResult.error('Signature verification failed');
       }
@@ -200,6 +202,137 @@ class UpdateService {
     } catch (e) {
       return DownloadResult.error('Download failed: $e');
     }
+  }
+
+  /// Install downloaded update and restart the service
+  ///
+  /// This method:
+  /// 1. Disconnects the VPN
+  /// 2. Copies the new binary with elevated privileges
+  /// 3. Restarts the daemon service
+  /// 4. Reconnects the VPN (if previously connected)
+  Future<InstallResult> installUpdate(String downloadPath, {IpcClient? ipcClient}) async {
+    try {
+      if (Platform.isMacOS) {
+        return await _installMacOS(downloadPath, ipcClient);
+      } else if (Platform.isLinux) {
+        return await _installLinux(downloadPath, ipcClient);
+      } else if (Platform.isWindows) {
+        return await _installWindows(downloadPath, ipcClient);
+      }
+      return InstallResult.error('Unsupported platform');
+    } catch (e) {
+      return InstallResult.error('Install failed: $e');
+    }
+  }
+
+  /// Install update on macOS
+  Future<InstallResult> _installMacOS(String downloadPath, IpcClient? ipcClient) async {
+    // 1. Disconnect VPN if connected
+    if (ipcClient != null && ipcClient.isConnectedToDaemon) {
+      try {
+        await ipcClient.disconnectVpn();
+      } catch (_) {
+        // Ignore - may already be disconnected
+      }
+    }
+
+    // 2. Copy binary with admin privileges using osascript
+    final targetPath = '/Library/PrivilegedHelperTools/secureguard-service';
+    final script = '''
+      do shell script "cp '$downloadPath' '$targetPath' && chmod 755 '$targetPath'" with administrator privileges
+    ''';
+
+    final result = await Process.run('osascript', ['-e', script]);
+    if (result.exitCode != 0) {
+      return InstallResult.error('Failed to copy binary: ${result.stderr}');
+    }
+
+    // 3. Restart the daemon using launchctl
+    await Process.run('launchctl', ['kickstart', '-k', 'system/com.secureguard.vpn-service']);
+
+    // 4. Wait for daemon to restart
+    await Future.delayed(const Duration(seconds: 2));
+
+    // 5. Reconnect IPC client
+    if (ipcClient != null) {
+      await ipcClient.connect();
+    }
+
+    return InstallResult.success();
+  }
+
+  /// Install update on Linux
+  Future<InstallResult> _installLinux(String downloadPath, IpcClient? ipcClient) async {
+    // 1. Disconnect VPN if connected
+    if (ipcClient != null && ipcClient.isConnectedToDaemon) {
+      try {
+        await ipcClient.disconnectVpn();
+      } catch (_) {
+        // Ignore - may already be disconnected
+      }
+    }
+
+    // 2. Copy binary and restart service with pkexec
+    final targetPath = '/usr/local/bin/secureguard-service';
+    final result = await Process.run('pkexec', [
+      'sh',
+      '-c',
+      "cp '$downloadPath' '$targetPath' && chmod 755 '$targetPath' && systemctl restart secureguard",
+    ]);
+
+    if (result.exitCode != 0) {
+      return InstallResult.error('Failed to install update: ${result.stderr}');
+    }
+
+    // 3. Wait for daemon to restart
+    await Future.delayed(const Duration(seconds: 2));
+
+    // 4. Reconnect IPC client
+    if (ipcClient != null) {
+      await ipcClient.connect();
+    }
+
+    return InstallResult.success();
+  }
+
+  /// Install update on Windows
+  Future<InstallResult> _installWindows(String downloadPath, IpcClient? ipcClient) async {
+    // 1. Disconnect VPN if connected
+    if (ipcClient != null && ipcClient.isConnectedToDaemon) {
+      try {
+        await ipcClient.disconnectVpn();
+      } catch (_) {
+        // Ignore - may already be disconnected
+      }
+    }
+
+    // 2. Stop service, copy binary, start service using elevated PowerShell
+    final targetPath = r'C:\Program Files\SecureGuard\secureguard-service.exe';
+    final psScript = '''
+      Stop-Service SecureGuardVPN -ErrorAction SilentlyContinue;
+      Copy-Item '$downloadPath' '$targetPath' -Force;
+      Start-Service SecureGuardVPN
+    ''';
+
+    final result = await Process.run('powershell', [
+      '-Command',
+      'Start-Process powershell -Verb RunAs -Wait -ArgumentList "-Command $psScript"',
+    ]);
+
+    if (result.exitCode != 0) {
+      return InstallResult.error('Failed to install update: ${result.stderr}');
+    }
+
+    // 3. Wait for service to restart
+    await Future.delayed(const Duration(seconds: 3));
+
+    // 4. Reconnect IPC client
+    if (ipcClient != null) {
+      await ipcClient.connect();
+    }
+
+    return InstallResult.success();
   }
 
   /// Send heartbeat to server
@@ -235,7 +368,7 @@ class UpdateService {
   ///
   /// The signature is expected to be base64-encoded Ed25519 signature.
   /// The public key is embedded at build time via UPDATE_SIGNING_PUBLIC_KEY.
-  bool _verifySignature(Uint8List data, String signatureBase64) {
+  Future<bool> _verifySignature(Uint8List data, String signatureBase64) async {
     try {
       // The update signing public key (embedded in client at build time)
       const publicKeyBase64 = String.fromEnvironment(
@@ -253,34 +386,23 @@ class UpdateService {
       final signature = base64Decode(signatureBase64);
       final publicKey = base64Decode(publicKeyBase64);
 
-      // Verify Ed25519 signature
-      // Note: This requires a native implementation or FFI binding
-      // For production, integrate with the Rust crypto library via FFI
-      // or use a platform channel to call native Ed25519 verification
-      return _verifyEd25519Native(data, signature, publicKey);
+      // Verify Ed25519 signature using the cryptography package
+      return await _verifyEd25519Native(data, signature, publicKey);
     } catch (e) {
       // Signature verification failed
       return false;
     }
   }
 
-  /// Native Ed25519 verification
+  /// Ed25519 signature verification using the cryptography package.
   ///
-  /// In production, this should call native code via FFI or platform channel.
-  /// The Rust daemon already has Ed25519 support that can be exposed.
-  bool _verifyEd25519Native(
+  /// Verifies that the given message was signed with the private key
+  /// corresponding to the provided public key.
+  Future<bool> _verifyEd25519Native(
     Uint8List message,
     Uint8List signature,
     Uint8List publicKey,
-  ) {
-    // Placeholder: In production, call native verification
-    // For now, we rely on SHA256 hash verification and HTTPS transport
-    //
-    // To implement properly:
-    // 1. Use flutter_rust_bridge to call Rust Ed25519 verification
-    // 2. Or use platform channels to call native crypto APIs
-    // 3. Or use dart:ffi with libsodium
-
+  ) async {
     // Validate signature length (Ed25519 signatures are 64 bytes)
     if (signature.length != 64) {
       return false;
@@ -291,9 +413,30 @@ class UpdateService {
       return false;
     }
 
-    // For development, return true if lengths are valid
-    // Production builds must implement actual verification
-    return true;
+    try {
+      final algorithm = Ed25519();
+
+      // Create the public key object
+      final pubKey = SimplePublicKey(
+        List<int>.from(publicKey),
+        type: KeyPairType.ed25519,
+      );
+
+      // Create the signature object
+      final sig = Signature(
+        List<int>.from(signature),
+        publicKey: pubKey,
+      );
+
+      // Verify the signature
+      return await algorithm.verify(
+        List<int>.from(message),
+        signature: sig,
+      );
+    } catch (e) {
+      // Verification failed due to invalid key format or other error
+      return false;
+    }
   }
 
   void dispose() {
@@ -440,6 +583,26 @@ class DownloadResult {
       );
 
   factory DownloadResult.error(String error) => DownloadResult._(
+        isSuccess: false,
+        error: error,
+      );
+}
+
+/// Result of update installation
+class InstallResult {
+  final bool isSuccess;
+  final String? error;
+
+  InstallResult._({
+    required this.isSuccess,
+    this.error,
+  });
+
+  factory InstallResult.success() => InstallResult._(
+        isSuccess: true,
+      );
+
+  factory InstallResult.error(String error) => InstallResult._(
         isSuccess: false,
         error: error,
       );

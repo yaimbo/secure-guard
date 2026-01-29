@@ -1,3 +1,8 @@
+import 'dart:typed_data';
+
+import 'package:image/image.dart' as img;
+import 'package:qr/qr.dart';
+
 import '../models/client.dart';
 import '../repositories/client_repository.dart';
 import '../repositories/server_config_repository.dart';
@@ -148,14 +153,51 @@ class ClientService {
     );
   }
 
-  /// Generate QR code data for a client config
-  Future<String?> generateQrCode(String id) async {
+  /// Generate QR code PNG image for a client config
+  Future<Uint8List?> generateQrCode(String id) async {
     final config = await generateConfigFile(id);
     if (config == null) return null;
 
-    // Return config as-is - the UI will generate QR from this
-    // (QR generation is typically done client-side)
-    return config;
+    // Generate QR code matrix
+    final qrCode = QrCode.fromData(
+      data: config,
+      errorCorrectLevel: QrErrorCorrectLevel.M,
+    );
+
+    // Create QrImage for rendering (provides isDark method)
+    final qrImage = QrImage(qrCode);
+
+    // Render to PNG image
+    final moduleCount = qrImage.moduleCount;
+    const scale = 8; // pixels per module
+    const margin = 4; // modules of margin
+    final size = (moduleCount + margin * 2) * scale;
+
+    final image = img.Image(width: size, height: size);
+
+    // Fill white background
+    img.fill(image, color: img.ColorRgb8(255, 255, 255));
+
+    // Draw QR modules
+    for (var y = 0; y < moduleCount; y++) {
+      for (var x = 0; x < moduleCount; x++) {
+        if (qrImage.isDark(y, x)) {
+          final px = (x + margin) * scale;
+          final py = (y + margin) * scale;
+          img.fillRect(
+            image,
+            x1: px,
+            y1: py,
+            x2: px + scale,
+            y2: py + scale,
+            color: img.ColorRgb8(0, 0, 0),
+          );
+        }
+      }
+    }
+
+    // Encode to PNG
+    return Uint8List.fromList(img.encodePng(image));
   }
 
   /// Update last seen timestamp (called from heartbeat)

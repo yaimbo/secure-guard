@@ -527,11 +527,118 @@ fn chrono_now() -> String {
 impl DaemonService {
     /// Run the daemon service on Windows (named pipe)
     pub async fn run(&self) -> Result<(), SecureGuardError> {
-        // Windows named pipe implementation would go here
-        // For now, return an error as Windows support is not yet implemented
-        Err(SecureGuardError::Config(ConfigError::ParseError {
-            line: 0,
-            message: "Windows daemon mode not yet implemented".to_string(),
-        }))
+        use tokio::net::windows::named_pipe::ServerOptions;
+
+        let pipe_name = self.socket_path.to_string_lossy();
+
+        tracing::info!("Daemon listening on {}", pipe_name);
+
+        // Create first pipe instance
+        let mut server = ServerOptions::new()
+            .first_pipe_instance(true)
+            .create(&*pipe_name)
+            .map_err(|e| {
+                SecureGuardError::Config(ConfigError::ParseError {
+                    line: 0,
+                    message: format!("Failed to create named pipe {}: {}", pipe_name, e),
+                })
+            })?;
+
+        loop {
+            // Wait for a client to connect
+            if let Err(e) = server.connect().await {
+                tracing::error!("Failed to accept connection: {}", e);
+                continue;
+            }
+
+            tracing::debug!("Client connected to named pipe");
+
+            // Create a new pipe instance for the next client before handling this one
+            let new_server = ServerOptions::new()
+                .create(&*pipe_name)
+                .map_err(|e| {
+                    SecureGuardError::Config(ConfigError::ParseError {
+                        line: 0,
+                        message: format!("Failed to create new pipe instance: {}", e),
+                    })
+                })?;
+
+            // Move the connected pipe to the handler, use new server for next iteration
+            let connected_pipe = std::mem::replace(&mut server, new_server);
+
+            let state = Arc::clone(&self.state);
+            let status_rx = self.status_tx.subscribe();
+            let status_tx = self.status_tx.clone();
+
+            tokio::spawn(async move {
+                if let Err(e) =
+                    Self::handle_client_windows(connected_pipe, state, status_tx, status_rx).await
+                {
+                    tracing::error!("Client handler error: {}", e);
+                }
+            });
+        }
+    }
+
+    /// Handle a single client connection on Windows
+    async fn handle_client_windows(
+        pipe: tokio::net::windows::named_pipe::NamedPipeServer,
+        state: Arc<Mutex<DaemonState>>,
+        status_tx: broadcast::Sender<String>,
+        mut status_rx: broadcast::Receiver<String>,
+    ) -> Result<(), SecureGuardError> {
+        let (reader, mut writer) = tokio::io::split(pipe);
+        let mut reader = BufReader::new(reader);
+        let mut line = String::new();
+
+        loop {
+            tokio::select! {
+                // Handle incoming requests
+                result = reader.read_line(&mut line) => {
+                    match result {
+                        Ok(0) => {
+                            // Client disconnected
+                            tracing::debug!("Client disconnected");
+                            break;
+                        }
+                        Ok(_) => {
+                            let response = Self::process_request(&line, &state, &status_tx).await;
+                            let response_json = serde_json::to_string(&response)
+                                .unwrap_or_else(|_| r#"{"jsonrpc":"2.0","error":{"code":-32603,"message":"Serialization error"},"id":null}"#.to_string());
+
+                            if let Err(e) = writer.write_all(response_json.as_bytes()).await {
+                                tracing::error!("Failed to write response: {}", e);
+                                break;
+                            }
+                            if let Err(e) = writer.write_all(b"\n").await {
+                                tracing::error!("Failed to write newline: {}", e);
+                                break;
+                            }
+                            line.clear();
+                        }
+                        Err(e) => {
+                            tracing::error!("Read error: {}", e);
+                            break;
+                        }
+                    }
+                }
+
+                // Forward status notifications to client
+                notification = status_rx.recv() => {
+                    if let Ok(notification) = notification {
+                        if let Err(e) = writer.write_all(notification.as_bytes()).await {
+                            tracing::error!("Failed to write notification: {}", e);
+                            break;
+                        }
+                        if let Err(e) = writer.write_all(b"\n").await {
+                            tracing::error!("Failed to write newline: {}", e);
+                            break;
+                        }
+                    }
+                }
+            }
+        }
+
+        Ok(())
     }
 }
