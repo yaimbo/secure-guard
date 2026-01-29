@@ -3,6 +3,7 @@ import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../config/theme.dart';
+import '../services/api_service.dart';
 
 class SettingsScreen extends ConsumerWidget {
   const SettingsScreen({super.key});
@@ -33,6 +34,15 @@ class SettingsScreen extends ConsumerWidget {
               title: 'Admin Users',
               icon: Icons.admin_panel_settings,
               child: _AdminUsersSection(),
+            ),
+            const SizedBox(height: 24),
+
+            // SSO Configuration
+            _buildSection(
+              context,
+              title: 'Single Sign-On (SSO)',
+              icon: Icons.security,
+              child: _SSOConfigSection(),
             ),
             const SizedBox(height: 24),
 
@@ -374,6 +384,423 @@ class _AdminUsersSection extends ConsumerWidget {
             child: const Text('Create'),
           ),
         ],
+      ),
+    );
+  }
+}
+
+class _SSOConfigSection extends ConsumerStatefulWidget {
+  @override
+  ConsumerState<_SSOConfigSection> createState() => _SSOConfigSectionState();
+}
+
+class _SSOConfigSectionState extends ConsumerState<_SSOConfigSection> {
+  List<SSOConfig> _configs = [];
+  bool _isLoading = true;
+  String? _error;
+
+  @override
+  void initState() {
+    super.initState();
+    _loadConfigs();
+  }
+
+  Future<void> _loadConfigs() async {
+    setState(() {
+      _isLoading = true;
+      _error = null;
+    });
+
+    try {
+      final api = ref.read(apiServiceProvider);
+      final configs = await api.getSSOConfigs();
+      if (mounted) {
+        setState(() {
+          _configs = configs;
+          _isLoading = false;
+        });
+      }
+    } catch (e) {
+      if (mounted) {
+        setState(() {
+          _error = e.toString();
+          _isLoading = false;
+        });
+      }
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    if (_isLoading) {
+      return const Center(
+        child: Padding(
+          padding: EdgeInsets.all(24),
+          child: CircularProgressIndicator(),
+        ),
+      );
+    }
+
+    if (_error != null) {
+      return Column(
+        children: [
+          Text('Failed to load SSO configs: $_error'),
+          const SizedBox(height: 16),
+          OutlinedButton(
+            onPressed: _loadConfigs,
+            child: const Text('Retry'),
+          ),
+        ],
+      );
+    }
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(
+          'Configure SSO providers to allow users to authenticate with their corporate identity.',
+          style: TextStyle(color: Colors.grey[600]),
+        ),
+        const SizedBox(height: 16),
+
+        // List existing configs
+        if (_configs.isEmpty)
+          Container(
+            padding: const EdgeInsets.all(24),
+            decoration: BoxDecoration(
+              color: Colors.grey[100],
+              borderRadius: BorderRadius.circular(8),
+            ),
+            child: Row(
+              children: [
+                Icon(Icons.info_outline, color: Colors.grey[500]),
+                const SizedBox(width: 12),
+                const Text('No SSO providers configured'),
+              ],
+            ),
+          )
+        else
+          ..._configs.map((config) => _buildProviderCard(config)),
+
+        const SizedBox(height: 16),
+        OutlinedButton.icon(
+          onPressed: () => _showAddProviderDialog(context),
+          icon: const Icon(Icons.add),
+          label: const Text('Add SSO Provider'),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildProviderCard(SSOConfig config) {
+    final providerName = _getProviderDisplayName(config.providerId);
+    final providerIcon = _getProviderIcon(config.providerId);
+
+    return Card(
+      margin: const EdgeInsets.only(bottom: 12),
+      child: ListTile(
+        leading: Icon(providerIcon, size: 32, color: AppTheme.primary),
+        title: Text(providerName),
+        subtitle: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text('Client ID: ${_maskString(config.clientId)}'),
+            if (config.tenantId != null)
+              Text('Tenant: ${config.tenantId}', style: TextStyle(color: Colors.grey[600], fontSize: 12)),
+          ],
+        ),
+        trailing: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Switch(
+              value: config.enabled,
+              onChanged: (enabled) => _toggleProvider(config, enabled),
+            ),
+            IconButton(
+              icon: const Icon(Icons.edit_outlined),
+              tooltip: 'Edit',
+              onPressed: () => _showEditProviderDialog(context, config),
+            ),
+            IconButton(
+              icon: const Icon(Icons.delete_outline),
+              tooltip: 'Delete',
+              onPressed: () => _confirmDelete(context, config),
+            ),
+          ],
+        ),
+        isThreeLine: true,
+      ),
+    );
+  }
+
+  String _getProviderDisplayName(String providerId) {
+    switch (providerId) {
+      case 'azure':
+        return 'Microsoft Entra ID (Azure AD)';
+      case 'okta':
+        return 'Okta';
+      case 'google':
+        return 'Google Workspace';
+      default:
+        return providerId.toUpperCase();
+    }
+  }
+
+  IconData _getProviderIcon(String providerId) {
+    switch (providerId) {
+      case 'azure':
+        return Icons.window;
+      case 'okta':
+        return Icons.shield;
+      case 'google':
+        return Icons.g_mobiledata;
+      default:
+        return Icons.security;
+    }
+  }
+
+  String _maskString(String value) {
+    if (value.length <= 8) return '****';
+    return '${value.substring(0, 4)}...${value.substring(value.length - 4)}';
+  }
+
+  Future<void> _toggleProvider(SSOConfig config, bool enabled) async {
+    try {
+      final api = ref.read(apiServiceProvider);
+      await api.saveSSOConfig(SSOConfig(
+        providerId: config.providerId,
+        clientId: config.clientId,
+        clientSecret: config.clientSecret,
+        tenantId: config.tenantId,
+        domain: config.domain,
+        scopes: config.scopes,
+        enabled: enabled,
+      ));
+      await _loadConfigs();
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Failed to update provider: $e')),
+        );
+      }
+    }
+  }
+
+  void _confirmDelete(BuildContext context, SSOConfig config) {
+    showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Delete SSO Provider'),
+        content: Text(
+          'Are you sure you want to delete ${_getProviderDisplayName(config.providerId)}? '
+          'Users will no longer be able to sign in with this provider.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(),
+            child: const Text('Cancel'),
+          ),
+          FilledButton(
+            onPressed: () async {
+              Navigator.of(context).pop();
+              try {
+                final api = ref.read(apiServiceProvider);
+                await api.deleteSSOConfig(config.providerId);
+                await _loadConfigs();
+                if (mounted) {
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    const SnackBar(content: Text('SSO provider deleted')),
+                  );
+                }
+              } catch (e) {
+                if (mounted) {
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    SnackBar(content: Text('Failed to delete: $e')),
+                  );
+                }
+              }
+            },
+            style: FilledButton.styleFrom(backgroundColor: AppTheme.error),
+            child: const Text('Delete'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  void _showAddProviderDialog(BuildContext context) {
+    _showProviderDialog(context, null);
+  }
+
+  void _showEditProviderDialog(BuildContext context, SSOConfig config) {
+    _showProviderDialog(context, config);
+  }
+
+  void _showProviderDialog(BuildContext context, SSOConfig? existingConfig) {
+    final isEdit = existingConfig != null;
+    String selectedProvider = existingConfig?.providerId ?? 'azure';
+    final clientIdController = TextEditingController(text: existingConfig?.clientId);
+    final clientSecretController = TextEditingController(text: existingConfig?.clientSecret);
+    final tenantIdController = TextEditingController(text: existingConfig?.tenantId);
+    final domainController = TextEditingController(text: existingConfig?.domain);
+    bool enabled = existingConfig?.enabled ?? true;
+    final formKey = GlobalKey<FormState>();
+
+    showDialog(
+      context: context,
+      builder: (context) => StatefulBuilder(
+        builder: (context, setDialogState) => AlertDialog(
+          title: Text(isEdit ? 'Edit SSO Provider' : 'Add SSO Provider'),
+          content: SizedBox(
+            width: 500,
+            child: Form(
+              key: formKey,
+              child: SingleChildScrollView(
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    if (!isEdit) ...[
+                      DropdownButtonFormField<String>(
+                        value: selectedProvider,
+                        decoration: const InputDecoration(labelText: 'Provider'),
+                        items: const [
+                          DropdownMenuItem(value: 'azure', child: Text('Microsoft Entra ID (Azure AD)')),
+                          DropdownMenuItem(value: 'okta', child: Text('Okta')),
+                          DropdownMenuItem(value: 'google', child: Text('Google Workspace')),
+                        ],
+                        onChanged: (value) {
+                          setDialogState(() => selectedProvider = value!);
+                        },
+                      ),
+                      const SizedBox(height: 16),
+                    ],
+
+                    TextFormField(
+                      controller: clientIdController,
+                      decoration: const InputDecoration(
+                        labelText: 'Client ID',
+                        hintText: 'Application (client) ID',
+                        helperText: 'Found in your identity provider\'s app registration',
+                      ),
+                      validator: (value) {
+                        if (value == null || value.isEmpty) {
+                          return 'Client ID is required';
+                        }
+                        return null;
+                      },
+                    ),
+                    const SizedBox(height: 16),
+
+                    TextFormField(
+                      controller: clientSecretController,
+                      decoration: InputDecoration(
+                        labelText: 'Client Secret',
+                        hintText: isEdit ? '(unchanged)' : 'Application secret',
+                        helperText: 'Leave empty for public clients (PKCE only)',
+                      ),
+                      obscureText: true,
+                    ),
+                    const SizedBox(height: 16),
+
+                    // Provider-specific fields
+                    if (selectedProvider == 'azure') ...[
+                      TextFormField(
+                        controller: tenantIdController,
+                        decoration: const InputDecoration(
+                          labelText: 'Tenant ID',
+                          hintText: 'Directory (tenant) ID or domain',
+                          helperText: 'Use "common" for multi-tenant apps',
+                        ),
+                        validator: (value) {
+                          if (value == null || value.isEmpty) {
+                            return 'Tenant ID is required for Azure AD';
+                          }
+                          return null;
+                        },
+                      ),
+                    ],
+
+                    if (selectedProvider == 'okta') ...[
+                      TextFormField(
+                        controller: domainController,
+                        decoration: const InputDecoration(
+                          labelText: 'Okta Domain',
+                          hintText: 'your-org.okta.com',
+                        ),
+                        validator: (value) {
+                          if (value == null || value.isEmpty) {
+                            return 'Domain is required for Okta';
+                          }
+                          return null;
+                        },
+                      ),
+                    ],
+
+                    if (selectedProvider == 'google') ...[
+                      TextFormField(
+                        controller: domainController,
+                        decoration: const InputDecoration(
+                          labelText: 'Hosted Domain (optional)',
+                          hintText: 'example.com',
+                          helperText: 'Restrict login to users from this Google Workspace domain',
+                        ),
+                      ),
+                    ],
+
+                    const SizedBox(height: 16),
+                    SwitchListTile(
+                      title: const Text('Enabled'),
+                      subtitle: const Text('Allow users to sign in with this provider'),
+                      value: enabled,
+                      onChanged: (value) => setDialogState(() => enabled = value),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(context).pop(),
+              child: const Text('Cancel'),
+            ),
+            FilledButton(
+              onPressed: () async {
+                if (!formKey.currentState!.validate()) return;
+
+                Navigator.of(context).pop();
+
+                try {
+                  final api = ref.read(apiServiceProvider);
+                  await api.saveSSOConfig(SSOConfig(
+                    providerId: selectedProvider,
+                    clientId: clientIdController.text,
+                    clientSecret: clientSecretController.text.isNotEmpty
+                        ? clientSecretController.text
+                        : existingConfig?.clientSecret,
+                    tenantId: tenantIdController.text.isNotEmpty ? tenantIdController.text : null,
+                    domain: domainController.text.isNotEmpty ? domainController.text : null,
+                    enabled: enabled,
+                  ));
+                  await _loadConfigs();
+                  if (mounted) {
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      SnackBar(content: Text('SSO provider ${isEdit ? 'updated' : 'added'}')),
+                    );
+                  }
+                } catch (e) {
+                  if (mounted) {
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      SnackBar(content: Text('Failed to save: $e')),
+                    );
+                  }
+                }
+              },
+              child: Text(isEdit ? 'Save' : 'Add'),
+            ),
+          ],
+        ),
       ),
     );
   }

@@ -24,6 +24,8 @@ dependencies:
 
   # Crypto (for WireGuard key generation)
   cryptography: ^2.7.0
+  crypto: ^3.0.3
+  pointycastle: ^3.7.4
 
   # Utilities
   uuid: ^4.2.2

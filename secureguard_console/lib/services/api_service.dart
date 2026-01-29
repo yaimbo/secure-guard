@@ -288,4 +288,93 @@ class ApiService {
     final response = await _dio.get('/health');
     return response.data;
   }
+
+  // ═══════════════════════════════════════════════════════════════════
+  // SSO CONFIGURATION
+  // ═══════════════════════════════════════════════════════════════════
+
+  Future<List<SSOConfig>> getSSOConfigs() async {
+    final response = await _dio.get('/admin/sso/configs');
+    final items = response.data['configs'] as List? ?? [];
+    return items.map((json) => SSOConfig.fromJson(json)).toList();
+  }
+
+  Future<void> saveSSOConfig(SSOConfig config) async {
+    await _dio.post('/admin/sso/configs', data: config.toJson());
+  }
+
+  Future<void> deleteSSOConfig(String providerId) async {
+    await _dio.delete('/admin/sso/configs/$providerId');
+  }
+
+  Future<List<SSOProviderInfo>> getAvailableSSOProviders() async {
+    final response = await _dio.get('/auth/sso/providers');
+    final items = response.data['providers'] as List? ?? [];
+    return items.map((json) => SSOProviderInfo.fromJson(json)).toList();
+  }
+}
+
+/// SSO configuration model
+class SSOConfig {
+  final String providerId;
+  final String clientId;
+  final String? clientSecret;
+  final String? tenantId;
+  final String? domain;
+  final List<String> scopes;
+  final bool enabled;
+
+  SSOConfig({
+    required this.providerId,
+    required this.clientId,
+    this.clientSecret,
+    this.tenantId,
+    this.domain,
+    this.scopes = const ['openid', 'profile', 'email'],
+    this.enabled = true,
+  });
+
+  factory SSOConfig.fromJson(Map<String, dynamic> json) {
+    return SSOConfig(
+      providerId: json['provider_id'] as String,
+      clientId: json['client_id'] as String,
+      clientSecret: json['client_secret'] as String?,
+      tenantId: json['tenant_id'] as String?,
+      domain: json['domain'] as String?,
+      scopes: (json['scopes'] as List<dynamic>?)?.cast<String>() ??
+          ['openid', 'profile', 'email'],
+      enabled: json['enabled'] as bool? ?? true,
+    );
+  }
+
+  Map<String, dynamic> toJson() => {
+        'provider_id': providerId,
+        'client_id': clientId,
+        if (clientSecret != null) 'client_secret': clientSecret,
+        if (tenantId != null) 'tenant_id': tenantId,
+        if (domain != null) 'domain': domain,
+        'scopes': scopes,
+        'enabled': enabled,
+      };
+}
+
+/// SSO provider info from server
+class SSOProviderInfo {
+  final String id;
+  final String name;
+  final bool enabled;
+
+  SSOProviderInfo({
+    required this.id,
+    required this.name,
+    required this.enabled,
+  });
+
+  factory SSOProviderInfo.fromJson(Map<String, dynamic> json) {
+    return SSOProviderInfo(
+      id: json['id'] as String,
+      name: json['name'] as String,
+      enabled: json['enabled'] as bool? ?? false,
+    );
+  }
 }

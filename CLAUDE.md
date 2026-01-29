@@ -193,6 +193,18 @@ dart run bin/server.dart
 - `GET /api/v1/enrollment/config/version` - Check config version for updates
 - `POST /api/v1/enrollment/heartbeat` - Report device status
 
+**SSO Authentication (public):**
+- `GET /api/v1/auth/sso/providers` - List enabled SSO providers
+- `GET /api/v1/auth/sso/:provider/authorize` - Start OAuth authorization flow
+- `GET /api/v1/auth/sso/:provider/callback` - OAuth callback handler
+- `POST /api/v1/auth/sso/:provider/device` - Start device code flow (for desktop apps)
+- `POST /api/v1/auth/sso/:provider/device/poll` - Poll device code completion
+
+**SSO Configuration (admin auth required):**
+- `GET /api/v1/admin/sso/configs` - List SSO provider configs
+- `POST /api/v1/admin/sso/configs` - Save SSO provider config
+- `DELETE /api/v1/admin/sso/configs/:provider` - Delete SSO provider config
+
 ## Flutter Web Management Console
 
 Located in `secureguard_console/`. A Flutter web admin interface for managing VPN clients.
@@ -325,10 +337,12 @@ secureguard_client/lib/
 ├── screens/
 │   └── home_screen.dart   # Main VPN control screen
 ├── services/
-│   ├── ipc_client.dart    # Unix socket IPC to Rust daemon
-│   ├── tray_service.dart  # System tray integration
-│   ├── api_client.dart    # HTTP client for server API
-│   └── update_service.dart # Auto-update functionality
+│   ├── ipc_client.dart        # Unix socket IPC to Rust daemon
+│   ├── tray_service.dart      # System tray integration
+│   ├── api_client.dart        # HTTP client for server API
+│   ├── update_service.dart    # Auto-update functionality
+│   ├── credential_storage.dart # Secure platform credential storage
+│   └── enrollment_service.dart # SSO auth and device enrollment
 ├── providers/
 │   └── vpn_provider.dart  # VPN state management
 └── widgets/
@@ -374,5 +388,15 @@ The app minimizes to system tray on close:
 
 - Ed25519 signature verification is a placeholder (validates lengths only)
 - For production, implement via flutter_rust_bridge or platform channels
-- Device enrollment flow not yet integrated with SSO
+
+### SSO Integration
+
+The client supports SSO authentication via the device code flow:
+- **CredentialStorage**: Platform-specific secure storage (Keychain on macOS, Credential Manager on Windows, libsecret on Linux)
+- **EnrollmentService**: Handles SSO provider discovery, device code flow, device registration, and token refresh
+- Supported providers: Azure AD (Entra ID), Okta, Google Workspace (server-side configuration required)
+
+**Server-side JWT Verification Status:**
+- **Google**: Full RS256 signature verification using JWKS (with 1-hour caching)
+- **Azure AD**: Claims validation only (signature verification pending)
 

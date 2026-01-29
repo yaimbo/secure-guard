@@ -230,4 +230,27 @@ const _migrations = <_Migration>[
     CREATE INDEX IF NOT EXISTS idx_error_log_timestamp ON error_log(timestamp DESC);
     CREATE INDEX IF NOT EXISTS idx_connection_log_client ON connection_log(client_id);
   '''),
+
+  _Migration('002_sso_configs', '''
+    -- SSO provider configurations
+    CREATE TABLE IF NOT EXISTS sso_configs (
+      id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+      provider_id VARCHAR(50) UNIQUE NOT NULL,
+      client_id VARCHAR(255) NOT NULL,
+      client_secret VARCHAR(255),
+      tenant_id VARCHAR(255),
+      domain VARCHAR(255),
+      scopes TEXT[] DEFAULT ARRAY['openid', 'profile', 'email'],
+      enabled BOOLEAN DEFAULT true,
+      metadata JSONB,
+      created_at TIMESTAMPTZ DEFAULT NOW(),
+      updated_at TIMESTAMPTZ DEFAULT NOW()
+    );
+
+    -- Add updated_at column to admins if not exists
+    ALTER TABLE admins ADD COLUMN IF NOT EXISTS updated_at TIMESTAMPTZ DEFAULT NOW();
+
+    -- Index for enabled providers
+    CREATE INDEX IF NOT EXISTS idx_sso_configs_enabled ON sso_configs(enabled) WHERE enabled = true;
+  '''),
 ];

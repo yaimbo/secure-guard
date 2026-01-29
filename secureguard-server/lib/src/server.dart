@@ -11,6 +11,7 @@ import 'api/routes/auth_routes.dart';
 import 'api/routes/client_routes.dart';
 import 'api/routes/enrollment_routes.dart';
 import 'api/routes/log_routes.dart';
+import 'api/routes/sso_routes.dart';
 import 'api/routes/update_routes.dart';
 import 'api/routes/health_routes.dart';
 import 'api/middleware/logging_middleware.dart';
@@ -19,6 +20,7 @@ import 'database/database.dart';
 import 'services/client_service.dart';
 import 'services/config_generator_service.dart';
 import 'services/key_service.dart';
+import 'services/sso/sso_manager.dart';
 import 'repositories/client_repository.dart';
 import 'repositories/admin_repository.dart';
 import 'repositories/log_repository.dart';
@@ -63,6 +65,11 @@ class SecureGuardServer {
       configGenerator: configGenerator,
     );
 
+    // Initialize SSO manager
+    final ssoManager = SSOManager(_database!);
+    await ssoManager.init();
+    _log.info('SSO manager initialized');
+
     // Initialize middleware
     final authMiddleware = AuthMiddleware(config.jwtSecret, adminRepo);
 
@@ -76,6 +83,24 @@ class SecureGuardServer {
     // Auth routes (no auth for login)
     final authRoutes = AuthRoutes(adminRepo, config.jwtSecret, logRepo);
     router.mount('/api/v1/auth', authRoutes.router.call);
+
+    // SSO routes - public endpoints (authorization flow)
+    final ssoRoutes = SSORoutes(
+      ssoManager: ssoManager,
+      adminRepo: adminRepo,
+      clientRepo: clientRepo,
+      logRepo: logRepo,
+      jwtSecret: config.jwtSecret,
+    );
+    router.mount('/api/v1/auth/sso', ssoRoutes.router.call);
+
+    // SSO routes - admin endpoints (configuration management)
+    router.mount(
+      '/api/v1/admin/sso',
+      Pipeline()
+          .addMiddleware(authMiddleware.requireAdmin())
+          .addHandler(ssoRoutes.adminRouter.call),
+    );
 
     // Client routes (admin auth required)
     final clientRoutes = ClientRoutes(clientService, logRepo);

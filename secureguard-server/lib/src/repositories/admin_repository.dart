@@ -112,4 +112,43 @@ class AdminRepository {
     final result = await db.execute('SELECT EXISTS(SELECT 1 FROM admins)');
     return result.first[0] as bool;
   }
+
+  /// Link an existing admin account to SSO provider
+  Future<Admin?> linkSSO(String adminId, String provider, String subject) async {
+    final result = await db.execute('''
+      UPDATE admins
+      SET sso_provider = @provider, sso_subject = @subject, updated_at = NOW()
+      WHERE id = @id
+      RETURNING *
+    ''', {
+      'id': adminId,
+      'provider': provider,
+      'subject': subject,
+    });
+
+    if (result.isEmpty) return null;
+    return Admin.fromRow(result.first.toColumnMap());
+  }
+
+  /// Create a new admin from SSO authentication
+  Future<Admin> createFromSSO({
+    required String email,
+    required String ssoProvider,
+    required String ssoSubject,
+    String? name,
+    String role = 'admin',
+  }) async {
+    final result = await db.execute('''
+      INSERT INTO admins (email, sso_provider, sso_subject, role, is_active)
+      VALUES (@email, @sso_provider, @sso_subject, @role, true)
+      RETURNING *
+    ''', {
+      'email': email.toLowerCase(),
+      'sso_provider': ssoProvider,
+      'sso_subject': ssoSubject,
+      'role': role,
+    });
+
+    return Admin.fromRow(result.first.toColumnMap());
+  }
 }

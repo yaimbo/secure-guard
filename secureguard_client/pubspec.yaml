@@ -24,6 +24,9 @@ dependencies:
   # Local storage
   shared_preferences: ^2.2.2
 
+  # Secure credential storage (platform-specific)
+  flutter_secure_storage: ^9.2.2
+
   # Cryptography
   crypto: ^3.0.3
 
