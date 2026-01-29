@@ -70,7 +70,22 @@ class Database {
     for (final migration in _migrations) {
       if (!appliedNames.contains(migration.name)) {
         print('Applying migration: ${migration.name}');
-        await conn.execute(migration.sql);
+
+        // Split SQL by semicolons followed by newline (to avoid splitting in strings)
+        // and filter out empty statements and pure comment lines
+        final rawStatements = migration.sql.split(RegExp(r';\s*\n'));
+        for (final raw in rawStatements) {
+          // Remove comment-only lines and trim
+          final lines = raw
+              .split('\n')
+              .where((line) => !line.trim().startsWith('--'))
+              .join('\n')
+              .trim();
+          if (lines.isNotEmpty) {
+            await conn.execute(lines);
+          }
+        }
+
         await conn.execute(
           Sql.named('INSERT INTO _migrations (name) VALUES (@name)'),
           parameters: {'name': migration.name},
