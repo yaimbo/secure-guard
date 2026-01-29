@@ -3,6 +3,7 @@ import 'dart:convert';
 import '../../database/database.dart';
 import 'azure_provider.dart' show AzureADProvider, generateCodeVerifier, generateState;
 import 'google_provider.dart';
+import 'okta_provider.dart';
 import 'sso_provider.dart';
 
 /// Manages SSO providers and authentication flows
@@ -43,10 +44,9 @@ class SSOManager {
       case 'google':
         _providers['google'] = GoogleProvider(config);
         break;
-      // Add more providers here:
-      // case 'okta':
-      //   _providers['okta'] = OktaProvider(config);
-      //   break;
+      case 'okta':
+        _providers['okta'] = OktaProvider(config);
+        break;
     }
   }
 
@@ -239,6 +239,8 @@ class SSOManager {
       if (provider is AzureADProvider) {
         provider.dispose();
       } else if (provider is GoogleProvider) {
+        provider.dispose();
+      } else if (provider is OktaProvider) {
         provider.dispose();
       }
     }
