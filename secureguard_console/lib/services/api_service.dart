@@ -11,6 +11,15 @@ final apiServiceProvider = Provider<ApiService>((ref) {
   return ApiService();
 });
 
+/// Exception thrown when the server is unreachable
+class ServerUnavailableException implements Exception {
+  final String message;
+  ServerUnavailableException([this.message = 'Server is unavailable']);
+
+  @override
+  String toString() => message;
+}
+
 class ApiService {
   late final Dio _dio;
   String? _accessToken;
@@ -77,8 +86,15 @@ class ApiService {
     try {
       final response = await _dio.get('/auth/setup/status');
       return response.data['needs_setup'] == true;
-    } catch (e) {
-      // If endpoint doesn't exist or server error, assume no setup needed
+    } on DioException catch (e) {
+      // Network errors mean server is unavailable
+      if (e.type == DioExceptionType.connectionError ||
+          e.type == DioExceptionType.connectionTimeout ||
+          e.type == DioExceptionType.receiveTimeout) {
+        throw ServerUnavailableException('Cannot connect to server');
+      }
+      // For other errors (404, 500), assume setup endpoint doesn't exist
+      // meaning setup was completed in an older version
       return false;
     }
   }

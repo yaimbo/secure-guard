@@ -134,11 +134,50 @@ This is a WireGuard-compatible VPN client/server implementing the Noise IKpsk2 h
 
 Various verification tools in `src/bin/` for testing crypto primitives against known test vectors.
 
+## Dart REST API Server
+
+Located in `secureguard-server/`. A Dart server using Shelf for VPN client management.
+
+### Setup
+
+```bash
+cd secureguard-server
+
+# Create .env file with your database settings
+# Required variables: DB_HOST, DB_PORT, DB_NAME, DB_USER, DB_PASSWORD, JWT_SECRET
+
+# Get dependencies
+dart pub get
+
+# Run server
+dart run bin/server.dart
+```
+
+### API Endpoints
+
+- `GET /api/v1/health` - Health check
+- `GET /api/v1/auth/setup/status` - Check if initial setup is needed
+- `POST /api/v1/auth/setup` - Create first admin account
+- `POST /api/v1/auth/login` - Admin login
+- `POST /api/v1/auth/logout` - Admin logout
+- `POST /api/v1/auth/refresh` - Refresh JWT token
+- `GET/POST/PUT/DELETE /api/v1/clients/*` - Client management (auth required)
+- `GET /api/v1/logs/*` - Audit/error/connection logs (auth required)
+
 ## Flutter Web Management Console
 
 Located in `secureguard_console/`. A Flutter web admin interface for managing VPN clients.
 
-### Build and Run
+### Quick Start
+
+```bash
+cd secureguard_console
+
+# Start both server and console (recommended)
+./start.sh
+```
+
+### Manual Build and Run
 
 ```bash
 cd secureguard_console
@@ -146,17 +185,28 @@ cd secureguard_console
 # Get dependencies
 flutter pub get
 
-# Run in development mode
-flutter run -d chrome
+# Run in development mode (requires server running)
+flutter run -d chrome --dart-define=API_URL=http://localhost:8080/api/v1
 
 # Build for production
 flutter build web --release
 ```
 
+### First-Run Setup Flow
+
+On first launch with an empty database:
+1. Console checks `/auth/setup/status` endpoint
+2. If `needs_setup: true`, redirects to Setup Screen
+3. User creates first admin account (email + password min 8 chars)
+4. After setup, redirects to Login Screen
+5. User logs in with the created credentials
+
+If server is unavailable, shows Connection Error Screen with retry option.
+
 ### Architecture
 
 - **State Management**: Riverpod (flutter_riverpod)
-- **Routing**: GoRouter with auth redirect
+- **Routing**: GoRouter with auth redirect and setup flow
 - **HTTP Client**: Dio with interceptors for auth tokens
 - **Charts**: fl_chart for dashboard visualizations
 
@@ -168,11 +218,11 @@ secureguard_console/lib/
 ├── app.dart               # MaterialApp.router setup
 ├── config/
 │   ├── theme.dart         # Dark/light theme, semantic colors
-│   └── routes.dart        # GoRouter configuration
+│   └── routes.dart        # GoRouter configuration with setup/error handling
 ├── services/
-│   └── api_service.dart   # REST API client
+│   └── api_service.dart   # REST API client + ServerUnavailableException
 ├── providers/
-│   ├── auth_provider.dart     # Authentication state
+│   ├── auth_provider.dart     # Authentication state + serverUnavailable flag
 │   ├── clients_provider.dart  # Client list management
 │   ├── logs_provider.dart     # Audit/error/connection logs
 │   └── settings_provider.dart # Server config
@@ -180,6 +230,8 @@ secureguard_console/lib/
 │   ├── client.dart        # Client data model
 │   └── logs.dart          # Log entry models
 ├── screens/
+│   ├── connection_error_screen.dart  # Server unavailable error
+│   ├── setup_screen.dart             # First-run admin setup
 │   ├── login_screen.dart
 │   ├── dashboard_screen.dart
 │   ├── clients_screen.dart
@@ -199,4 +251,10 @@ flutter run --dart-define=API_URL=http://localhost:8080/api/v1
 ```
 
 Default: `http://localhost:8080/api/v1`
+
+### Known Limitations (TODOs)
+
+- Log export not yet implemented (shows "coming soon" message)
+- Client key regeneration UI exists but action not connected
+- Logout doesn't invalidate refresh tokens in Redis (Redis not yet integrated)
 

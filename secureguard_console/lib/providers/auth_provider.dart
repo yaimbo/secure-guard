@@ -7,6 +7,7 @@ import '../services/api_service.dart';
 class AuthState {
   final bool isAuthenticated;
   final bool needsSetup;
+  final bool serverUnavailable;
   final String? userId;
   final String? email;
   final String? role;
@@ -16,6 +17,7 @@ class AuthState {
   const AuthState({
     this.isAuthenticated = false,
     this.needsSetup = false,
+    this.serverUnavailable = false,
     this.userId,
     this.email,
     this.role,
@@ -26,6 +28,7 @@ class AuthState {
   AuthState copyWith({
     bool? isAuthenticated,
     bool? needsSetup,
+    bool? serverUnavailable,
     String? userId,
     String? email,
     String? role,
@@ -35,6 +38,7 @@ class AuthState {
     return AuthState(
       isAuthenticated: isAuthenticated ?? this.isAuthenticated,
       needsSetup: needsSetup ?? this.needsSetup,
+      serverUnavailable: serverUnavailable ?? this.serverUnavailable,
       userId: userId ?? this.userId,
       email: email ?? this.email,
       role: role ?? this.role,
@@ -92,11 +96,24 @@ class AuthNotifier extends StateNotifier<AuthState> {
           }
         }
       }
+    } on ServerUnavailableException {
+      state = state.copyWith(
+        isLoading: false,
+        serverUnavailable: true,
+        error: 'Cannot connect to server. Please ensure the server is running.',
+      );
+      return;
     } catch (e) {
-      // Storage access failed or server not ready
+      // Storage access failed
     }
 
     state = state.copyWith(isLoading: false);
+  }
+
+  /// Retry connecting to the server
+  Future<void> retry() async {
+    state = state.copyWith(serverUnavailable: false, error: null);
+    await _init();
   }
 
   Future<bool> login(String email, String password) async {

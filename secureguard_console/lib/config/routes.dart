@@ -2,6 +2,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
 import '../providers/auth_provider.dart';
+import '../screens/connection_error_screen.dart';
 import '../screens/setup_screen.dart';
 import '../screens/login_screen.dart';
 import '../screens/dashboard_screen.dart';
@@ -19,12 +20,23 @@ final routerProvider = Provider<GoRouter>((ref) {
     redirect: (context, state) {
       final isLoggedIn = authState.isAuthenticated;
       final needsSetup = authState.needsSetup;
+      final serverUnavailable = authState.serverUnavailable;
       final isLoading = authState.isLoading;
       final currentPath = state.matchedLocation;
 
       // Don't redirect while loading
       if (isLoading) {
         return null;
+      }
+
+      // If server is unavailable, go to error page
+      if (serverUnavailable && currentPath != '/error') {
+        return '/error';
+      }
+
+      // If server became available, leave error page
+      if (!serverUnavailable && currentPath == '/error') {
+        return '/login';
       }
 
       // If setup is needed, redirect to setup page
@@ -37,8 +49,8 @@ final routerProvider = Provider<GoRouter>((ref) {
         return '/login';
       }
 
-      // If not logged in and not on login/setup, go to login
-      if (!isLoggedIn && currentPath != '/login' && currentPath != '/setup') {
+      // If not logged in and not on login/setup/error, go to login
+      if (!isLoggedIn && currentPath != '/login' && currentPath != '/setup' && currentPath != '/error') {
         return '/login';
       }
 
@@ -50,6 +62,10 @@ final routerProvider = Provider<GoRouter>((ref) {
       return null;
     },
     routes: [
+      GoRoute(
+        path: '/error',
+        builder: (context, state) => const ConnectionErrorScreen(),
+      ),
       GoRoute(
         path: '/setup',
         builder: (context, state) => const SetupScreen(),
