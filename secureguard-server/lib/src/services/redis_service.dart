@@ -17,6 +17,7 @@ class RedisService {
   PubSub? _pubSub;
 
   final _subscriptions = <String, StreamController<Map<String, dynamic>>>{};
+  bool _pubSubListenerAttached = false;
 
   RedisService({
     this.host = 'localhost',
@@ -78,26 +79,37 @@ class RedisService {
     if (_pubSub != null) {
       _pubSub!.subscribe([channel]);
 
-      // Listen to messages
-      _pubSub!.getStream().listen((message) {
-        if (message is List && message.length >= 3) {
-          final type = message[0];
-          final msgChannel = message[1];
-          final data = message[2];
-
-          if (type == 'message' && msgChannel == channel) {
-            try {
-              final parsed = jsonDecode(data as String) as Map<String, dynamic>;
-              controller.add(parsed);
-            } catch (e) {
-              _log.warning('Failed to parse message: $e');
-            }
-          }
-        }
-      });
+      // Only attach the pub/sub stream listener once - it routes to all channel controllers
+      if (!_pubSubListenerAttached) {
+        _pubSubListenerAttached = true;
+        _pubSub!.getStream().listen((message) {
+          _handlePubSubMessage(message);
+        });
+      }
     }
 
     return controller.stream;
+  }
+
+  /// Handle incoming pub/sub messages and route to appropriate channel controllers
+  void _handlePubSubMessage(dynamic message) {
+    if (message is List && message.length >= 3) {
+      final type = message[0];
+      final msgChannel = message[1] as String;
+      final data = message[2];
+
+      if (type == 'message') {
+        final controller = _subscriptions[msgChannel];
+        if (controller != null) {
+          try {
+            final parsed = jsonDecode(data as String) as Map<String, dynamic>;
+            controller.add(parsed);
+          } catch (e) {
+            _log.warning('Failed to parse message on $msgChannel: $e');
+          }
+        }
+      }
+    }
   }
 
   /// Unsubscribe from a channel
