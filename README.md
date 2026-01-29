@@ -9,6 +9,7 @@ SecureGuard is a complete VPN management platform consisting of:
 - **Rust VPN Client/Server** - WireGuard-compatible implementation with daemon mode for UI control
 - **Dart REST API Server** - Centralized client management, config generation, and device enrollment
 - **Flutter Web Console** - Admin interface for managing VPN clients and viewing logs
+- **Flutter Desktop Client** - End-user VPN application with system tray and auto-updates
 
 ## Features
 
@@ -37,6 +38,20 @@ SecureGuard is a complete VPN management platform consisting of:
 - Manual config download and QR code generation
 - Audit log viewer
 - Dark/light theme support
+
+### Desktop Client (Flutter)
+- Native macOS, Windows, and Linux support
+- System tray integration with connection status icons
+- Custom draggable title bar with window controls
+- IPC communication with Rust daemon (JSON-RPC 2.0)
+- Auto-update functionality:
+  - Periodic config version checking (every 5 minutes)
+  - Automatic binary update detection (every hour)
+  - SHA256 hash verification for downloads
+  - Ed25519 signature verification framework
+- Seamless config updates while connected
+- Traffic statistics (bytes sent/received)
+- Error handling with retry support
 
 ## Quick Start
 
@@ -79,6 +94,19 @@ Or use the convenience script:
 ```bash
 cd secureguard_console
 ./start.sh
+```
+
+### 4. Build the Desktop Client
+
+```bash
+cd secureguard_client
+flutter pub get
+
+# Run in development mode (requires daemon running)
+flutter run -d macos   # or -d linux, -d windows
+
+# Build for production
+flutter build macos --release   # or linux, windows
 ```
 
 ## Usage
@@ -251,6 +279,20 @@ sudo journalctl -u secureguard -f
 | GET | `/api/v1/logs/errors` | Query error log |
 | GET | `/api/v1/logs/connections` | Query connection log |
 
+### Updates (Client-facing)
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| GET | `/api/v1/updates/manifest` | Get full update manifest |
+| GET | `/api/v1/updates/check` | Check for updates (platform-specific) |
+| GET | `/api/v1/updates/download/{version}/{platform}` | Download binary |
+
+### Updates (Admin)
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| GET | `/api/v1/updates/releases` | List all releases |
+| POST | `/api/v1/updates/releases` | Create new release |
+| DELETE | `/api/v1/updates/releases/{id}` | Delete release |
+
 ## Architecture
 
 ```
@@ -333,7 +375,7 @@ dart pub get
 dart run bin/server.dart
 ```
 
-### Console (Flutter)
+### Console (Flutter Web)
 
 ```bash
 cd secureguard_console
@@ -344,6 +386,24 @@ flutter run -d chrome
 
 # Production build
 flutter build web --release
+```
+
+### Desktop Client (Flutter)
+
+```bash
+cd secureguard_client
+flutter pub get
+
+# Development (requires daemon running)
+flutter run -d macos   # or -d linux, -d windows
+
+# Production build
+flutter build macos --release
+flutter build linux --release
+flutter build windows --release
+
+# Build with update signing key (for production)
+flutter build macos --release --dart-define=UPDATE_SIGNING_PUBLIC_KEY=<base64-key>
 ```
 
 ## Security Considerations
