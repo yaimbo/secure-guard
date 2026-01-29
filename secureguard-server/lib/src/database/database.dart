@@ -293,4 +293,29 @@ const _migrations = <_Migration>[
       updated_at TIMESTAMPTZ DEFAULT NOW()
     );
   '''),
+
+  _Migration('005_api_keys', '''
+    -- API keys for programmatic access
+    CREATE TABLE IF NOT EXISTS api_keys (
+      id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+      name VARCHAR(255) NOT NULL,
+      key_hash VARCHAR(64) NOT NULL UNIQUE,
+      key_prefix VARCHAR(12) NOT NULL,
+      permissions VARCHAR(50) DEFAULT 'read',
+      created_by UUID REFERENCES admins(id),
+      created_at TIMESTAMPTZ DEFAULT NOW(),
+      last_used_at TIMESTAMPTZ,
+      expires_at TIMESTAMPTZ,
+      is_active BOOLEAN DEFAULT true
+    );
+
+    CREATE INDEX idx_api_keys_hash ON api_keys(key_hash);
+    CREATE INDEX idx_api_keys_active ON api_keys(is_active) WHERE is_active = true;
+  '''),
+
+  _Migration('006_api_keys_permissions_constraint', '''
+    -- Add CHECK constraint to validate permissions values
+    ALTER TABLE api_keys ADD CONSTRAINT chk_api_keys_permissions
+      CHECK (permissions IN ('read', 'write', 'admin'));
+  '''),
 ];

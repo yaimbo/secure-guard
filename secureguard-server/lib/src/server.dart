@@ -29,6 +29,7 @@ import 'services/key_service.dart';
 import 'services/sso/sso_manager.dart';
 import 'repositories/client_repository.dart';
 import 'repositories/admin_repository.dart';
+import 'repositories/api_key_repository.dart';
 import 'repositories/email_settings_repository.dart';
 import 'repositories/log_repository.dart';
 import 'repositories/server_config_repository.dart';
@@ -63,6 +64,7 @@ class SecureGuardServer {
     // Initialize repositories
     final clientRepo = ClientRepository(_database!);
     final adminRepo = AdminRepository(_database!);
+    final apiKeyRepo = ApiKeyRepository(_database!);
     final logRepo = LogRepository(_database!);
     final serverConfigRepo = ServerConfigRepository(_database!);
 
@@ -125,7 +127,7 @@ class SecureGuardServer {
     _log.info('WebSocket routes initialized');
 
     // Initialize middleware
-    final authMiddleware = AuthMiddleware(config.jwtSecret, adminRepo);
+    final authMiddleware = AuthMiddleware(config.jwtSecret, adminRepo, apiKeyRepo: apiKeyRepo);
 
     // Set up routes
     final router = Router();
@@ -135,7 +137,13 @@ class SecureGuardServer {
     router.mount('/api/v1/health', healthRoutes.router.call);
 
     // Auth routes (no auth for login)
-    final authRoutes = AuthRoutes(adminRepo, config.jwtSecret, logRepo);
+    final authRoutes = AuthRoutes(
+      adminRepo,
+      config.jwtSecret,
+      logRepo,
+      serverConfigRepo: serverConfigRepo,
+      keyService: keyService,
+    );
     router.mount('/api/v1/auth', authRoutes.router.call);
 
     // SSO routes - public endpoints (authorization flow)
@@ -172,9 +180,13 @@ class SecureGuardServer {
 
     // Settings routes (admin auth required)
     final settingsRoutes = SettingsRoutes(
+      adminRepo: adminRepo,
+      apiKeyRepo: apiKeyRepo,
       emailSettingsRepo: emailSettingsRepo,
+      serverConfigRepo: serverConfigRepo,
       emailService: _emailService!,
       emailQueueService: _emailQueueService!,
+      keyService: keyService,
       logRepo: logRepo,
     );
     router.mount(

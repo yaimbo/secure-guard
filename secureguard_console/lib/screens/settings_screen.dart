@@ -3,6 +3,7 @@ import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../config/theme.dart';
+import '../providers/settings_provider.dart';
 import '../services/api_service.dart';
 
 class SettingsScreen extends ConsumerWidget {
@@ -120,8 +121,13 @@ class _ServerConfigSectionState extends ConsumerState<_ServerConfigSection> {
   final _subnetController = TextEditingController();
   final _dnsController = TextEditingController();
   final _mtuController = TextEditingController();
-  bool _isLoading = false;
+
+  bool _isLoading = true;
+  bool _isSaving = false;
   bool _hasChanges = false;
+  String? _error;
+  String? _publicKey;
+  bool _configured = false;
 
   @override
   void initState() {
@@ -129,13 +135,36 @@ class _ServerConfigSectionState extends ConsumerState<_ServerConfigSection> {
     _loadConfig();
   }
 
-  void _loadConfig() {
-    // In a real app, load from server
-    _endpointController.text = 'vpn.example.com';
-    _portController.text = '51820';
-    _subnetController.text = '10.0.0.0/24';
-    _dnsController.text = '1.1.1.1, 8.8.8.8';
-    _mtuController.text = '1420';
+  Future<void> _loadConfig() async {
+    setState(() {
+      _isLoading = true;
+      _error = null;
+    });
+
+    try {
+      final api = ref.read(apiServiceProvider);
+      final settings = await api.getVpnSettings();
+      if (mounted) {
+        setState(() {
+          _configured = settings.configured;
+          _endpointController.text = settings.endpoint ?? '';
+          _portController.text = settings.listenPort.toString();
+          _subnetController.text = settings.ipSubnet;
+          _dnsController.text = settings.dnsServers?.join(', ') ?? '';
+          _mtuController.text = settings.mtu.toString();
+          _publicKey = settings.publicKey;
+          _isLoading = false;
+          _hasChanges = false;
+        });
+      }
+    } catch (e) {
+      if (mounted) {
+        setState(() {
+          _error = e.toString();
+          _isLoading = false;
+        });
+      }
+    }
   }
 
   @override
@@ -150,11 +179,84 @@ class _ServerConfigSectionState extends ConsumerState<_ServerConfigSection> {
 
   @override
   Widget build(BuildContext context) {
+    if (_isLoading) {
+      return const Center(
+        child: Padding(
+          padding: EdgeInsets.all(24),
+          child: CircularProgressIndicator(),
+        ),
+      );
+    }
+
+    if (_error != null) {
+      return Column(
+        children: [
+          Text('Failed to load VPN settings: $_error'),
+          const SizedBox(height: 16),
+          OutlinedButton(
+            onPressed: _loadConfig,
+            child: const Text('Retry'),
+          ),
+        ],
+      );
+    }
+
     return Form(
       key: _formKey,
       onChanged: () => setState(() => _hasChanges = true),
       child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
         children: [
+          // Show status banner
+          if (_configured && _publicKey != null) ...[
+            Container(
+              padding: const EdgeInsets.all(12),
+              decoration: BoxDecoration(
+                color: Colors.green.withOpacity(0.1),
+                borderRadius: BorderRadius.circular(8),
+                border: Border.all(color: Colors.green.withOpacity(0.3)),
+              ),
+              child: Row(
+                children: [
+                  const Icon(Icons.check_circle, color: Colors.green, size: 20),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        const Text('VPN Server Configured',
+                          style: TextStyle(fontWeight: FontWeight.bold)),
+                        const SizedBox(height: 4),
+                        SelectableText('Public Key: $_publicKey',
+                          style: TextStyle(fontSize: 12, color: Colors.grey[600])),
+                      ],
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            const SizedBox(height: 16),
+          ] else ...[
+            Container(
+              padding: const EdgeInsets.all(12),
+              decoration: BoxDecoration(
+                color: Colors.amber.withOpacity(0.1),
+                borderRadius: BorderRadius.circular(8),
+                border: Border.all(color: Colors.amber.withOpacity(0.3)),
+              ),
+              child: const Row(
+                children: [
+                  Icon(Icons.warning_amber, color: Colors.amber, size: 20),
+                  SizedBox(width: 12),
+                  Expanded(
+                    child: Text('VPN server not configured. Configure settings below to enable client creation.'),
+                  ),
+                ],
+              ),
+            ),
+            const SizedBox(height: 16),
+          ],
+
           Row(
             children: [
               Expanded(
@@ -163,8 +265,8 @@ class _ServerConfigSectionState extends ConsumerState<_ServerConfigSection> {
                   controller: _endpointController,
                   decoration: const InputDecoration(
                     labelText: 'Endpoint',
-                    hintText: 'vpn.example.com',
-                    helperText: 'Public hostname or IP for VPN server',
+                    hintText: 'vpn.example.com:51820',
+                    helperText: 'Public hostname:port for VPN server',
                   ),
                   validator: (value) {
                     if (value == null || value.isEmpty) {
@@ -253,8 +355,8 @@ class _ServerConfigSectionState extends ConsumerState<_ServerConfigSection> {
               ),
               const SizedBox(width: 8),
               FilledButton(
-                onPressed: _hasChanges && !_isLoading ? _saveConfig : null,
-                child: _isLoading
+                onPressed: _hasChanges && !_isSaving ? _saveConfig : null,
+                child: _isSaving
                     ? const SizedBox(
                         width: 20,
                         height: 20,
@@ -272,22 +374,35 @@ class _ServerConfigSectionState extends ConsumerState<_ServerConfigSection> {
   Future<void> _saveConfig() async {
     if (!_formKey.currentState!.validate()) return;
 
-    setState(() => _isLoading = true);
+    setState(() => _isSaving = true);
     try {
-      // Save config via API
-      await Future.delayed(const Duration(seconds: 1)); // Simulate API call
+      final api = ref.read(apiServiceProvider);
+
+      // Parse DNS servers
+      final dnsText = _dnsController.text.trim();
+      final dnsServers = dnsText.isNotEmpty
+          ? dnsText.split(',').map((s) => s.trim()).where((s) => s.isNotEmpty).toList()
+          : null;
+
+      final settings = VpnSettings(
+        endpoint: _endpointController.text.trim(),
+        listenPort: int.tryParse(_portController.text) ?? 51820,
+        ipSubnet: _subnetController.text.trim(),
+        dnsServers: dnsServers,
+        mtu: int.tryParse(_mtuController.text) ?? 1420,
+      );
+
+      await api.updateVpnSettings(settings);
+      await _loadConfig(); // Reload to get updated public key
+
       if (mounted) {
-        setState(() {
-          _isLoading = false;
-          _hasChanges = false;
-        });
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Configuration saved')),
+          const SnackBar(content: Text('VPN configuration saved')),
         );
       }
     } catch (e) {
       if (mounted) {
-        setState(() => _isLoading = false);
+        setState(() => _isSaving = false);
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(content: Text('Error saving configuration: $e')),
         );
@@ -296,38 +411,101 @@ class _ServerConfigSectionState extends ConsumerState<_ServerConfigSection> {
   }
 }
 
-class _AdminUsersSection extends ConsumerWidget {
+class _AdminUsersSection extends ConsumerStatefulWidget {
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
-    // Mock data - in real app, fetch from API
-    final admins = [
-      {'email': 'admin@example.com', 'role': 'Super Admin', 'lastLogin': '2h ago'},
-      {'email': 'ops@example.com', 'role': 'Admin', 'lastLogin': '1d ago'},
-    ];
+  ConsumerState<_AdminUsersSection> createState() => _AdminUsersSectionState();
+}
+
+class _AdminUsersSectionState extends ConsumerState<_AdminUsersSection> {
+  List<AdminUser> _admins = [];
+  bool _isLoading = true;
+  String? _error;
+
+  @override
+  void initState() {
+    super.initState();
+    _loadAdmins();
+  }
+
+  Future<void> _loadAdmins() async {
+    setState(() {
+      _isLoading = true;
+      _error = null;
+    });
+
+    try {
+      final api = ref.read(apiServiceProvider);
+      final admins = await api.getAdminUsers();
+      if (mounted) {
+        setState(() {
+          _admins = admins;
+          _isLoading = false;
+        });
+      }
+    } catch (e) {
+      if (mounted) {
+        setState(() {
+          _error = e.toString();
+          _isLoading = false;
+        });
+      }
+    }
+  }
+
+  String _formatLastLogin(DateTime? lastLogin) {
+    if (lastLogin == null) return 'Never';
+    final diff = DateTime.now().difference(lastLogin);
+    if (diff.inMinutes < 60) return '${diff.inMinutes}m ago';
+    if (diff.inHours < 24) return '${diff.inHours}h ago';
+    if (diff.inDays < 30) return '${diff.inDays}d ago';
+    return '${(diff.inDays / 30).floor()}mo ago';
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    if (_isLoading) {
+      return const Center(
+        child: Padding(
+          padding: EdgeInsets.all(24),
+          child: CircularProgressIndicator(),
+        ),
+      );
+    }
+
+    if (_error != null) {
+      return Column(
+        children: [
+          Text('Failed to load admin users: $_error'),
+          const SizedBox(height: 16),
+          OutlinedButton(
+            onPressed: _loadAdmins,
+            child: const Text('Retry'),
+          ),
+        ],
+      );
+    }
 
     return Column(
       children: [
-        ...admins.map((admin) => ListTile(
-              leading: const CircleAvatar(child: Icon(Icons.person)),
-              title: Text(admin['email']!),
-              subtitle: Text(admin['role']!),
+        ..._admins.map((admin) => ListTile(
+              leading: CircleAvatar(
+                backgroundColor: admin.isActive ? AppTheme.primary : Colors.grey,
+                child: const Icon(Icons.person, color: Colors.white),
+              ),
+              title: Text(admin.email),
+              subtitle: Text(admin.role == 'super_admin' ? 'Super Admin' : 'Admin'),
               trailing: Row(
                 mainAxisSize: MainAxisSize.min,
                 children: [
                   Text(
-                    'Last login: ${admin['lastLogin']}',
+                    'Last login: ${_formatLastLogin(admin.lastLoginAt)}',
                     style: TextStyle(color: Colors.grey[500], fontSize: 12),
                   ),
                   const SizedBox(width: 16),
                   IconButton(
-                    icon: const Icon(Icons.edit_outlined),
-                    tooltip: 'Edit',
-                    onPressed: () {},
-                  ),
-                  IconButton(
                     icon: const Icon(Icons.delete_outline),
                     tooltip: 'Remove',
-                    onPressed: () {},
+                    onPressed: () => _confirmDelete(admin),
                   ),
                 ],
               ),
@@ -342,57 +520,144 @@ class _AdminUsersSection extends ConsumerWidget {
     );
   }
 
-  void _showAddAdminDialog(BuildContext context) {
-    showDialog(
+  Future<void> _confirmDelete(AdminUser admin) async {
+    final confirmed = await showDialog<bool>(
       context: context,
       builder: (context) => AlertDialog(
-        title: const Text('Add Admin User'),
-        content: SizedBox(
-          width: 400,
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              TextFormField(
-                decoration: const InputDecoration(
-                  labelText: 'Email',
-                  hintText: 'admin@example.com',
-                ),
-              ),
-              const SizedBox(height: 16),
-              TextFormField(
-                decoration: const InputDecoration(
-                  labelText: 'Password',
-                ),
-                obscureText: true,
-              ),
-              const SizedBox(height: 16),
-              DropdownButtonFormField<String>(
-                decoration: const InputDecoration(labelText: 'Role'),
-                value: 'admin',
-                items: const [
-                  DropdownMenuItem(value: 'admin', child: Text('Admin')),
-                  DropdownMenuItem(value: 'viewer', child: Text('Viewer')),
-                ],
-                onChanged: (value) {},
-              ),
-            ],
-          ),
-        ),
+        title: const Text('Delete Admin'),
+        content: Text('Are you sure you want to delete ${admin.email}?'),
         actions: [
           TextButton(
-            onPressed: () => Navigator.of(context).pop(),
+            onPressed: () => Navigator.of(context).pop(false),
             child: const Text('Cancel'),
           ),
           FilledButton(
-            onPressed: () {
-              Navigator.of(context).pop();
-              ScaffoldMessenger.of(context).showSnackBar(
-                const SnackBar(content: Text('Admin user created')),
-              );
-            },
-            child: const Text('Create'),
+            onPressed: () => Navigator.of(context).pop(true),
+            style: FilledButton.styleFrom(backgroundColor: AppTheme.error),
+            child: const Text('Delete'),
           ),
         ],
+      ),
+    );
+
+    if (confirmed == true && mounted) {
+      try {
+        final api = ref.read(apiServiceProvider);
+        await api.deleteAdminUser(admin.id);
+        await _loadAdmins();
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(content: Text('Admin deleted')),
+          );
+        }
+      } catch (e) {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(content: Text('Failed to delete admin: $e')),
+          );
+        }
+      }
+    }
+  }
+
+  void _showAddAdminDialog(BuildContext context) {
+    final emailController = TextEditingController();
+    final passwordController = TextEditingController();
+    String role = 'admin';
+    final formKey = GlobalKey<FormState>();
+
+    showDialog(
+      context: context,
+      builder: (context) => StatefulBuilder(
+        builder: (context, setDialogState) => AlertDialog(
+          title: const Text('Add Admin User'),
+          content: SizedBox(
+            width: 400,
+            child: Form(
+              key: formKey,
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  TextFormField(
+                    controller: emailController,
+                    decoration: const InputDecoration(
+                      labelText: 'Email',
+                      hintText: 'admin@example.com',
+                    ),
+                    validator: (value) {
+                      if (value == null || value.isEmpty) {
+                        return 'Email is required';
+                      }
+                      if (!value.contains('@')) {
+                        return 'Invalid email';
+                      }
+                      return null;
+                    },
+                  ),
+                  const SizedBox(height: 16),
+                  TextFormField(
+                    controller: passwordController,
+                    decoration: const InputDecoration(
+                      labelText: 'Password',
+                    ),
+                    obscureText: true,
+                    validator: (value) {
+                      if (value == null || value.length < 8) {
+                        return 'Password must be at least 8 characters';
+                      }
+                      return null;
+                    },
+                  ),
+                  const SizedBox(height: 16),
+                  DropdownButtonFormField<String>(
+                    decoration: const InputDecoration(labelText: 'Role'),
+                    value: role,
+                    items: const [
+                      DropdownMenuItem(value: 'admin', child: Text('Admin')),
+                      DropdownMenuItem(value: 'super_admin', child: Text('Super Admin')),
+                    ],
+                    onChanged: (value) => setDialogState(() => role = value!),
+                  ),
+                ],
+              ),
+            ),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(context).pop(),
+              child: const Text('Cancel'),
+            ),
+            FilledButton(
+              onPressed: () async {
+                if (!formKey.currentState!.validate()) return;
+
+                Navigator.of(context).pop();
+
+                try {
+                  final api = ref.read(apiServiceProvider);
+                  await api.createAdminUser(
+                    email: emailController.text,
+                    password: passwordController.text,
+                    role: role,
+                  );
+                  await _loadAdmins();
+                  if (mounted) {
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      const SnackBar(content: Text('Admin user created')),
+                    );
+                  }
+                } catch (e) {
+                  if (mounted) {
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      SnackBar(content: Text('Failed to create admin: $e')),
+                    );
+                  }
+                }
+              },
+              child: const Text('Create'),
+            ),
+          ],
+        ),
       ),
     );
   }
@@ -1298,40 +1563,107 @@ class _EmailSettingsSectionState extends ConsumerState<_EmailSettingsSection> {
   }
 }
 
-class _ApiKeysSection extends ConsumerWidget {
+class _ApiKeysSection extends ConsumerStatefulWidget {
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
-    // Mock data
-    final apiKeys = [
-      {'name': 'CI/CD Pipeline', 'prefix': 'sg_...abc123', 'created': '30d ago'},
-      {'name': 'Monitoring', 'prefix': 'sg_...def456', 'created': '7d ago'},
-    ];
+  ConsumerState<_ApiKeysSection> createState() => _ApiKeysSectionState();
+}
+
+class _ApiKeysSectionState extends ConsumerState<_ApiKeysSection> {
+  List<ApiKeyInfo> _apiKeys = [];
+  bool _isLoading = true;
+  String? _error;
+
+  @override
+  void initState() {
+    super.initState();
+    _loadApiKeys();
+  }
+
+  Future<void> _loadApiKeys() async {
+    setState(() {
+      _isLoading = true;
+      _error = null;
+    });
+
+    try {
+      final api = ref.read(apiServiceProvider);
+      final keys = await api.getApiKeys();
+      if (mounted) {
+        setState(() {
+          _apiKeys = keys;
+          _isLoading = false;
+        });
+      }
+    } catch (e) {
+      if (mounted) {
+        setState(() {
+          _error = e.toString();
+          _isLoading = false;
+        });
+      }
+    }
+  }
+
+  String _formatCreated(DateTime created) {
+    final diff = DateTime.now().difference(created);
+    if (diff.inMinutes < 60) return '${diff.inMinutes}m ago';
+    if (diff.inHours < 24) return '${diff.inHours}h ago';
+    if (diff.inDays < 30) return '${diff.inDays}d ago';
+    return '${(diff.inDays / 30).floor()}mo ago';
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    if (_isLoading) {
+      return const Center(
+        child: Padding(
+          padding: EdgeInsets.all(24),
+          child: CircularProgressIndicator(),
+        ),
+      );
+    }
+
+    if (_error != null) {
+      return Column(
+        children: [
+          Text('Failed to load API keys: $_error'),
+          const SizedBox(height: 16),
+          OutlinedButton(
+            onPressed: _loadApiKeys,
+            child: const Text('Retry'),
+          ),
+        ],
+      );
+    }
 
     return Column(
       children: [
-        ...apiKeys.map((key) => ListTile(
-              leading: const Icon(Icons.vpn_key),
-              title: Text(key['name']!),
-              subtitle: Text(key['prefix']!),
+        ..._apiKeys.map((key) => ListTile(
+              leading: Icon(
+                Icons.vpn_key,
+                color: key.isValid ? AppTheme.primary : Colors.grey,
+              ),
+              title: Text(key.name),
+              subtitle: Text('${key.keyPrefix} • ${key.permissions}'),
               trailing: Row(
                 mainAxisSize: MainAxisSize.min,
                 children: [
                   Text(
-                    'Created: ${key['created']}',
+                    'Created: ${_formatCreated(key.createdAt)}',
                     style: TextStyle(color: Colors.grey[500], fontSize: 12),
                   ),
                   const SizedBox(width: 16),
                   IconButton(
                     icon: const Icon(Icons.delete_outline),
                     tooltip: 'Revoke',
-                    onPressed: () => _confirmRevoke(context, key['name']!),
+                    onPressed: key.isActive ? () => _confirmRevoke(key) : null,
                   ),
                 ],
               ),
             )),
         const SizedBox(height: 16),
         OutlinedButton.icon(
-          onPressed: () => _showCreateKeyDialog(context),
+          onPressed: _showCreateKeyDialog,
           icon: const Icon(Icons.add),
           label: const Text('Create API Key'),
         ),
@@ -1339,124 +1671,177 @@ class _ApiKeysSection extends ConsumerWidget {
     );
   }
 
-  void _confirmRevoke(BuildContext context, String name) {
-    showDialog(
+  Future<void> _confirmRevoke(ApiKeyInfo key) async {
+    final confirmed = await showDialog<bool>(
       context: context,
       builder: (context) => AlertDialog(
         title: const Text('Revoke API Key'),
-        content: Text('Are you sure you want to revoke "$name"? This cannot be undone.'),
+        content: Text('Are you sure you want to revoke "${key.name}"? This cannot be undone.'),
         actions: [
           TextButton(
-            onPressed: () => Navigator.of(context).pop(),
+            onPressed: () => Navigator.of(context).pop(false),
             child: const Text('Cancel'),
           ),
           FilledButton(
-            onPressed: () {
-              Navigator.of(context).pop();
-              ScaffoldMessenger.of(context).showSnackBar(
-                const SnackBar(content: Text('API key revoked')),
-              );
-            },
+            onPressed: () => Navigator.of(context).pop(true),
             style: FilledButton.styleFrom(backgroundColor: AppTheme.error),
             child: const Text('Revoke'),
           ),
         ],
       ),
     );
+
+    if (confirmed == true && mounted) {
+      try {
+        final api = ref.read(apiServiceProvider);
+        await api.revokeApiKey(key.id);
+        await _loadApiKeys();
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(content: Text('API key revoked')),
+          );
+        }
+      } catch (e) {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(content: Text('Failed to revoke API key: $e')),
+          );
+        }
+      }
+    }
   }
 
-  void _showCreateKeyDialog(BuildContext context) {
+  void _showCreateKeyDialog() {
+    final nameController = TextEditingController();
+    String permissions = 'read';
+    final formKey = GlobalKey<FormState>();
+
     showDialog(
       context: context,
-      builder: (context) => AlertDialog(
-        title: const Text('Create API Key'),
-        content: SizedBox(
-          width: 400,
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              TextFormField(
-                decoration: const InputDecoration(
-                  labelText: 'Name',
-                  hintText: 'e.g., CI/CD Pipeline',
-                ),
-              ),
-              const SizedBox(height: 16),
-              DropdownButtonFormField<String>(
-                decoration: const InputDecoration(labelText: 'Permissions'),
-                value: 'read',
-                items: const [
-                  DropdownMenuItem(value: 'read', child: Text('Read Only')),
-                  DropdownMenuItem(value: 'write', child: Text('Read/Write')),
-                  DropdownMenuItem(value: 'admin', child: Text('Full Access')),
+      builder: (dialogContext) => StatefulBuilder(
+        builder: (dialogContext, setDialogState) => AlertDialog(
+          title: const Text('Create API Key'),
+          content: SizedBox(
+            width: 400,
+            child: Form(
+              key: formKey,
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  TextFormField(
+                    controller: nameController,
+                    decoration: const InputDecoration(
+                      labelText: 'Name',
+                      hintText: 'e.g., CI/CD Pipeline',
+                    ),
+                    validator: (value) {
+                      if (value == null || value.isEmpty) {
+                        return 'Name is required';
+                      }
+                      return null;
+                    },
+                  ),
+                  const SizedBox(height: 16),
+                  DropdownButtonFormField<String>(
+                    decoration: const InputDecoration(labelText: 'Permissions'),
+                    value: permissions,
+                    items: const [
+                      DropdownMenuItem(value: 'read', child: Text('Read Only')),
+                      DropdownMenuItem(value: 'write', child: Text('Read/Write')),
+                      DropdownMenuItem(value: 'admin', child: Text('Full Access')),
+                    ],
+                    onChanged: (value) => setDialogState(() => permissions = value!),
+                  ),
                 ],
-                onChanged: (value) {},
               ),
-            ],
+            ),
           ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(dialogContext).pop(),
+              child: const Text('Cancel'),
+            ),
+            FilledButton(
+              onPressed: () async {
+                if (!formKey.currentState!.validate()) return;
+
+                Navigator.of(dialogContext).pop();
+
+                try {
+                  final api = ref.read(apiServiceProvider);
+                  final result = await api.createApiKey(
+                    name: nameController.text,
+                    permissions: permissions,
+                  );
+
+                  // Show the generated key
+                  if (mounted) {
+                    _showKeyCreatedDialog(result.key);
+                  }
+                  await _loadApiKeys();
+                } catch (e) {
+                  if (mounted) {
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      SnackBar(content: Text('Failed to create API key: $e')),
+                    );
+                  }
+                }
+              },
+              child: const Text('Create'),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  void _showKeyCreatedDialog(String key) {
+    showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (dialogContext) => AlertDialog(
+        title: const Text('API Key Created'),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const Text(
+              'Copy this key now. You won\'t be able to see it again.',
+              style: TextStyle(color: Colors.amber),
+            ),
+            const SizedBox(height: 16),
+            Container(
+              padding: const EdgeInsets.all(12),
+              decoration: BoxDecoration(
+                color: Colors.black26,
+                borderRadius: BorderRadius.circular(8),
+              ),
+              child: Row(
+                children: [
+                  Expanded(
+                    child: SelectableText(
+                      key,
+                      style: const TextStyle(fontFamily: 'monospace'),
+                    ),
+                  ),
+                  IconButton(
+                    icon: const Icon(Icons.copy),
+                    onPressed: () {
+                      Clipboard.setData(ClipboardData(text: key));
+                      ScaffoldMessenger.of(dialogContext).showSnackBar(
+                        const SnackBar(content: Text('Copied to clipboard')),
+                      );
+                    },
+                  ),
+                ],
+              ),
+            ),
+          ],
         ),
         actions: [
-          TextButton(
-            onPressed: () => Navigator.of(context).pop(),
-            child: const Text('Cancel'),
-          ),
           FilledButton(
-            onPressed: () {
-              Navigator.of(context).pop();
-              // Show the generated key
-              showDialog(
-                context: context,
-                builder: (context) => AlertDialog(
-                  title: const Text('API Key Created'),
-                  content: Column(
-                    mainAxisSize: MainAxisSize.min,
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      const Text(
-                        'Copy this key now. You won\'t be able to see it again.',
-                        style: TextStyle(color: Colors.amber),
-                      ),
-                      const SizedBox(height: 16),
-                      Container(
-                        padding: const EdgeInsets.all(12),
-                        decoration: BoxDecoration(
-                          color: Colors.black26,
-                          borderRadius: BorderRadius.circular(8),
-                        ),
-                        child: Row(
-                          children: [
-                            const Expanded(
-                              child: SelectableText(
-                                'sg_live_AbCdEfGhIjKlMnOpQrStUvWxYz123456',
-                                style: TextStyle(fontFamily: 'monospace'),
-                              ),
-                            ),
-                            IconButton(
-                              icon: const Icon(Icons.copy),
-                              onPressed: () {
-                                Clipboard.setData(const ClipboardData(
-                                  text: 'sg_live_AbCdEfGhIjKlMnOpQrStUvWxYz123456',
-                                ));
-                                ScaffoldMessenger.of(context).showSnackBar(
-                                  const SnackBar(content: Text('Copied to clipboard')),
-                                );
-                              },
-                            ),
-                          ],
-                        ),
-                      ),
-                    ],
-                  ),
-                  actions: [
-                    FilledButton(
-                      onPressed: () => Navigator.of(context).pop(),
-                      child: const Text('Done'),
-                    ),
-                  ],
-                ),
-              );
-            },
-            child: const Text('Create'),
+            onPressed: () => Navigator.of(dialogContext).pop(),
+            child: const Text('Done'),
           ),
         ],
       ),

@@ -82,9 +82,21 @@ class RedisService {
       // Only attach the pub/sub stream listener once - it routes to all channel controllers
       if (!_pubSubListenerAttached) {
         _pubSubListenerAttached = true;
-        _pubSub!.getStream().listen((message) {
-          _handlePubSubMessage(message);
-        });
+        _pubSub!.getStream().listen(
+          (message) {
+            _handlePubSubMessage(message);
+          },
+          onError: (error, stackTrace) {
+            _log.severe('Pub/sub stream error: $error');
+            // Try to reconnect subscriptions on error
+            _pubSubListenerAttached = false;
+            _reconnectPubSub();
+          },
+          onDone: () {
+            _log.warning('Pub/sub stream closed unexpectedly');
+            _pubSubListenerAttached = false;
+          },
+        );
       }
     }
 
@@ -109,6 +121,55 @@ class RedisService {
           }
         }
       }
+    }
+  }
+
+  /// Attempt to reconnect pub/sub after a connection failure
+  Future<void> _reconnectPubSub() async {
+    _log.info('Attempting to reconnect pub/sub...');
+    try {
+      // Close old connection
+      await _pubSubConnection?.close();
+
+      // Create new connection
+      _pubSubConnection = RedisConnection();
+      final pubSubCommand = await _pubSubConnection!.connect(host, port);
+
+      if (password != null) {
+        await pubSubCommand.send_object(['AUTH', password]);
+      }
+
+      _pubSub = PubSub(pubSubCommand);
+
+      // Re-subscribe to all active channels
+      final channels = _subscriptions.keys.toList();
+      if (channels.isNotEmpty) {
+        _pubSub!.subscribe(channels);
+
+        // Re-attach stream listener
+        _pubSubListenerAttached = true;
+        _pubSub!.getStream().listen(
+          (message) {
+            _handlePubSubMessage(message);
+          },
+          onError: (error, stackTrace) {
+            _log.severe('Pub/sub stream error after reconnect: $error');
+            _pubSubListenerAttached = false;
+            // Delay reconnect to avoid tight loop
+            Future.delayed(const Duration(seconds: 5), _reconnectPubSub);
+          },
+          onDone: () {
+            _log.warning('Pub/sub stream closed after reconnect');
+            _pubSubListenerAttached = false;
+          },
+        );
+      }
+
+      _log.info('Pub/sub reconnected successfully');
+    } catch (e) {
+      _log.severe('Failed to reconnect pub/sub: $e');
+      // Retry after delay
+      Future.delayed(const Duration(seconds: 5), _reconnectPubSub);
     }
   }
 

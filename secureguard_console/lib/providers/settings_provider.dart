@@ -39,10 +39,10 @@ class ServerConfig {
   }
 }
 
-// Server config provider
-final serverConfigProvider = FutureProvider<ServerConfig>((ref) async {
+// Server config provider (uses VPN settings)
+final serverConfigProvider = FutureProvider<VpnSettings>((ref) async {
   final api = ref.read(apiServiceProvider);
-  return api.getServerConfig();
+  return api.getVpnSettings();
 });
 
 // Admin user model

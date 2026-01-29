@@ -7,14 +7,24 @@ import 'package:shelf_router/shelf_router.dart';
 
 import '../../repositories/admin_repository.dart';
 import '../../repositories/log_repository.dart';
+import '../../repositories/server_config_repository.dart';
+import '../../services/key_service.dart';
 
 /// Authentication routes
 class AuthRoutes {
   final AdminRepository adminRepo;
   final LogRepository logRepo;
+  final ServerConfigRepository serverConfigRepo;
+  final KeyService keyService;
   final String jwtSecret;
 
-  AuthRoutes(this.adminRepo, this.jwtSecret, this.logRepo);
+  AuthRoutes(
+    this.adminRepo,
+    this.jwtSecret,
+    this.logRepo, {
+    required this.serverConfigRepo,
+    required this.keyService,
+  });
 
   Router get router {
     final router = Router();
@@ -84,6 +94,25 @@ class AuthRoutes {
         role: 'super_admin',
       );
 
+      // Initialize VPN server config with defaults if not already set
+      final existingConfig = await serverConfigRepo.get();
+      if (existingConfig == null) {
+        // Generate server keys
+        final (privateKey, publicKey) = await keyService.generateKeyPair();
+        final privateKeyEnc = await keyService.encryptPrivateKey(privateKey);
+
+        // Create default VPN config
+        await serverConfigRepo.upsert(
+          privateKeyEnc: privateKeyEnc,
+          publicKey: publicKey,
+          endpoint: 'vpn.example.com:51820', // Placeholder - admin must configure
+          listenPort: 51820,
+          ipSubnet: '10.0.0.0/24',
+          dnsServers: ['1.1.1.1', '8.8.8.8'],
+          mtu: 1420,
+        );
+      }
+
       // Log the setup
       await logRepo.auditLog(
         actorType: 'system',
@@ -91,7 +120,10 @@ class AuthRoutes {
         resourceType: 'admin',
         resourceId: admin.id,
         resourceName: email,
-        details: {'message': 'Initial admin account created'},
+        details: {
+          'message': 'Initial admin account created',
+          'vpn_config_initialized': existingConfig == null,
+        },
         ipAddress: request.headers['x-forwarded-for'] ?? request.headers['x-real-ip'],
       );
 
@@ -103,6 +135,7 @@ class AuthRoutes {
             'email': admin.email,
             'role': admin.role,
           },
+          'vpn_config_initialized': existingConfig == null,
         }),
         headers: {'content-type': 'application/json'},
       );
@@ -201,7 +234,13 @@ class AuthRoutes {
   }
 
   Future<Response> _logout(Request request) async {
-    // TODO: Invalidate refresh token in Redis
+    // TODO: Implement token blacklist in Redis for proper logout
+    // Implementation steps:
+    // 1. Extract refresh token from request body
+    // 2. Add token to Redis blacklist set with TTL matching token expiry
+    //    Key: 'token:blacklist' or 'token:blacklist:<jti>' with TTL
+    // 3. In _refresh(), check if token is blacklisted before issuing new tokens
+    // 4. Consider storing JTI (JWT ID) claims for more efficient blacklisting
     return Response.ok(
       jsonEncode({'message': 'Logged out successfully'}),
       headers: {'content-type': 'application/json'},

@@ -29,7 +29,7 @@ class ServerConfigModel {
       publicKey: _bytesToBase64(row['public_key']),
       endpoint: row['endpoint'] as String,
       listenPort: row['listen_port'] as int,
-      ipSubnet: row['ip_subnet'] as String,
+      ipSubnet: _toString(row['ip_subnet']),
       dnsServers: _parseInetArray(row['dns_servers']),
       mtu: row['mtu'] as int,
       updatedAt: row['updated_at'] as DateTime,
@@ -55,6 +55,16 @@ class ServerConfigModel {
       return base64Encode(Uint8List.fromList(bytes));
     }
     return bytes.toString();
+  }
+
+  /// Convert various PostgreSQL types (CIDR, INET, UndecodedBytes) to String
+  static String _toString(dynamic value) {
+    if (value is String) return value;
+    // Handle UndecodedBytes from postgres driver
+    if (value is List<int>) {
+      return String.fromCharCodes(value);
+    }
+    return value.toString();
   }
 
   static List<String>? _parseInetArray(dynamic value) {

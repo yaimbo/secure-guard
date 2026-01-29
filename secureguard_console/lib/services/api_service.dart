@@ -278,17 +278,18 @@ class ApiService {
   // SETTINGS
   // ═══════════════════════════════════════════════════════════════════
 
-  Future<ServerConfig> getServerConfig() async {
-    final response = await _dio.get('/settings/server');
-    return ServerConfig.fromJson(response.data);
+  Future<VpnSettings> getVpnSettings() async {
+    final response = await _dio.get('/admin/settings/vpn');
+    return VpnSettings.fromJson(response.data);
   }
 
-  Future<void> updateServerConfig(ServerConfig config) async {
-    await _dio.put('/settings/server', data: config.toJson());
+  Future<VpnSettings> updateVpnSettings(VpnSettings settings) async {
+    final response = await _dio.put('/admin/settings/vpn', data: settings.toJson());
+    return VpnSettings.fromJson(response.data);
   }
 
   Future<List<AdminUser>> getAdminUsers() async {
-    final response = await _dio.get('/settings/admins');
+    final response = await _dio.get('/admin/settings/admins');
     final items = response.data['data'] as List? ?? [];
     return items.map((json) => AdminUser.fromJson(json)).toList();
   }
@@ -298,7 +299,7 @@ class ApiService {
     required String password,
     required String role,
   }) async {
-    final response = await _dio.post('/settings/admins', data: {
+    final response = await _dio.post('/admin/settings/admins', data: {
       'email': email,
       'password': password,
       'role': role,
@@ -307,7 +308,32 @@ class ApiService {
   }
 
   Future<void> deleteAdminUser(String id) async {
-    await _dio.delete('/settings/admins/$id');
+    await _dio.delete('/admin/settings/admins/$id');
+  }
+
+  // ═══════════════════════════════════════════════════════════════════
+  // API KEYS
+  // ═══════════════════════════════════════════════════════════════════
+
+  Future<List<ApiKeyInfo>> getApiKeys() async {
+    final response = await _dio.get('/admin/settings/api-keys');
+    final items = response.data['data'] as List? ?? [];
+    return items.map((json) => ApiKeyInfo.fromJson(json)).toList();
+  }
+
+  Future<ApiKeyCreated> createApiKey({
+    required String name,
+    required String permissions,
+  }) async {
+    final response = await _dio.post('/admin/settings/api-keys', data: {
+      'name': name,
+      'permissions': permissions,
+    });
+    return ApiKeyCreated.fromJson(response.data);
+  }
+
+  Future<void> revokeApiKey(String id) async {
+    await _dio.delete('/admin/settings/api-keys/$id');
   }
 
   // ═══════════════════════════════════════════════════════════════════
@@ -827,6 +853,146 @@ class EmailQueueStats {
       failedCount: json['failed_count'] as int? ?? 0,
       totalSent: json['total_sent'] as int? ?? 0,
       redisConnected: json['redis_connected'] as bool? ?? false,
+    );
+  }
+}
+
+// ═══════════════════════════════════════════════════════════════════
+// VPN SETTINGS MODEL
+// ═══════════════════════════════════════════════════════════════════
+
+/// VPN server configuration settings
+class VpnSettings {
+  final bool configured;
+  final String? endpoint;
+  final int listenPort;
+  final String ipSubnet;
+  final List<String>? dnsServers;
+  final int mtu;
+  final String? publicKey;
+  final bool regenerateKeys;
+
+  VpnSettings({
+    this.configured = false,
+    this.endpoint,
+    this.listenPort = 51820,
+    this.ipSubnet = '10.0.0.0/24',
+    this.dnsServers,
+    this.mtu = 1420,
+    this.publicKey,
+    this.regenerateKeys = false,
+  });
+
+  factory VpnSettings.fromJson(Map<String, dynamic> json) {
+    return VpnSettings(
+      configured: json['configured'] as bool? ?? false,
+      endpoint: json['endpoint'] as String?,
+      listenPort: json['listen_port'] as int? ?? 51820,
+      ipSubnet: json['ip_subnet'] as String? ?? '10.0.0.0/24',
+      dnsServers: (json['dns_servers'] as List<dynamic>?)?.cast<String>(),
+      mtu: json['mtu'] as int? ?? 1420,
+      publicKey: json['public_key'] as String?,
+    );
+  }
+
+  Map<String, dynamic> toJson() => {
+        'endpoint': endpoint,
+        'listen_port': listenPort,
+        'ip_subnet': ipSubnet,
+        'dns_servers': dnsServers,
+        'mtu': mtu,
+        if (regenerateKeys) 'regenerate_keys': true,
+      };
+
+  VpnSettings copyWith({
+    bool? configured,
+    String? endpoint,
+    int? listenPort,
+    String? ipSubnet,
+    List<String>? dnsServers,
+    int? mtu,
+    String? publicKey,
+    bool? regenerateKeys,
+  }) {
+    return VpnSettings(
+      configured: configured ?? this.configured,
+      endpoint: endpoint ?? this.endpoint,
+      listenPort: listenPort ?? this.listenPort,
+      ipSubnet: ipSubnet ?? this.ipSubnet,
+      dnsServers: dnsServers ?? this.dnsServers,
+      mtu: mtu ?? this.mtu,
+      publicKey: publicKey ?? this.publicKey,
+      regenerateKeys: regenerateKeys ?? this.regenerateKeys,
+    );
+  }
+}
+
+// ═══════════════════════════════════════════════════════════════════
+// API KEY MODELS
+// ═══════════════════════════════════════════════════════════════════
+
+/// API key info (without the actual key)
+class ApiKeyInfo {
+  final String id;
+  final String name;
+  final String keyPrefix;
+  final String permissions;
+  final String? createdBy;
+  final DateTime createdAt;
+  final DateTime? lastUsedAt;
+  final DateTime? expiresAt;
+  final bool isActive;
+
+  ApiKeyInfo({
+    required this.id,
+    required this.name,
+    required this.keyPrefix,
+    required this.permissions,
+    this.createdBy,
+    required this.createdAt,
+    this.lastUsedAt,
+    this.expiresAt,
+    required this.isActive,
+  });
+
+  factory ApiKeyInfo.fromJson(Map<String, dynamic> json) {
+    return ApiKeyInfo(
+      id: json['id'] as String,
+      name: json['name'] as String,
+      keyPrefix: json['key_prefix'] as String,
+      permissions: json['permissions'] as String? ?? 'read',
+      createdBy: json['created_by'] as String?,
+      createdAt: DateTime.parse(json['created_at'] as String),
+      lastUsedAt: json['last_used_at'] != null
+          ? DateTime.parse(json['last_used_at'] as String)
+          : null,
+      expiresAt: json['expires_at'] != null
+          ? DateTime.parse(json['expires_at'] as String)
+          : null,
+      isActive: json['is_active'] as bool? ?? true,
+    );
+  }
+
+  bool get isExpired =>
+      expiresAt != null && DateTime.now().isAfter(expiresAt!);
+
+  bool get isValid => isActive && !isExpired;
+}
+
+/// API key created response (includes the actual key - shown only once)
+class ApiKeyCreated {
+  final ApiKeyInfo info;
+  final String key; // The actual key - only available on creation
+
+  ApiKeyCreated({
+    required this.info,
+    required this.key,
+  });
+
+  factory ApiKeyCreated.fromJson(Map<String, dynamic> json) {
+    return ApiKeyCreated(
+      info: ApiKeyInfo.fromJson(json),
+      key: json['key'] as String,
     );
   }
 }
