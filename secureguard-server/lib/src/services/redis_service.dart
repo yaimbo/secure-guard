@@ -260,6 +260,97 @@ class RedisService {
     return null;
   }
 
+  // ═══════════════════════════════════════════════════════════════════
+  // RATE LIMITING
+  // ═══════════════════════════════════════════════════════════════════
+
+  /// Check rate limit for an action
+  ///
+  /// Uses a simple sliding window counter with TTL.
+  /// Returns [RateLimitResult] indicating if request is allowed.
+  ///
+  /// Example:
+  /// ```dart
+  /// final result = await redis.checkRateLimit(
+  ///   key: 'ratelimit:enrollment:redeem:192.168.1.1',
+  ///   maxRequests: 5,
+  ///   windowSeconds: 60,
+  /// );
+  /// if (!result.allowed) {
+  ///   return Response(429, ...);
+  /// }
+  /// ```
+  Future<RateLimitResult> checkRateLimit({
+    required String key,
+    required int maxRequests,
+    required int windowSeconds,
+  }) async {
+    // If Redis is not connected, allow the request (fail open for availability)
+    if (_command == null) {
+      return RateLimitResult(
+        allowed: true,
+        remaining: maxRequests,
+        resetSeconds: windowSeconds,
+      );
+    }
+
+    try {
+      // Increment the counter
+      final count = await _command!.send_object(['INCR', key]);
+      final currentCount = count as int;
+
+      // Set TTL on first request only
+      if (currentCount == 1) {
+        await _command!.send_object(['EXPIRE', key, windowSeconds.toString()]);
+      }
+
+      // Get remaining TTL
+      final ttl = await _command!.send_object(['TTL', key]);
+      final resetSeconds = (ttl as int?) ?? windowSeconds;
+
+      final allowed = currentCount <= maxRequests;
+      final remaining = allowed ? maxRequests - currentCount : 0;
+
+      return RateLimitResult(
+        allowed: allowed,
+        remaining: remaining,
+        resetSeconds: resetSeconds > 0 ? resetSeconds : windowSeconds,
+      );
+    } catch (e) {
+      _log.warning('Rate limit check failed: $e - allowing request');
+      // Fail open - allow request if Redis fails
+      return RateLimitResult(
+        allowed: true,
+        remaining: maxRequests,
+        resetSeconds: windowSeconds,
+      );
+    }
+  }
+
+  /// Build a rate limit key for enrollment code redemption
+  static String enrollmentRedeemKey(String ipAddress) {
+    // Sanitize IP address for use as Redis key
+    final sanitizedIp = ipAddress.replaceAll(RegExp(r'[^a-zA-Z0-9.:]'), '_');
+    return 'ratelimit:enrollment:redeem:$sanitizedIp';
+  }
+
+  // ═══════════════════════════════════════════════════════════════════
+  // GENERIC COMMAND EXECUTION
+  // ═══════════════════════════════════════════════════════════════════
+
+  /// Send a raw Redis command
+  /// Used by other services that need direct Redis access
+  Future<dynamic> sendCommand(List<dynamic> command) async {
+    if (_command == null) return null;
+
+    try {
+      return await _command!.send_object(command);
+    } catch (e) {
+      _log.warning('Redis command failed: $e');
+      return null;
+    }
+  }
+
   /// Close connections
   Future<void> close() async {
     for (final controller in _subscriptions.values) {
@@ -304,4 +395,17 @@ class RedisMetrics {
   static const totalConnections = 'metrics:total:connections';
   static const totalBytesTx = 'metrics:total:bytes_tx';
   static const totalBytesRx = 'metrics:total:bytes_rx';
+}
+
+/// Rate limiting result
+class RateLimitResult {
+  final bool allowed;
+  final int remaining;
+  final int resetSeconds;
+
+  RateLimitResult({
+    required this.allowed,
+    required this.remaining,
+    required this.resetSeconds,
+  });
 }

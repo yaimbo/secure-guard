@@ -49,6 +49,9 @@ dependencies:
   # Toast notifications
   fluttertoast: ^8.2.5
 
+  # Preferences storage
+  shared_preferences: ^2.2.3
+
 dev_dependencies:
   flutter_test:
     sdk: flutter

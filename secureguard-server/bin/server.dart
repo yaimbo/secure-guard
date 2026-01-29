@@ -50,6 +50,7 @@ Future<void> main(List<String> args) async {
     jwtSecret: env['JWT_SECRET'] ?? 'development-secret-change-in-production',
     encryptionKey: env['ENCRYPTION_KEY'],
     corsOrigins: env['CORS_ORIGINS']?.split(',') ?? ['http://localhost:3000'],
+    serverDomain: env['SERVER_DOMAIN'] ?? 'localhost:8080',
   );
 
   log.info('Starting SecureGuard API Server...');

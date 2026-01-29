@@ -46,6 +46,15 @@ class SettingsScreen extends ConsumerWidget {
             ),
             const SizedBox(height: 24),
 
+            // Email Settings
+            _buildSection(
+              context,
+              title: 'Email Settings',
+              icon: Icons.email,
+              child: _EmailSettingsSection(),
+            ),
+            const SizedBox(height: 24),
+
             // API Keys
             _buildSection(
               context,
@@ -803,6 +812,489 @@ class _SSOConfigSectionState extends ConsumerState<_SSOConfigSection> {
         ),
       ),
     );
+  }
+}
+
+class _EmailSettingsSection extends ConsumerStatefulWidget {
+  @override
+  ConsumerState<_EmailSettingsSection> createState() => _EmailSettingsSectionState();
+}
+
+class _EmailSettingsSectionState extends ConsumerState<_EmailSettingsSection> {
+  final _formKey = GlobalKey<FormState>();
+  final _hostController = TextEditingController();
+  final _portController = TextEditingController();
+  final _usernameController = TextEditingController();
+  final _passwordController = TextEditingController();
+  final _fromEmailController = TextEditingController();
+  final _fromNameController = TextEditingController();
+  final _testEmailController = TextEditingController();
+
+  bool _enabled = false;
+  bool _useSsl = false;
+  bool _useStarttls = true;
+  bool _isLoading = true;
+  bool _isSaving = false;
+  bool _isTesting = false;
+  bool _hasChanges = false;
+  String? _error;
+  EmailSettings? _originalSettings;
+
+  @override
+  void initState() {
+    super.initState();
+    _loadSettings();
+  }
+
+  Future<void> _loadSettings() async {
+    setState(() {
+      _isLoading = true;
+      _error = null;
+    });
+
+    try {
+      final api = ref.read(apiServiceProvider);
+      final settings = await api.getEmailSettings();
+      if (mounted) {
+        setState(() {
+          _originalSettings = settings;
+          _enabled = settings.enabled;
+          _hostController.text = settings.smtpHost ?? '';
+          _portController.text = settings.smtpPort.toString();
+          _usernameController.text = settings.smtpUsername ?? '';
+          _passwordController.text = ''; // Don't populate password
+          _fromEmailController.text = settings.fromEmail ?? '';
+          _fromNameController.text = settings.fromName;
+          _useSsl = settings.useSsl;
+          _useStarttls = settings.useStarttls;
+          _isLoading = false;
+          _hasChanges = false;
+        });
+      }
+    } catch (e) {
+      if (mounted) {
+        setState(() {
+          _error = e.toString();
+          _isLoading = false;
+        });
+      }
+    }
+  }
+
+  @override
+  void dispose() {
+    _hostController.dispose();
+    _portController.dispose();
+    _usernameController.dispose();
+    _passwordController.dispose();
+    _fromEmailController.dispose();
+    _fromNameController.dispose();
+    _testEmailController.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    if (_isLoading) {
+      return const Center(
+        child: Padding(
+          padding: EdgeInsets.all(24),
+          child: CircularProgressIndicator(),
+        ),
+      );
+    }
+
+    if (_error != null) {
+      return Column(
+        children: [
+          Text('Failed to load email settings: $_error'),
+          const SizedBox(height: 16),
+          OutlinedButton(
+            onPressed: _loadSettings,
+            child: const Text('Retry'),
+          ),
+        ],
+      );
+    }
+
+    return Form(
+      key: _formKey,
+      onChanged: () => setState(() => _hasChanges = true),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            'Configure SMTP settings to send enrollment emails directly from the console.',
+            style: TextStyle(color: Colors.grey[600]),
+          ),
+          const SizedBox(height: 16),
+
+          // Enable/disable toggle
+          SwitchListTile(
+            title: const Text('Enable SMTP Email'),
+            subtitle: const Text('Send enrollment emails to users'),
+            value: _enabled,
+            onChanged: (value) => setState(() {
+              _enabled = value;
+              _hasChanges = true;
+            }),
+          ),
+          const Divider(height: 32),
+
+          // SMTP Server settings
+          Row(
+            children: [
+              Expanded(
+                flex: 2,
+                child: TextFormField(
+                  controller: _hostController,
+                  decoration: const InputDecoration(
+                    labelText: 'SMTP Server',
+                    hintText: 'smtp.example.com',
+                  ),
+                  enabled: _enabled,
+                  validator: (value) {
+                    if (_enabled && (value == null || value.isEmpty)) {
+                      return 'SMTP server is required';
+                    }
+                    return null;
+                  },
+                ),
+              ),
+              const SizedBox(width: 16),
+              Expanded(
+                child: TextFormField(
+                  controller: _portController,
+                  decoration: const InputDecoration(
+                    labelText: 'Port',
+                    hintText: '587',
+                  ),
+                  enabled: _enabled,
+                  keyboardType: TextInputType.number,
+                  inputFormatters: [FilteringTextInputFormatter.digitsOnly],
+                  validator: (value) {
+                    if (_enabled && (value == null || value.isEmpty)) {
+                      return 'Port required';
+                    }
+                    return null;
+                  },
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 16),
+
+          // Authentication
+          Row(
+            children: [
+              Expanded(
+                child: TextFormField(
+                  controller: _usernameController,
+                  decoration: const InputDecoration(
+                    labelText: 'Username',
+                    hintText: 'noreply@example.com',
+                  ),
+                  enabled: _enabled,
+                ),
+              ),
+              const SizedBox(width: 16),
+              Expanded(
+                child: TextFormField(
+                  controller: _passwordController,
+                  decoration: InputDecoration(
+                    labelText: 'Password',
+                    hintText: _originalSettings?.hasPassword == true
+                        ? '(unchanged)'
+                        : 'SMTP password',
+                  ),
+                  enabled: _enabled,
+                  obscureText: true,
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 16),
+
+          // Security options
+          Text(
+            'Security',
+            style: Theme.of(context).textTheme.titleSmall,
+          ),
+          const SizedBox(height: 8),
+          Row(
+            children: [
+              Expanded(
+                child: RadioListTile<String>(
+                  title: const Text('STARTTLS'),
+                  subtitle: const Text('Recommended'),
+                  value: 'starttls',
+                  groupValue: _useSsl ? 'ssl' : (_useStarttls ? 'starttls' : 'none'),
+                  onChanged: _enabled ? (value) => setState(() {
+                    _useSsl = false;
+                    _useStarttls = true;
+                    _hasChanges = true;
+                  }) : null,
+                ),
+              ),
+              Expanded(
+                child: RadioListTile<String>(
+                  title: const Text('SSL/TLS'),
+                  subtitle: const Text('Port 465'),
+                  value: 'ssl',
+                  groupValue: _useSsl ? 'ssl' : (_useStarttls ? 'starttls' : 'none'),
+                  onChanged: _enabled ? (value) => setState(() {
+                    _useSsl = true;
+                    _useStarttls = false;
+                    _hasChanges = true;
+                  }) : null,
+                ),
+              ),
+              Expanded(
+                child: RadioListTile<String>(
+                  title: const Text('None'),
+                  subtitle: const Text('Not recommended'),
+                  value: 'none',
+                  groupValue: _useSsl ? 'ssl' : (_useStarttls ? 'starttls' : 'none'),
+                  onChanged: _enabled ? (value) => setState(() {
+                    _useSsl = false;
+                    _useStarttls = false;
+                    _hasChanges = true;
+                  }) : null,
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 16),
+
+          // From address
+          Row(
+            children: [
+              Expanded(
+                child: TextFormField(
+                  controller: _fromEmailController,
+                  decoration: const InputDecoration(
+                    labelText: 'From Email',
+                    hintText: 'vpn@example.com',
+                  ),
+                  enabled: _enabled,
+                  validator: (value) {
+                    if (_enabled && (value == null || value.isEmpty)) {
+                      return 'From email is required';
+                    }
+                    if (_enabled && value != null && !value.contains('@')) {
+                      return 'Invalid email address';
+                    }
+                    return null;
+                  },
+                ),
+              ),
+              const SizedBox(width: 16),
+              Expanded(
+                child: TextFormField(
+                  controller: _fromNameController,
+                  decoration: const InputDecoration(
+                    labelText: 'From Name',
+                    hintText: 'SecureGuard VPN',
+                  ),
+                  enabled: _enabled,
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 24),
+
+          // Test connection
+          if (_enabled) ...[
+            Text(
+              'Test Email',
+              style: Theme.of(context).textTheme.titleSmall,
+            ),
+            const SizedBox(height: 8),
+            Row(
+              children: [
+                Expanded(
+                  child: TextFormField(
+                    controller: _testEmailController,
+                    decoration: const InputDecoration(
+                      labelText: 'Test Recipient',
+                      hintText: 'your@email.com',
+                    ),
+                  ),
+                ),
+                const SizedBox(width: 16),
+                OutlinedButton.icon(
+                  onPressed: _isTesting ? null : _testEmail,
+                  icon: _isTesting
+                      ? const SizedBox(
+                          width: 16,
+                          height: 16,
+                          child: CircularProgressIndicator(strokeWidth: 2),
+                        )
+                      : const Icon(Icons.send),
+                  label: const Text('Send Test'),
+                ),
+              ],
+            ),
+
+            // Last test status
+            if (_originalSettings?.lastTestAt != null) ...[
+              const SizedBox(height: 8),
+              Row(
+                children: [
+                  Icon(
+                    _originalSettings!.lastTestSuccess == true
+                        ? Icons.check_circle
+                        : Icons.error,
+                    size: 16,
+                    color: _originalSettings!.lastTestSuccess == true
+                        ? Colors.green
+                        : Colors.red,
+                  ),
+                  const SizedBox(width: 8),
+                  Text(
+                    _originalSettings!.lastTestSuccess == true
+                        ? 'Last test successful'
+                        : 'Last test failed',
+                    style: TextStyle(
+                      color: _originalSettings!.lastTestSuccess == true
+                          ? Colors.green
+                          : Colors.red,
+                      fontSize: 12,
+                    ),
+                  ),
+                  const SizedBox(width: 8),
+                  Text(
+                    '(${_formatTimeAgo(_originalSettings!.lastTestAt!)})',
+                    style: TextStyle(color: Colors.grey[600], fontSize: 12),
+                  ),
+                ],
+              ),
+            ],
+            const SizedBox(height: 24),
+          ],
+
+          // Save button
+          Row(
+            mainAxisAlignment: MainAxisAlignment.end,
+            children: [
+              TextButton(
+                onPressed: _hasChanges ? _loadSettings : null,
+                child: const Text('Reset'),
+              ),
+              const SizedBox(width: 8),
+              FilledButton(
+                onPressed: _hasChanges && !_isSaving ? _saveSettings : null,
+                child: _isSaving
+                    ? const SizedBox(
+                        width: 20,
+                        height: 20,
+                        child: CircularProgressIndicator(strokeWidth: 2),
+                      )
+                    : const Text('Save Settings'),
+              ),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+
+  String _formatTimeAgo(DateTime dateTime) {
+    final diff = DateTime.now().difference(dateTime);
+    if (diff.inMinutes < 1) return 'just now';
+    if (diff.inMinutes < 60) return '${diff.inMinutes}m ago';
+    if (diff.inHours < 24) return '${diff.inHours}h ago';
+    return '${diff.inDays}d ago';
+  }
+
+  Future<void> _saveSettings() async {
+    if (!_formKey.currentState!.validate()) return;
+
+    setState(() => _isSaving = true);
+
+    try {
+      final api = ref.read(apiServiceProvider);
+      final settings = EmailSettings(
+        enabled: _enabled,
+        smtpHost: _hostController.text.isNotEmpty ? _hostController.text : null,
+        smtpPort: int.tryParse(_portController.text) ?? 587,
+        smtpUsername: _usernameController.text.isNotEmpty ? _usernameController.text : null,
+        smtpPassword: _passwordController.text.isNotEmpty ? _passwordController.text : null,
+        useSsl: _useSsl,
+        useStarttls: _useStarttls,
+        fromEmail: _fromEmailController.text.isNotEmpty ? _fromEmailController.text : null,
+        fromName: _fromNameController.text.isNotEmpty ? _fromNameController.text : 'SecureGuard VPN',
+      );
+
+      await api.updateEmailSettings(settings);
+      await _loadSettings();
+
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Email settings saved')),
+        );
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Failed to save settings: $e')),
+        );
+      }
+    } finally {
+      if (mounted) {
+        setState(() => _isSaving = false);
+      }
+    }
+  }
+
+  Future<void> _testEmail() async {
+    final testEmail = _testEmailController.text.trim();
+    if (testEmail.isEmpty || !testEmail.contains('@')) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Enter a valid test email address')),
+      );
+      return;
+    }
+
+    setState(() => _isTesting = true);
+
+    try {
+      final api = ref.read(apiServiceProvider);
+      final result = await api.testEmailSettings(testEmail);
+
+      if (mounted) {
+        if (result.success) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text('Test email sent successfully'),
+              backgroundColor: Colors.green,
+            ),
+          );
+        } else {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text('Test failed: ${result.error ?? result.message ?? "Unknown error"}'),
+              backgroundColor: Colors.red,
+            ),
+          );
+        }
+        // Reload to get updated test status
+        await _loadSettings();
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Test failed: $e'),
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
+    } finally {
+      if (mounted) {
+        setState(() => _isTesting = false);
+      }
+    }
   }
 }
 

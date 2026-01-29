@@ -2,9 +2,11 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 import '../config/theme.dart';
 import '../providers/clients_provider.dart';
+import '../services/api_service.dart';
 
 class ClientDetailScreen extends ConsumerWidget {
   final String clientId;
@@ -280,6 +282,10 @@ class ClientDetailScreen extends ConsumerWidget {
               ),
               const SizedBox(height: 24),
 
+              // Enrollment code card
+              _EnrollmentCodeCard(clientId: clientId),
+              const SizedBox(height: 24),
+
               // Danger zone
               Card(
                 color: AppTheme.error.withValues(alpha: 0.05),
@@ -553,5 +559,523 @@ class _QrCodeDialog extends ConsumerWidget {
         ),
       ],
     );
+  }
+}
+
+/// Enrollment code card for easy device onboarding
+class _EnrollmentCodeCard extends ConsumerStatefulWidget {
+  final String clientId;
+
+  const _EnrollmentCodeCard({required this.clientId});
+
+  @override
+  ConsumerState<_EnrollmentCodeCard> createState() => _EnrollmentCodeCardState();
+}
+
+class _EnrollmentCodeCardState extends ConsumerState<_EnrollmentCodeCard> {
+  static const _autoSendPrefKey = 'enrollment_auto_send_email';
+  bool _autoSendEmail = false;
+  bool _isLoadingPrefs = true;
+
+  @override
+  void initState() {
+    super.initState();
+    _loadAutoSendPreference();
+  }
+
+  Future<void> _loadAutoSendPreference() async {
+    final prefs = await SharedPreferences.getInstance();
+    if (mounted) {
+      setState(() {
+        _autoSendEmail = prefs.getBool(_autoSendPrefKey) ?? false;
+        _isLoadingPrefs = false;
+      });
+    }
+  }
+
+  Future<void> _setAutoSendPreference(bool value) async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setBool(_autoSendPrefKey, value);
+    if (mounted) {
+      setState(() {
+        _autoSendEmail = value;
+      });
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final enrollmentAsync = ref.watch(enrollmentCodeProvider(widget.clientId));
+
+    return Card(
+      color: const Color(0xFF1E3A5F).withValues(alpha: 0.3),
+      child: Padding(
+        padding: const EdgeInsets.all(20),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                const Icon(Icons.vpn_key, color: Color(0xFF3B82F6)),
+                const SizedBox(width: 8),
+                Text(
+                  'Enrollment Code',
+                  style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                        color: const Color(0xFF3B82F6),
+                      ),
+                ),
+                const Spacer(),
+                enrollmentAsync.when(
+                  loading: () => const SizedBox.shrink(),
+                  error: (_, __) => const SizedBox.shrink(),
+                  data: (code) => code != null
+                      ? TextButton.icon(
+                          onPressed: () => _regenerateCode(context),
+                          icon: const Icon(Icons.refresh, size: 16),
+                          label: const Text('Regenerate'),
+                        )
+                      : const SizedBox.shrink(),
+                ),
+              ],
+            ),
+            const SizedBox(height: 16),
+            Text(
+              'Share this code with the user to allow them to easily enroll their device.',
+              style: TextStyle(fontSize: 13, color: Colors.grey[400]),
+            ),
+            const SizedBox(height: 12),
+            // Auto-send email toggle
+            if (!_isLoadingPrefs)
+              Row(
+                children: [
+                  Switch(
+                    value: _autoSendEmail,
+                    onChanged: _setAutoSendPreference,
+                    activeTrackColor: const Color(0xFF3B82F6).withValues(alpha: 0.5),
+                    activeThumbColor: const Color(0xFF3B82F6),
+                  ),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: Text(
+                      'Auto-send enrollment email when code is generated',
+                      style: TextStyle(fontSize: 13, color: Colors.grey[400]),
+                    ),
+                  ),
+                  Tooltip(
+                    message: 'Requires email settings to be configured and client to have an email address',
+                    child: Icon(Icons.info_outline, size: 16, color: Colors.grey[500]),
+                  ),
+                ],
+              ),
+            const SizedBox(height: 16),
+            enrollmentAsync.when(
+              loading: () => const Center(
+                child: Padding(
+                  padding: EdgeInsets.all(16),
+                  child: CircularProgressIndicator(),
+                ),
+              ),
+              error: (error, _) => _buildErrorState(context, error),
+              data: (code) => code != null
+                  ? _buildCodeDisplay(context, code)
+                  : _buildNoCodeState(context),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildCodeDisplay(BuildContext context, EnrollmentCode code) {
+    final isExpired = code.isExpired;
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        // Code display
+        Container(
+          padding: const EdgeInsets.all(16),
+          decoration: BoxDecoration(
+            color: Colors.black26,
+            borderRadius: BorderRadius.circular(8),
+            border: Border.all(
+              color: isExpired ? AppTheme.error : const Color(0xFF3B82F6),
+              width: 1,
+            ),
+          ),
+          child: Row(
+            children: [
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Row(
+                      children: [
+                        Text(
+                          'Code:',
+                          style: TextStyle(
+                            fontSize: 12,
+                            color: Colors.grey[500],
+                          ),
+                        ),
+                        const SizedBox(width: 8),
+                        SelectableText(
+                          code.code,
+                          style: const TextStyle(
+                            fontSize: 24,
+                            fontWeight: FontWeight.bold,
+                            fontFamily: 'monospace',
+                            letterSpacing: 4,
+                          ),
+                        ),
+                        const SizedBox(width: 8),
+                        IconButton(
+                          icon: const Icon(Icons.copy, size: 18),
+                          tooltip: 'Copy code',
+                          onPressed: () {
+                            Clipboard.setData(ClipboardData(text: code.code));
+                            ScaffoldMessenger.of(context).showSnackBar(
+                              const SnackBar(content: Text('Code copied to clipboard')),
+                            );
+                          },
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 8),
+                    Row(
+                      children: [
+                        Icon(
+                          isExpired ? Icons.error : Icons.schedule,
+                          size: 14,
+                          color: isExpired ? AppTheme.error : Colors.grey[500],
+                        ),
+                        const SizedBox(width: 4),
+                        Text(
+                          isExpired
+                              ? 'Expired'
+                              : 'Expires in ${code.remainingTimeFormatted}',
+                          style: TextStyle(
+                            fontSize: 12,
+                            color: isExpired ? AppTheme.error : Colors.grey[500],
+                          ),
+                        ),
+                      ],
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+        ),
+        const SizedBox(height: 16),
+
+        // Deep link
+        Row(
+          children: [
+            Text(
+              'Deep Link:',
+              style: TextStyle(fontSize: 12, color: Colors.grey[500]),
+            ),
+            const SizedBox(width: 8),
+            Expanded(
+              child: SelectableText(
+                code.deepLink,
+                style: const TextStyle(
+                  fontSize: 12,
+                  fontFamily: 'monospace',
+                  color: Color(0xFF60A5FA),
+                ),
+              ),
+            ),
+            IconButton(
+              icon: const Icon(Icons.copy, size: 16),
+              tooltip: 'Copy deep link',
+              onPressed: () {
+                Clipboard.setData(ClipboardData(text: code.deepLink));
+                ScaffoldMessenger.of(context).showSnackBar(
+                  const SnackBar(content: Text('Deep link copied to clipboard')),
+                );
+              },
+            ),
+          ],
+        ),
+        const SizedBox(height: 16),
+
+        // Action buttons
+        Wrap(
+          spacing: 8,
+          runSpacing: 8,
+          children: [
+            FilledButton.icon(
+              onPressed: () => _sendEnrollmentEmail(context),
+              icon: const Icon(Icons.send, size: 16),
+              label: const Text('Send Email'),
+            ),
+            OutlinedButton.icon(
+              onPressed: () => _copyEnrollmentEmail(context, code),
+              icon: const Icon(Icons.copy, size: 16),
+              label: const Text('Copy Template'),
+            ),
+            if (isExpired)
+              OutlinedButton.icon(
+                onPressed: () => _regenerateCode(context),
+                icon: const Icon(Icons.refresh, size: 16),
+                label: const Text('Generate New Code'),
+              )
+            else
+              OutlinedButton.icon(
+                onPressed: () => _revokeCode(context),
+                icon: const Icon(Icons.delete_outline, size: 16),
+                style: OutlinedButton.styleFrom(
+                  foregroundColor: AppTheme.error,
+                ),
+                label: const Text('Revoke'),
+              ),
+          ],
+        ),
+      ],
+    );
+  }
+
+  Widget _buildNoCodeState(BuildContext context) {
+    return Center(
+      child: Column(
+        children: [
+          Icon(Icons.vpn_key_off, size: 48, color: Colors.grey[600]),
+          const SizedBox(height: 16),
+          Text(
+            'No active enrollment code',
+            style: TextStyle(color: Colors.grey[500]),
+          ),
+          const SizedBox(height: 16),
+          FilledButton.icon(
+            onPressed: () => _generateCode(context),
+            icon: const Icon(Icons.add),
+            label: const Text('Generate Enrollment Code'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildErrorState(BuildContext context, Object error) {
+    return Center(
+      child: Column(
+        children: [
+          Icon(Icons.error_outline, size: 48, color: AppTheme.error),
+          const SizedBox(height: 16),
+          Text(
+            'Error loading enrollment code',
+            style: TextStyle(color: Colors.grey[500]),
+          ),
+          const SizedBox(height: 8),
+          Text(
+            error.toString(),
+            style: TextStyle(fontSize: 12, color: Colors.grey[600]),
+          ),
+          const SizedBox(height: 16),
+          OutlinedButton.icon(
+            onPressed: () => ref.invalidate(enrollmentCodeProvider(widget.clientId)),
+            icon: const Icon(Icons.refresh),
+            label: const Text('Retry'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  void _generateCode(BuildContext context) async {
+    try {
+      final api = ref.read(apiServiceProvider);
+      await api.generateEnrollmentCode(widget.clientId);
+      ref.invalidate(enrollmentCodeProvider(widget.clientId));
+
+      if (context.mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Enrollment code generated')),
+        );
+      }
+
+      // Auto-send email if enabled
+      if (_autoSendEmail && context.mounted) {
+        await _sendEnrollmentEmailSilent(context);
+      }
+    } catch (e) {
+      if (context.mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Error: $e')),
+        );
+      }
+    }
+  }
+
+  void _regenerateCode(BuildContext context) async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Regenerate Code'),
+        content: const Text(
+          'This will invalidate the current enrollment code. '
+          'Any user who has not yet redeemed the code will need the new one.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(false),
+            child: const Text('Cancel'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.of(context).pop(true),
+            child: const Text('Regenerate'),
+          ),
+        ],
+      ),
+    );
+
+    if (confirmed == true) {
+      _generateCode(context);
+    }
+  }
+
+  void _revokeCode(BuildContext context) async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Revoke Code'),
+        content: const Text(
+          'This will invalidate the enrollment code. '
+          'The user will not be able to use it to enroll their device.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(false),
+            child: const Text('Cancel'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.of(context).pop(true),
+            style: FilledButton.styleFrom(backgroundColor: AppTheme.error),
+            child: const Text('Revoke'),
+          ),
+        ],
+      ),
+    );
+
+    if (confirmed == true) {
+      try {
+        final api = ref.read(apiServiceProvider);
+        await api.revokeEnrollmentCode(widget.clientId);
+        ref.invalidate(enrollmentCodeProvider(widget.clientId));
+        if (context.mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(content: Text('Enrollment code revoked')),
+          );
+        }
+      } catch (e) {
+        if (context.mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(content: Text('Error: $e')),
+          );
+        }
+      }
+    }
+  }
+
+  void _copyEnrollmentEmail(BuildContext context, EnrollmentCode code) {
+    // Extract domain from deep link
+    final uri = Uri.parse(code.deepLink);
+    final serverParam = uri.queryParameters['server'] ?? '';
+    final domain = serverParam.replaceAll(RegExp(r'^https?://'), '');
+
+    final emailTemplate = '''
+Subject: Your SecureGuard VPN Access
+
+Hi,
+
+You've been granted VPN access. Click the link below to set up SecureGuard:
+
+${code.deepLink}
+
+If the link doesn't work, open the SecureGuard app and enter:
+  - Domain: $domain
+  - Code: ${code.code}
+
+This enrollment expires in ${code.remainingTimeFormatted}.
+
+Need help? Contact your IT administrator.
+''';
+
+    Clipboard.setData(ClipboardData(text: emailTemplate));
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(content: Text('Email template copied to clipboard')),
+    );
+  }
+
+  /// Send enrollment email with confirmation dialog
+  void _sendEnrollmentEmail(BuildContext context) async {
+    // Show confirmation dialog
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Send Enrollment Email'),
+        content: const Text(
+          'This will send an enrollment email to the user\'s email address. '
+          'Make sure email settings are configured in Settings > Email.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(false),
+            child: const Text('Cancel'),
+          ),
+          FilledButton.icon(
+            onPressed: () => Navigator.of(context).pop(true),
+            icon: const Icon(Icons.send, size: 16),
+            label: const Text('Send'),
+          ),
+        ],
+      ),
+    );
+
+    if (confirmed != true) return;
+
+    await _sendEnrollmentEmailSilent(context);
+  }
+
+  /// Send enrollment email without confirmation (for auto-send)
+  Future<void> _sendEnrollmentEmailSilent(BuildContext context) async {
+    try {
+      final api = ref.read(apiServiceProvider);
+      final result = await api.sendEnrollmentEmail(widget.clientId);
+
+      if (context.mounted) {
+        final toEmail = result['to_email'] as String?;
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(
+              toEmail != null
+                  ? 'Enrollment email queued for $toEmail'
+                  : 'Enrollment email queued',
+            ),
+            backgroundColor: Colors.green,
+          ),
+        );
+      }
+    } catch (e) {
+      if (context.mounted) {
+        String errorMessage = e.toString();
+
+        // Check for specific error types
+        if (errorMessage.contains('no_email')) {
+          errorMessage = 'Client has no email address. Add an email in the client details.';
+        } else if (errorMessage.contains('email_not_configured')) {
+          errorMessage = 'Email service not configured. Configure SMTP in Settings > Email.';
+        }
+
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Failed to send email: $errorMessage'),
+            backgroundColor: AppTheme.error,
+          ),
+        );
+      }
+    }
   }
 }

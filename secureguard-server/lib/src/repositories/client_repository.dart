@@ -162,6 +162,7 @@ class ClientRepository {
       'platform',
       'platform_version',
       'client_version',
+      'hardware_id',
     ];
 
     for (final field in allowedFields) {
@@ -246,6 +247,26 @@ class ClientRepository {
     await db.execute('''
       UPDATE clients SET last_config_fetch = NOW() WHERE id = @id
     ''', {'id': id});
+  }
+
+  /// Update device token hash (for enrollment/authentication)
+  Future<void> updateDeviceTokenHash(String id, String tokenHash) async {
+    await db.execute('''
+      UPDATE clients
+      SET device_token_hash = @token_hash, updated_at = NOW()
+      WHERE id = @id
+    ''', {'id': id, 'token_hash': tokenHash});
+  }
+
+  /// Verify device token hash matches stored hash
+  Future<bool> verifyDeviceTokenHash(String id, String tokenHash) async {
+    final result = await db.execute('''
+      SELECT device_token_hash FROM clients WHERE id = @id
+    ''', {'id': id});
+
+    if (result.isEmpty) return false;
+    final storedHash = result.first[0] as String?;
+    return storedHash == tokenHash;
   }
 
   /// Delete a client

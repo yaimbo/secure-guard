@@ -191,6 +191,33 @@ class ApiService {
   }
 
   // ═══════════════════════════════════════════════════════════════════
+  // ENROLLMENT CODES
+  // ═══════════════════════════════════════════════════════════════════
+
+  /// Get the current enrollment code for a client (if any)
+  Future<EnrollmentCode?> getEnrollmentCode(String clientId) async {
+    try {
+      final response = await _dio.get('/clients/$clientId/enrollment-code');
+      if (response.data == null) return null;
+      return EnrollmentCode.fromJson(response.data);
+    } on DioException catch (e) {
+      if (e.response?.statusCode == 404) return null;
+      rethrow;
+    }
+  }
+
+  /// Generate a new enrollment code for a client
+  Future<EnrollmentCode> generateEnrollmentCode(String clientId) async {
+    final response = await _dio.post('/clients/$clientId/enrollment-code');
+    return EnrollmentCode.fromJson(response.data);
+  }
+
+  /// Revoke the enrollment code for a client
+  Future<void> revokeEnrollmentCode(String clientId) async {
+    await _dio.delete('/clients/$clientId/enrollment-code');
+  }
+
+  // ═══════════════════════════════════════════════════════════════════
   // LOGS
   // ═══════════════════════════════════════════════════════════════════
 
@@ -352,6 +379,38 @@ class ApiService {
     final response = await _dio.get('/auth/sso/providers');
     final items = response.data['providers'] as List? ?? [];
     return items.map((json) => SSOProviderInfo.fromJson(json)).toList();
+  }
+
+  // ═══════════════════════════════════════════════════════════════════
+  // EMAIL SETTINGS
+  // ═══════════════════════════════════════════════════════════════════
+
+  Future<EmailSettings> getEmailSettings() async {
+    final response = await _dio.get('/admin/settings/email');
+    return EmailSettings.fromJson(response.data);
+  }
+
+  Future<EmailSettings> updateEmailSettings(EmailSettings settings) async {
+    final response = await _dio.put('/admin/settings/email', data: settings.toJson());
+    return EmailSettings.fromJson(response.data);
+  }
+
+  Future<EmailTestResult> testEmailSettings(String testRecipient) async {
+    final response = await _dio.post('/admin/settings/email/test', data: {
+      'test_recipient': testRecipient,
+    });
+    return EmailTestResult.fromJson(response.data);
+  }
+
+  Future<EmailQueueStats> getEmailQueueStats() async {
+    final response = await _dio.get('/admin/settings/email/queue/stats');
+    return EmailQueueStats.fromJson(response.data);
+  }
+
+  /// Send enrollment email to a client
+  Future<Map<String, dynamic>> sendEnrollmentEmail(String clientId) async {
+    final response = await _dio.post('/clients/$clientId/send-enrollment-email');
+    return response.data;
   }
 }
 
@@ -587,6 +646,187 @@ class ConnectionDataPoint {
       activeConnections: json['active_connections'] as int? ?? 0,
       bytesSent: json['bytes_sent'] as int? ?? 0,
       bytesReceived: json['bytes_received'] as int? ?? 0,
+    );
+  }
+}
+
+/// Enrollment code for device onboarding
+class EnrollmentCode {
+  final String code;
+  final String deepLink;
+  final DateTime expiresAt;
+
+  EnrollmentCode({
+    required this.code,
+    required this.deepLink,
+    required this.expiresAt,
+  });
+
+  factory EnrollmentCode.fromJson(Map<String, dynamic> json) {
+    return EnrollmentCode(
+      code: json['code'] as String,
+      deepLink: json['deep_link'] as String,
+      expiresAt: DateTime.parse(json['expires_at'] as String),
+    );
+  }
+
+  /// Check if the code has expired
+  bool get isExpired => DateTime.now().isAfter(expiresAt);
+
+  /// Get remaining time until expiration
+  Duration get remainingTime {
+    final now = DateTime.now();
+    if (now.isAfter(expiresAt)) return Duration.zero;
+    return expiresAt.difference(now);
+  }
+
+  /// Format remaining time as human-readable string
+  String get remainingTimeFormatted {
+    final remaining = remainingTime;
+    if (remaining == Duration.zero) return 'Expired';
+    if (remaining.inHours > 0) {
+      return '${remaining.inHours}h ${remaining.inMinutes % 60}m';
+    }
+    return '${remaining.inMinutes}m';
+  }
+}
+
+// ═══════════════════════════════════════════════════════════════════
+// EMAIL SETTINGS MODELS
+// ═══════════════════════════════════════════════════════════════════
+
+/// Email/SMTP settings model
+class EmailSettings {
+  final bool enabled;
+  final String? smtpHost;
+  final int smtpPort;
+  final String? smtpUsername;
+  final String? smtpPassword; // Only used when sending to server
+  final bool hasPassword;
+  final bool useSsl;
+  final bool useStarttls;
+  final String? fromEmail;
+  final String fromName;
+  final DateTime? lastTestAt;
+  final bool? lastTestSuccess;
+
+  EmailSettings({
+    this.enabled = false,
+    this.smtpHost,
+    this.smtpPort = 587,
+    this.smtpUsername,
+    this.smtpPassword,
+    this.hasPassword = false,
+    this.useSsl = false,
+    this.useStarttls = true,
+    this.fromEmail,
+    this.fromName = 'SecureGuard VPN',
+    this.lastTestAt,
+    this.lastTestSuccess,
+  });
+
+  factory EmailSettings.fromJson(Map<String, dynamic> json) {
+    return EmailSettings(
+      enabled: json['enabled'] as bool? ?? false,
+      smtpHost: json['smtp_host'] as String?,
+      smtpPort: json['smtp_port'] as int? ?? 587,
+      smtpUsername: json['smtp_username'] as String?,
+      hasPassword: json['has_password'] as bool? ?? false,
+      useSsl: json['use_ssl'] as bool? ?? false,
+      useStarttls: json['use_starttls'] as bool? ?? true,
+      fromEmail: json['from_email'] as String?,
+      fromName: json['from_name'] as String? ?? 'SecureGuard VPN',
+      lastTestAt: json['last_test_at'] != null
+          ? DateTime.parse(json['last_test_at'] as String)
+          : null,
+      lastTestSuccess: json['last_test_success'] as bool?,
+    );
+  }
+
+  Map<String, dynamic> toJson() => {
+        'enabled': enabled,
+        'smtp_host': smtpHost,
+        'smtp_port': smtpPort,
+        'smtp_username': smtpUsername,
+        if (smtpPassword != null) 'smtp_password': smtpPassword,
+        'use_ssl': useSsl,
+        'use_starttls': useStarttls,
+        'from_email': fromEmail,
+        'from_name': fromName,
+      };
+
+  EmailSettings copyWith({
+    bool? enabled,
+    String? smtpHost,
+    int? smtpPort,
+    String? smtpUsername,
+    String? smtpPassword,
+    bool? hasPassword,
+    bool? useSsl,
+    bool? useStarttls,
+    String? fromEmail,
+    String? fromName,
+    DateTime? lastTestAt,
+    bool? lastTestSuccess,
+  }) {
+    return EmailSettings(
+      enabled: enabled ?? this.enabled,
+      smtpHost: smtpHost ?? this.smtpHost,
+      smtpPort: smtpPort ?? this.smtpPort,
+      smtpUsername: smtpUsername ?? this.smtpUsername,
+      smtpPassword: smtpPassword ?? this.smtpPassword,
+      hasPassword: hasPassword ?? this.hasPassword,
+      useSsl: useSsl ?? this.useSsl,
+      useStarttls: useStarttls ?? this.useStarttls,
+      fromEmail: fromEmail ?? this.fromEmail,
+      fromName: fromName ?? this.fromName,
+      lastTestAt: lastTestAt ?? this.lastTestAt,
+      lastTestSuccess: lastTestSuccess ?? this.lastTestSuccess,
+    );
+  }
+}
+
+/// Result of email test
+class EmailTestResult {
+  final bool success;
+  final String? message;
+  final String? error;
+
+  EmailTestResult({
+    required this.success,
+    this.message,
+    this.error,
+  });
+
+  factory EmailTestResult.fromJson(Map<String, dynamic> json) {
+    return EmailTestResult(
+      success: json['success'] as bool? ?? false,
+      message: json['message'] as String?,
+      error: json['error'] as String?,
+    );
+  }
+}
+
+/// Email queue statistics
+class EmailQueueStats {
+  final int queueLength;
+  final int failedCount;
+  final int totalSent;
+  final bool redisConnected;
+
+  EmailQueueStats({
+    required this.queueLength,
+    required this.failedCount,
+    required this.totalSent,
+    required this.redisConnected,
+  });
+
+  factory EmailQueueStats.fromJson(Map<String, dynamic> json) {
+    return EmailQueueStats(
+      queueLength: json['queue_length'] as int? ?? 0,
+      failedCount: json['failed_count'] as int? ?? 0,
+      totalSent: json['total_sent'] as int? ?? 0,
+      redisConnected: json['redis_connected'] as bool? ?? false,
     );
   }
 }

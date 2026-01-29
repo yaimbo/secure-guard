@@ -1,0 +1,11 @@
+[Desktop Entry]
+Name=SecureGuard VPN
+Comment=Secure VPN Client
+Exec=secureguard_client %u
+Icon=secureguard_client
+Terminal=false
+Type=Application
+Categories=Network;VPN;Security;
+Keywords=vpn;wireguard;security;
+MimeType=x-scheme-handler/secureguard;
+StartupWMClass=secureguard_client

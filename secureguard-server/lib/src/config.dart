@@ -24,6 +24,9 @@ class ServerConfig {
   // CORS
   final List<String> corsOrigins;
 
+  // Server domain for deep links (e.g., vpn.company.com)
+  final String serverDomain;
+
   const ServerConfig({
     required this.host,
     required this.port,
@@ -38,6 +41,7 @@ class ServerConfig {
     required this.jwtSecret,
     this.encryptionKey,
     required this.corsOrigins,
+    required this.serverDomain,
   });
 
   /// Create config from environment variables
@@ -56,6 +60,7 @@ class ServerConfig {
       jwtSecret: _env('JWT_SECRET', 'change-me-in-production'),
       encryptionKey: _envOrNull('ENCRYPTION_KEY'),
       corsOrigins: _env('CORS_ORIGINS', 'http://localhost:3000').split(','),
+      serverDomain: _env('SERVER_DOMAIN', 'localhost:8080'),
     );
   }
 }

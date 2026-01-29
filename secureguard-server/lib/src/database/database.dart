@@ -253,4 +253,44 @@ const _migrations = <_Migration>[
     -- Index for enabled providers
     CREATE INDEX IF NOT EXISTS idx_sso_configs_enabled ON sso_configs(enabled) WHERE enabled = true;
   '''),
+
+  _Migration('003_enrollment_codes', '''
+    -- Enrollment codes for seamless device onboarding
+    CREATE TABLE IF NOT EXISTS enrollment_codes (
+      id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+      client_id UUID NOT NULL REFERENCES clients(id) ON DELETE CASCADE,
+      code VARCHAR(8) NOT NULL UNIQUE,
+      created_at TIMESTAMPTZ DEFAULT NOW(),
+      expires_at TIMESTAMPTZ NOT NULL,
+      redeemed_at TIMESTAMPTZ,
+      redeemed_by_hardware_id VARCHAR(255)
+    );
+
+    -- Add device_token_hash to clients for token validation
+    ALTER TABLE clients ADD COLUMN IF NOT EXISTS device_token_hash VARCHAR(64);
+
+    -- Indexes for enrollment_codes
+    CREATE INDEX IF NOT EXISTS idx_enrollment_codes_code ON enrollment_codes(code);
+    CREATE INDEX IF NOT EXISTS idx_enrollment_codes_client ON enrollment_codes(client_id);
+    CREATE INDEX IF NOT EXISTS idx_enrollment_codes_expires ON enrollment_codes(expires_at) WHERE redeemed_at IS NULL;
+  '''),
+
+  _Migration('004_email_settings', '''
+    -- Email/SMTP settings (singleton)
+    CREATE TABLE IF NOT EXISTS email_settings (
+      id INTEGER PRIMARY KEY DEFAULT 1 CHECK (id = 1),
+      enabled BOOLEAN DEFAULT false,
+      smtp_host VARCHAR(255),
+      smtp_port INTEGER DEFAULT 587,
+      smtp_username VARCHAR(255),
+      smtp_password_enc BYTEA,
+      use_ssl BOOLEAN DEFAULT false,
+      use_starttls BOOLEAN DEFAULT true,
+      from_email VARCHAR(255),
+      from_name VARCHAR(255) DEFAULT 'SecureGuard VPN',
+      last_test_at TIMESTAMPTZ,
+      last_test_success BOOLEAN,
+      updated_at TIMESTAMPTZ DEFAULT NOW()
+    );
+  '''),
 ];

@@ -190,9 +190,15 @@ dart run bin/server.dart
 - `GET/POST/PUT/DELETE /api/v1/clients/*` - Client management (auth required)
 - `GET /api/v1/logs/*` - Audit/error/connection logs (auth required)
 - `POST /api/v1/enrollment/register` - Device enrollment (returns client_id)
+- `POST /api/v1/enrollment/redeem` - Redeem enrollment code for device token + config (rate limited: 5/min per IP)
 - `GET /api/v1/enrollment/config` - Fetch WireGuard config (device auth required)
 - `GET /api/v1/enrollment/config/version` - Check config version for updates
 - `POST /api/v1/enrollment/heartbeat` - Report device status
+
+**Enrollment Code Management (admin auth required):**
+- `GET /api/v1/clients/:id/enrollment-code` - Get active enrollment code for client
+- `POST /api/v1/clients/:id/enrollment-code` - Generate new enrollment code (24h expiry)
+- `DELETE /api/v1/clients/:id/enrollment-code` - Revoke enrollment code
 
 **SSO Authentication (public):**
 - `GET /api/v1/auth/sso/providers` - List enabled SSO providers
@@ -205,6 +211,13 @@ dart run bin/server.dart
 - `GET /api/v1/admin/sso/configs` - List SSO provider configs
 - `POST /api/v1/admin/sso/configs` - Save SSO provider config
 - `DELETE /api/v1/admin/sso/configs/:provider` - Delete SSO provider config
+
+**Email Settings (admin auth required):**
+- `GET /api/v1/admin/settings/email` - Get SMTP email settings (password excluded)
+- `PUT /api/v1/admin/settings/email` - Update SMTP email settings (password encrypted with AES-256-GCM)
+- `POST /api/v1/admin/settings/email/test` - Send test email to verify configuration
+- `GET /api/v1/admin/settings/email/queue/stats` - Get email queue statistics
+- `POST /api/v1/clients/:id/send-enrollment-email` - Send enrollment email to client
 
 **Dashboard Endpoints (admin auth required):**
 - `GET /api/v1/dashboard/stats` - Overall dashboard statistics
@@ -270,6 +283,10 @@ The server requires Redis for pub/sub event streaming and real-time metrics.
 **Redis Keys:**
 - `client:online:<client_id>` - Online client data (TTL: 2 minutes)
 - `metrics:connections:*` - Time series connection data
+- `ratelimit:enrollment:redeem:<ip>` - Rate limit counter for enrollment code redemption (TTL: 60s)
+- `email:queue` - Email job queue (List, FIFO with LPUSH/RPOP)
+- `email:failed` - Failed email jobs after max retries (List)
+- `email:sent:count` - Total emails sent counter (Integer)
 
 ## Flutter Web Management Console
 
@@ -400,9 +417,10 @@ flutter build macos --release
 
 ```
 secureguard_client/lib/
-├── main.dart              # Entry point, service initialization
+├── main.dart              # Entry point, service initialization, deep link handling
 ├── screens/
-│   └── home_screen.dart   # Main VPN control screen
+│   ├── home_screen.dart       # Main VPN control screen
+│   └── enrollment_screen.dart # Enrollment code / deep link enrollment
 ├── services/
 │   ├── ipc_client.dart        # Unix socket IPC to Rust daemon
 │   ├── tray_service.dart      # System tray integration
@@ -455,6 +473,25 @@ The app minimizes to system tray on close:
 
 - Ed25519 signature verification is a placeholder (validates lengths only)
 - For production, implement via flutter_rust_bridge or platform channels
+
+### Deep Links / URL Scheme
+
+The client supports `secureguard://` deep links for enrollment:
+
+**URL Format:**
+```
+secureguard://enroll?server=https://vpn.company.com&code=ABCD-1234
+```
+
+**Platform Registration:**
+- **macOS**: `macos/Runner/Info.plist` - CFBundleURLTypes
+- **Windows**: `windows/install_url_scheme.ps1` - Registry HKCR\secureguard
+- **Linux**: `linux/secureguard_client.desktop` - MimeType x-scheme-handler/secureguard
+
+**Enrollment Screen:**
+- Pre-fills server URL and code from deep link
+- Auto-enrolls when launched from deep link
+- Manual fallback: user enters domain + code (format: XXXX-XXXX)
 
 ### SSO Integration
 

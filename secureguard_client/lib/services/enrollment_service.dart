@@ -204,6 +204,102 @@ class EnrollmentService {
   }
 
   // ═══════════════════════════════════════════════════════════════════
+  // ENROLLMENT CODE REDEMPTION
+  // ═══════════════════════════════════════════════════════════════════
+
+  /// Redeem an enrollment code to register this device
+  ///
+  /// This is the primary enrollment method for non-SSO deployments.
+  /// The admin generates an enrollment code in the console and shares it with the user.
+  ///
+  /// [serverUrl] - The server URL (e.g., "https://vpn.company.com")
+  /// [code] - The 8-character enrollment code (format: XXXX-XXXX)
+  ///
+  /// Returns [EnrollmentCodeResult] with device token and VPN config on success.
+  Future<EnrollmentCodeResult> redeemEnrollmentCode({
+    required String serverUrl,
+    required String code,
+  }) async {
+    // Normalize the code (remove dashes, uppercase)
+    final normalizedCode = code.toUpperCase().replaceAll('-', '').replaceAll(' ', '');
+
+    if (normalizedCode.length != 8) {
+      throw EnrollmentException('Invalid code format. Expected 8 characters.');
+    }
+
+    // Get device info
+    final hardwareId = await _getHardwareId();
+    final platform = _getPlatform();
+
+    // Build the API URL from server URL
+    final baseUrl = _normalizeServerUrl(serverUrl);
+
+    // Make the redemption request
+    final response = await _api.postToUrl(
+      '$baseUrl/enrollment/redeem',
+      body: {
+        'code': normalizedCode,
+        'hardware_id': hardwareId,
+        'platform': platform,
+        'platform_version': Platform.operatingSystemVersion,
+        'client_version': '1.0.0',
+      },
+    );
+
+    if (!response.isSuccess) {
+      final error = response.error ?? 'Unknown error';
+      if (response.statusCode == 400) {
+        throw EnrollmentException('Invalid or expired enrollment code');
+      }
+      if (response.statusCode == 429) {
+        throw EnrollmentException('Too many attempts. Please wait and try again.');
+      }
+      throw EnrollmentException('Enrollment failed: $error');
+    }
+
+    final data = response.data as Map<String, dynamic>;
+
+    final deviceToken = data['device_token'] as String?;
+    final clientId = data['client_id'] as String?;
+    final config = data['config'] as String?;
+
+    if (deviceToken == null || config == null) {
+      throw EnrollmentException('Server response missing required fields');
+    }
+
+    // Store the device token and config
+    await _credentials.setDeviceToken(deviceToken);
+    await _credentials.setVpnConfig(config, DateTime.now().toIso8601String());
+
+    // Store the server URL for future API calls
+    await _credentials.setSecure('server_url', serverUrl);
+
+    return EnrollmentCodeResult(
+      deviceToken: deviceToken,
+      clientId: clientId ?? '',
+      config: config,
+    );
+  }
+
+  /// Normalize a server URL to the API base URL
+  String _normalizeServerUrl(String url) {
+    // Remove trailing slashes
+    var normalized = url.trim().replaceAll(RegExp(r'/+$'), '');
+
+    // Add https:// if no protocol specified
+    if (!normalized.startsWith('http://') && !normalized.startsWith('https://')) {
+      normalized = 'https://$normalized';
+    }
+
+    // Add /api/v1 if not present
+    if (!normalized.contains('/api/')) {
+      normalized = '$normalized/api/v1';
+    }
+
+    return normalized;
+  }
+
+  // ═══════════════════════════════════════════════════════════════════
   // DEVICE REGISTRATION
   // ═══════════════════════════════════════════════════════════════════
 
@@ -554,4 +650,17 @@ class EnrollmentException implements Exception {
 
   @override
   String toString() => 'EnrollmentException: $message';
+}
+
+/// Result of enrollment code redemption
+class EnrollmentCodeResult {
+  final String deviceToken;
+  final String clientId;
+  final String config;
+
+  EnrollmentCodeResult({
+    required this.deviceToken,
+    required this.clientId,
+    required this.config,
+  });
 }

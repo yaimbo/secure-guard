@@ -12,6 +12,7 @@ import 'api/routes/client_routes.dart';
 import 'api/routes/dashboard_routes.dart';
 import 'api/routes/enrollment_routes.dart';
 import 'api/routes/log_routes.dart';
+import 'api/routes/settings_routes.dart';
 import 'api/routes/sso_routes.dart';
 import 'api/routes/update_routes.dart';
 import 'api/routes/health_routes.dart';
@@ -22,10 +23,13 @@ import 'api/middleware/auth_middleware.dart';
 import 'database/database.dart';
 import 'services/client_service.dart';
 import 'services/config_generator_service.dart';
+import 'services/email_service.dart';
+import 'services/email_queue_service.dart';
 import 'services/key_service.dart';
 import 'services/sso/sso_manager.dart';
 import 'repositories/client_repository.dart';
 import 'repositories/admin_repository.dart';
+import 'repositories/email_settings_repository.dart';
 import 'repositories/log_repository.dart';
 import 'repositories/server_config_repository.dart';
 
@@ -37,6 +41,8 @@ class SecureGuardServer {
   Database? _database;
   RedisService? _redis;
   WebSocketRoutes? _wsRoutes;
+  EmailService? _emailService;
+  EmailQueueService? _emailQueueService;
 
   SecureGuardServer(this.config);
 
@@ -68,6 +74,8 @@ class SecureGuardServer {
       serverConfigRepo: serverConfigRepo,
       keyService: keyService,
       configGenerator: configGenerator,
+      db: _database!,
+      serverDomain: config.serverDomain,
     );
 
     // Initialize SSO manager
@@ -83,6 +91,29 @@ class SecureGuardServer {
     );
     await _redis!.init();
     _log.info('Redis service initialized');
+
+    // Initialize email service
+    _emailService = EmailService(encryptionKey: config.encryptionKey);
+    final emailSettingsRepo = EmailSettingsRepository(_database!);
+
+    // Configure email service from database settings
+    final emailSettings = await emailSettingsRepo.get();
+    if (emailSettings != null && emailSettings.enabled) {
+      String? password;
+      if (emailSettings.smtpPasswordEnc != null) {
+        password = await _emailService!.decryptPassword(emailSettings.smtpPasswordEnc!);
+      }
+      await _emailService!.configure(emailSettings.toSmtpConfig(decryptedPassword: password));
+      _log.info('Email service configured');
+    }
+
+    // Initialize email queue service
+    _emailQueueService = EmailQueueService(
+      redis: _redis!,
+      emailService: _emailService!,
+    );
+    _emailQueueService!.startProcessor();
+    _log.info('Email queue processor started');
 
     // Initialize WebSocket routes for real-time updates
     _wsRoutes = WebSocketRoutes(
@@ -126,7 +157,12 @@ class SecureGuardServer {
     );
 
     // Client routes (admin auth required)
-    final clientRoutes = ClientRoutes(clientService, logRepo);
+    final clientRoutes = ClientRoutes(
+      clientService,
+      logRepo,
+      emailQueueService: _emailQueueService,
+      serverDomain: config.serverDomain,
+    );
     router.mount(
       '/api/v1/clients',
       Pipeline()
@@ -134,8 +170,28 @@ class SecureGuardServer {
           .addHandler(clientRoutes.router.call),
     );
 
+    // Settings routes (admin auth required)
+    final settingsRoutes = SettingsRoutes(
+      emailSettingsRepo: emailSettingsRepo,
+      emailService: _emailService!,
+      emailQueueService: _emailQueueService!,
+      logRepo: logRepo,
+    );
+    router.mount(
+      '/api/v1/admin/settings',
+      Pipeline()
+          .addMiddleware(authMiddleware.requireAdmin())
+          .addHandler(settingsRoutes.router.call),
+    );
+
     // Enrollment routes (some require device auth)
-    final enrollmentRoutes = EnrollmentRoutes(clientService, logRepo, redis: _redis);
+    final enrollmentRoutes = EnrollmentRoutes(
+      clientService,
+      logRepo,
+      redis: _redis,
+      jwtSecret: config.jwtSecret,
+      clientRepo: clientRepo,
+    );
     router.mount('/api/v1/enrollment', enrollmentRoutes.router.call);
 
     // Update routes - public endpoints (check, manifest, download)
@@ -201,6 +257,7 @@ class SecureGuardServer {
   }
 
   Future<void> stop() async {
+    _emailQueueService?.stopProcessor();
     _wsRoutes?.dispose();
     await _redis?.close();
     await _server?.close();

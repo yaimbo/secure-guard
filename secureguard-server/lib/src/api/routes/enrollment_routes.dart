@@ -1,27 +1,39 @@
 import 'dart:convert';
 
+import 'package:crypto/crypto.dart';
+import 'package:dart_jsonwebtoken/dart_jsonwebtoken.dart';
 import 'package:shelf/shelf.dart';
 import 'package:shelf_router/shelf_router.dart';
 
 import '../../services/client_service.dart';
 import '../../services/redis_service.dart';
 import '../../repositories/log_repository.dart';
+import '../../repositories/client_repository.dart';
 
 /// Device enrollment routes (client-facing)
 class EnrollmentRoutes {
   final ClientService clientService;
   final LogRepository logRepo;
   final RedisService? redis;
+  final String jwtSecret;
+  final ClientRepository clientRepo;
 
   /// Track active connection IDs for each client (to log disconnection properly)
   final _activeConnections = <String, int>{};
 
-  EnrollmentRoutes(this.clientService, this.logRepo, {this.redis});
+  EnrollmentRoutes(
+    this.clientService,
+    this.logRepo, {
+    this.redis,
+    required this.jwtSecret,
+    required this.clientRepo,
+  });
 
   Router get router {
     final router = Router();
 
     router.post('/register', _registerDevice);
+    router.post('/redeem', _redeemEnrollmentCode);
     router.get('/config', _getConfig);
     router.get('/config/version', _getConfigVersion);
     router.post('/heartbeat', _heartbeat);
@@ -114,6 +126,173 @@ class EnrollmentRoutes {
         headers: {'content-type': 'application/json'},
       );
     }
+  }
+
+  /// Redeem an enrollment code for device token and config
+  /// POST /api/v1/enrollment/redeem
+  ///
+  /// Body:
+  /// {
+  ///   "code": "ABCD-1234",
+  ///   "hardware_id": "unique-device-id",
+  ///   "platform": "macos",
+  ///   "device_name": "John's MacBook Pro" (optional)
+  /// }
+  ///
+  /// Returns:
+  /// {
+  ///   "device_token": "eyJ...",
+  ///   "client_id": "uuid",
+  ///   "config": "[Interface]..."
+  /// }
+  ///
+  /// Rate limited to 5 requests per IP per minute to prevent brute-force attacks.
+  Future<Response> _redeemEnrollmentCode(Request request) async {
+    // Get client IP for rate limiting
+    final clientIp = request.headers['x-forwarded-for']?.split(',').first.trim() ??
+        request.headers['x-real-ip'] ??
+        'unknown';
+
+    // Check rate limit (5 attempts per minute per IP)
+    if (redis != null) {
+      final rateLimitKey = RedisService.enrollmentRedeemKey(clientIp);
+      final rateLimitResult = await redis!.checkRateLimit(
+        key: rateLimitKey,
+        maxRequests: 5,
+        windowSeconds: 60,
+      );
+
+      if (!rateLimitResult.allowed) {
+        await logRepo.auditLog(
+          actorType: 'system',
+          actorId: 'rate_limiter',
+          eventType: 'ENROLLMENT_RATE_LIMITED',
+          resourceType: 'enrollment',
+          details: {'ip_address': clientIp},
+          ipAddress: clientIp,
+        );
+
+        return Response(429,
+            body: jsonEncode({
+              'error': 'rate_limited',
+              'message': 'Too many enrollment attempts. Please try again later.',
+              'retry_after': rateLimitResult.resetSeconds,
+            }),
+            headers: {
+              'content-type': 'application/json',
+              'Retry-After': rateLimitResult.resetSeconds.toString(),
+              'X-RateLimit-Remaining': '0',
+              'X-RateLimit-Reset': rateLimitResult.resetSeconds.toString(),
+            });
+      }
+    }
+
+    try {
+      final body = await request.readAsString();
+      final data = jsonDecode(body) as Map<String, dynamic>;
+
+      final code = data['code'] as String?;
+      final hardwareId = data['hardware_id'] as String?;
+      final platform = data['platform'] as String?;
+      final deviceName = data['device_name'] as String?;
+
+      if (code == null || hardwareId == null) {
+        return Response(400,
+            body: jsonEncode({
+              'error': 'invalid_request',
+              'message': 'code and hardware_id are required',
+            }),
+            headers: {'content-type': 'application/json'});
+      }
+
+      // Validate the enrollment code
+      final clientId = await clientService.validateEnrollmentCode(code);
+      if (clientId == null) {
+        return Response(400,
+            body: jsonEncode({
+              'error': 'invalid_code',
+              'message': 'Invalid or expired enrollment code',
+            }),
+            headers: {'content-type': 'application/json'});
+      }
+
+      // Mark code as redeemed
+      await clientService.redeemEnrollmentCode(code, hardwareId);
+
+      // Update client with device info
+      await clientService.updateClient(clientId, {
+        'hardware_id': hardwareId,
+        if (platform != null) 'platform': platform,
+        if (deviceName != null) 'name': deviceName,
+      });
+
+      // Generate device token (JWT)
+      final deviceToken = _generateDeviceToken(clientId, hardwareId);
+
+      // Store token hash in client record
+      final tokenHash = sha256.convert(utf8.encode(deviceToken)).toString();
+      await clientRepo.updateDeviceTokenHash(clientId, tokenHash);
+
+      // Get WireGuard config
+      final config = await clientService.generateConfigFile(clientId);
+      if (config == null) {
+        return Response.internalServerError(
+            body: jsonEncode({
+              'error': 'config_generation_failed',
+              'message': 'Failed to generate VPN configuration',
+            }),
+            headers: {'content-type': 'application/json'});
+      }
+
+      // Audit log
+      await logRepo.auditLog(
+        actorType: 'client',
+        actorId: clientId,
+        eventType: 'ENROLLMENT_CODE_REDEEMED',
+        resourceType: 'client',
+        resourceId: clientId,
+        details: {
+          'hardware_id': hardwareId,
+          'platform': platform,
+        },
+        ipAddress: request.headers['x-forwarded-for'] ?? request.headers['x-real-ip'],
+      );
+
+      return Response.ok(
+        jsonEncode({
+          'device_token': deviceToken,
+          'client_id': clientId,
+          'config': config,
+        }),
+        headers: {'content-type': 'application/json'},
+      );
+    } catch (e) {
+      await logRepo.errorLog(
+        severity: 'ERROR',
+        component: 'enrollment',
+        message: 'Failed to redeem enrollment code: $e',
+      );
+      return Response.internalServerError(
+        body: jsonEncode({
+          'error': 'redemption_failed',
+          'message': 'Failed to redeem enrollment code: $e',
+        }),
+        headers: {'content-type': 'application/json'},
+      );
+    }
+  }
+
+  /// Generate a device token (JWT) for API access
+  String _generateDeviceToken(String clientId, String hardwareId) {
+    final jwt = JWT({
+      'sub': clientId,
+      'type': 'device',
+      'hardware_id': hardwareId,
+      'iat': DateTime.now().millisecondsSinceEpoch ~/ 1000,
+    });
+
+    // Device tokens don't expire (revocation is handled by token hash check)
+    return jwt.sign(SecretKey(jwtSecret));
   }
 
   /// Get config for authenticated device

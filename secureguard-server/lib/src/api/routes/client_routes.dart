@@ -4,14 +4,22 @@ import 'package:shelf/shelf.dart';
 import 'package:shelf_router/shelf_router.dart';
 
 import '../../services/client_service.dart';
+import '../../services/email_queue_service.dart';
 import '../../repositories/log_repository.dart';
 
 /// Client management routes (admin only)
 class ClientRoutes {
   final ClientService clientService;
   final LogRepository logRepo;
+  final EmailQueueService? emailQueueService;
+  final String serverDomain;
 
-  ClientRoutes(this.clientService, this.logRepo);
+  ClientRoutes(
+    this.clientService,
+    this.logRepo, {
+    this.emailQueueService,
+    this.serverDomain = '',
+  });
 
   Router get router {
     final router = Router();
@@ -26,6 +34,14 @@ class ClientRoutes {
     router.post('/<id>/regenerate-keys', _regenerateKeys);
     router.get('/<id>/config', _downloadConfig);
     router.get('/<id>/qr', _getQrCode);
+
+    // Enrollment code management
+    router.get('/<id>/enrollment-code', _getEnrollmentCode);
+    router.post('/<id>/enrollment-code', _generateEnrollmentCode);
+    router.delete('/<id>/enrollment-code', _revokeEnrollmentCode);
+
+    // Email sending
+    router.post('/<id>/send-enrollment-email', _sendEnrollmentEmail);
 
     return router;
   }
@@ -71,6 +87,9 @@ class ClientRoutes {
         allowedIps: (data['allowed_ips'] as List<dynamic>?)?.cast<String>(),
       );
 
+      // Generate enrollment code for the new client
+      final enrollmentCode = await clientService.generateEnrollmentCode(client.id);
+
       // Audit log
       await logRepo.auditLog(
         actorType: 'admin',
@@ -83,8 +102,12 @@ class ClientRoutes {
         ipAddress: request.headers['x-forwarded-for'] ?? request.headers['x-real-ip'],
       );
 
+      // Return client with enrollment code
+      final responseData = client.toJson();
+      responseData['enrollment_code'] = enrollmentCode.toJson();
+
       return Response(201,
-          body: jsonEncode(client.toJson()),
+          body: jsonEncode(responseData),
           headers: {'content-type': 'application/json'});
     } catch (e) {
       return Response.internalServerError(
@@ -352,6 +375,216 @@ class ClientRoutes {
         body: jsonEncode({'error': 'Failed to generate QR code: $e'}),
         headers: {'content-type': 'application/json'},
       );
+    }
+  }
+
+  // ============================================================
+  // Enrollment Code Handlers
+  // ============================================================
+
+  Future<Response> _getEnrollmentCode(Request request, String id) async {
+    try {
+      final client = await clientService.getClient(id);
+      if (client == null) {
+        return Response(404,
+            body: jsonEncode({'error': 'Client not found'}),
+            headers: {'content-type': 'application/json'});
+      }
+
+      final enrollmentCode = await clientService.getEnrollmentCode(id);
+
+      if (enrollmentCode == null) {
+        return Response(404,
+            body: jsonEncode({
+              'error': 'no_active_code',
+              'message': 'No active enrollment code for this client',
+            }),
+            headers: {'content-type': 'application/json'});
+      }
+
+      return Response.ok(
+        jsonEncode(enrollmentCode.toJson()),
+        headers: {'content-type': 'application/json'},
+      );
+    } catch (e) {
+      return Response.internalServerError(
+        body: jsonEncode({'error': 'Failed to get enrollment code: $e'}),
+        headers: {'content-type': 'application/json'},
+      );
+    }
+  }
+
+  Future<Response> _generateEnrollmentCode(Request request, String id) async {
+    try {
+      final adminId = request.context['adminId'] as String;
+
+      final client = await clientService.getClient(id);
+      if (client == null) {
+        return Response(404,
+            body: jsonEncode({'error': 'Client not found'}),
+            headers: {'content-type': 'application/json'});
+      }
+
+      final enrollmentCode = await clientService.generateEnrollmentCode(id);
+
+      // Audit log
+      await logRepo.auditLog(
+        actorType: 'admin',
+        actorId: adminId,
+        eventType: 'ENROLLMENT_CODE_GENERATED',
+        resourceType: 'client',
+        resourceId: id,
+        resourceName: client.name,
+        details: {'expires_at': enrollmentCode.expiresAt.toIso8601String()},
+        ipAddress: request.headers['x-forwarded-for'] ?? request.headers['x-real-ip'],
+      );
+
+      return Response.ok(
+        jsonEncode(enrollmentCode.toJson()),
+        headers: {'content-type': 'application/json'},
+      );
+    } catch (e) {
+      return Response.internalServerError(
+        body: jsonEncode({'error': 'Failed to generate enrollment code: $e'}),
+        headers: {'content-type': 'application/json'},
+      );
+    }
+  }
+
+  Future<Response> _revokeEnrollmentCode(Request request, String id) async {
+    try {
+      final adminId = request.context['adminId'] as String;
+
+      final client = await clientService.getClient(id);
+      if (client == null) {
+        return Response(404,
+            body: jsonEncode({'error': 'Client not found'}),
+            headers: {'content-type': 'application/json'});
+      }
+
+      await clientService.revokeEnrollmentCode(id);
+
+      // Audit log
+      await logRepo.auditLog(
+        actorType: 'admin',
+        actorId: adminId,
+        eventType: 'ENROLLMENT_CODE_REVOKED',
+        resourceType: 'client',
+        resourceId: id,
+        resourceName: client.name,
+        ipAddress: request.headers['x-forwarded-for'] ?? request.headers['x-real-ip'],
+      );
+
+      return Response(204);
+    } catch (e) {
+      return Response.internalServerError(
+        body: jsonEncode({'error': 'Failed to revoke enrollment code: $e'}),
+        headers: {'content-type': 'application/json'},
+      );
+    }
+  }
+
+  // ============================================================
+  // Email Sending
+  // ============================================================
+
+  Future<Response> _sendEnrollmentEmail(Request request, String id) async {
+    try {
+      final adminId = request.context['adminId'] as String;
+
+      // Check if email service is configured
+      if (emailQueueService == null) {
+        return Response(400,
+            body: jsonEncode({
+              'error': 'email_not_configured',
+              'message': 'Email service is not configured',
+            }),
+            headers: {'content-type': 'application/json'});
+      }
+
+      final client = await clientService.getClient(id);
+      if (client == null) {
+        return Response(404,
+            body: jsonEncode({'error': 'Client not found'}),
+            headers: {'content-type': 'application/json'});
+      }
+
+      // Check if client has an email address
+      if (client.userEmail == null || client.userEmail!.isEmpty) {
+        return Response(400,
+            body: jsonEncode({
+              'error': 'no_email',
+              'message': 'Client has no email address configured',
+            }),
+            headers: {'content-type': 'application/json'});
+      }
+
+      // Get or generate enrollment code
+      var enrollmentCode = await clientService.getEnrollmentCode(id);
+      if (enrollmentCode == null) {
+        enrollmentCode = await clientService.generateEnrollmentCode(id);
+      }
+
+      // Calculate remaining time
+      final expiresIn = _formatExpiresIn(enrollmentCode.expiresAt);
+
+      // Queue the email
+      final jobId = await emailQueueService!.queueEnrollmentEmail(
+        toEmail: client.userEmail!,
+        toName: client.userName ?? client.name,
+        enrollmentCode: enrollmentCode.formattedCode,
+        deepLink: enrollmentCode.deepLink,
+        serverDomain: serverDomain,
+        expiresIn: expiresIn,
+      );
+
+      // Audit log
+      await logRepo.auditLog(
+        actorType: 'admin',
+        actorId: adminId,
+        eventType: 'ENROLLMENT_EMAIL_SENT',
+        resourceType: 'client',
+        resourceId: id,
+        resourceName: client.name,
+        details: {
+          'to_email': client.userEmail,
+          'job_id': jobId,
+        },
+        ipAddress: request.headers['x-forwarded-for'] ?? request.headers['x-real-ip'],
+      );
+
+      return Response.ok(
+        jsonEncode({
+          'status': 'queued',
+          'job_id': jobId,
+          'to_email': client.userEmail,
+        }),
+        headers: {'content-type': 'application/json'},
+      );
+    } catch (e) {
+      return Response.internalServerError(
+        body: jsonEncode({'error': 'Failed to send enrollment email: $e'}),
+        headers: {'content-type': 'application/json'},
+      );
+    }
+  }
+
+  /// Format expiration time in a human-readable format
+  String _formatExpiresIn(DateTime expiresAt) {
+    final now = DateTime.now();
+    final difference = expiresAt.difference(now);
+
+    if (difference.inHours >= 24) {
+      final days = difference.inDays;
+      return '$days day${days > 1 ? 's' : ''}';
+    } else if (difference.inHours >= 1) {
+      final hours = difference.inHours;
+      return '$hours hour${hours > 1 ? 's' : ''}';
+    } else if (difference.inMinutes >= 1) {
+      final minutes = difference.inMinutes;
+      return '$minutes minute${minutes > 1 ? 's' : ''}';
+    } else {
+      return 'less than a minute';
     }
   }
 }

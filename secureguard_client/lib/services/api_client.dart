@@ -113,6 +113,31 @@ class ApiClient {
     }
   }
 
+  /// Make a POST request to a full URL (for enrollment with dynamic server)
+  Future<ApiResponse> postToUrl(String fullUrl, {dynamic body}) async {
+    if (_httpClient == null) {
+      return ApiResponse.error('API client not initialized');
+    }
+
+    try {
+      final uri = Uri.parse(fullUrl);
+      final request = await _httpClient!.postUrl(uri);
+      request.headers.add('Accept', 'application/json');
+
+      if (body != null) {
+        request.headers.contentType = ContentType.json;
+        request.write(jsonEncode(body));
+      }
+
+      final response = await request.close();
+      return _processResponse(response);
+    } on SocketException catch (e) {
+      return ApiResponse.error('Network error: ${e.message}');
+    } catch (e) {
+      return ApiResponse.error('Request failed: $e');
+    }
+  }
+
   void _addHeaders(HttpClientRequest request) {
     request.headers.add('Accept', 'application/json');
     if (_deviceToken != null) {
