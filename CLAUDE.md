@@ -466,5 +466,5 @@ The client supports SSO authentication via the device code flow:
 **Server-side JWT Verification Status:**
 - **Google**: Full RS256 signature verification using JWKS (with 1-hour caching)
 - **Okta**: Full RS256 signature verification using JWKS (with 1-hour caching)
-- **Azure AD**: Claims validation only (signature verification pending)
+- **Azure AD**: Full RS256 signature verification using JWKS (with 1-hour caching)
 

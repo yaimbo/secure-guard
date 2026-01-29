@@ -1,8 +1,10 @@
 import 'dart:convert';
 import 'dart:io';
 import 'dart:math';
+import 'dart:typed_data';
 
 import 'package:crypto/crypto.dart';
+import 'package:pointycastle/export.dart';
 
 import 'sso_provider.dart';
 
@@ -14,9 +16,18 @@ class AzureADProvider implements SSOProvider {
   final SSOConfig config;
   final HttpClient _httpClient;
 
+  // JWKS caching for signature verification
+  Map<String, _CachedJwk>? _jwksCache;
+  DateTime? _jwksCacheExpiry;
+  static const _jwksCacheDuration = Duration(hours: 1);
+
   /// Base URL for Azure AD endpoints
   String get _baseUrl =>
       'https://login.microsoftonline.com/${config.tenantId ?? 'common'}';
+
+  /// JWKS endpoint for fetching public keys
+  String get _jwksEndpoint =>
+      'https://login.microsoftonline.com/${config.tenantId ?? 'common'}/discovery/v2.0/keys';
 
   AzureADProvider(this.config) : _httpClient = HttpClient() {
     if (config.tenantId == null) {
@@ -133,23 +144,46 @@ class AzureADProvider implements SSOProvider {
 
   @override
   Future<IdTokenClaims> validateIdToken(String idToken) async {
-    // Decode JWT (without signature verification for now)
-    // In production, fetch JWKS and verify signature
+    // Validate JWT structure
     final parts = idToken.split('.');
     if (parts.length != 3) {
       throw SSOException('Invalid ID token format');
     }
 
+    // Decode header to get key ID and algorithm
+    final header = _decodeJwtPayload(parts[0]);
+    final kid = header['kid'] as String?;
+    final alg = header['alg'] as String?;
+
+    if (alg != 'RS256') {
+      throw SSOException(
+        'Unsupported algorithm: $alg (expected RS256)',
+        errorCode: 'unsupported_algorithm',
+      );
+    }
+
+    if (kid == null) {
+      throw SSOException(
+        'Missing kid in JWT header',
+        errorCode: 'missing_kid',
+      );
+    }
+
+    // Verify RS256 signature using JWKS
+    await _verifySignature(idToken, kid);
+
+    // Decode and validate payload
     final payload = _decodeJwtPayload(parts[1]);
 
-    // Validate standard claims
+    // Validate expiration with 5 minute clock skew tolerance
     final now = DateTime.now();
+    final clockSkew = const Duration(minutes: 5);
     final exp = DateTime.fromMillisecondsSinceEpoch(
         (payload['exp'] as int) * 1000);
     final iat = DateTime.fromMillisecondsSinceEpoch(
         (payload['iat'] as int) * 1000);
 
-    if (now.isAfter(exp)) {
+    if (now.isAfter(exp.add(clockSkew))) {
       throw SSOException('ID token has expired');
     }
 
@@ -159,8 +193,18 @@ class AzureADProvider implements SSOProvider {
       throw SSOException('Invalid audience in ID token');
     }
 
+    // Validate issuer (Azure AD format)
+    final iss = payload['iss'] as String?;
+    final expectedIssuerPrefix = 'https://login.microsoftonline.com/';
+    if (iss == null || !iss.startsWith(expectedIssuerPrefix)) {
+      throw SSOException(
+        'Invalid issuer in ID token',
+        errorCode: 'invalid_issuer',
+      );
+    }
+
     return IdTokenClaims(
-      issuer: payload['iss'] as String,
+      issuer: iss,
       subject: payload['sub'] as String,
       audience: aud as String,
       issuedAt: iat,
@@ -254,6 +298,128 @@ class AzureADProvider implements SSOProvider {
     return jsonDecode(decoded) as Map<String, dynamic>;
   }
 
+  /// Fetch JWKS from Azure AD with 1-hour caching
+  Future<Map<String, _CachedJwk>> _fetchJwks() async {
+    // Return cached JWKS if still valid
+    if (_jwksCache != null &&
+        _jwksCacheExpiry != null &&
+        DateTime.now().isBefore(_jwksCacheExpiry!)) {
+      return _jwksCache!;
+    }
+
+    // Fetch fresh JWKS
+    final uri = Uri.parse(_jwksEndpoint);
+    final request = await _httpClient.getUrl(uri);
+    final response = await request.close();
+    final responseBody = await response.transform(utf8.decoder).join();
+
+    if (response.statusCode != 200) {
+      throw SSOException(
+        'Failed to fetch Azure JWKS: ${response.statusCode}',
+        errorCode: 'jwks_fetch_failed',
+      );
+    }
+
+    final json = jsonDecode(responseBody) as Map<String, dynamic>;
+    final keys = json['keys'] as List<dynamic>?;
+
+    if (keys == null || keys.isEmpty) {
+      throw SSOException(
+        'Invalid JWKS response: no keys found',
+        errorCode: 'invalid_jwks',
+      );
+    }
+
+    final jwks = <String, _CachedJwk>{};
+    for (final key in keys) {
+      final keyMap = key as Map<String, dynamic>;
+      final kid = keyMap['kid'] as String?;
+      final kty = keyMap['kty'] as String?;
+      final use = keyMap['use'] as String?;
+      final n = keyMap['n'] as String?;
+      final e = keyMap['e'] as String?;
+
+      // Only process RSA signature keys
+      if (kid != null && kty == 'RSA' && use == 'sig' && n != null && e != null) {
+        jwks[kid] = _CachedJwk(
+          kid: kid,
+          modulus: _base64UrlDecodeBigInt(n),
+          exponent: _base64UrlDecodeBigInt(e),
+        );
+      }
+    }
+
+    // Cache the JWKS with 1-hour TTL
+    _jwksCache = jwks;
+    _jwksCacheExpiry = DateTime.now().add(_jwksCacheDuration);
+
+    return jwks;
+  }
+
+  /// Verify RS256 signature using JWKS
+  Future<void> _verifySignature(String jwt, String kid) async {
+    final jwks = await _fetchJwks();
+    final jwk = jwks[kid];
+
+    if (jwk == null) {
+      throw SSOException(
+        'Key not found in Azure JWKS: $kid',
+        errorCode: 'key_not_found',
+      );
+    }
+
+    final parts = jwt.split('.');
+    final signedData = utf8.encode('${parts[0]}.${parts[1]}');
+    final signature = _base64UrlDecode(parts[2]);
+
+    final rsaPublicKey = RSAPublicKey(jwk.modulus, jwk.exponent);
+    final signer = Signer('SHA-256/RSA-PKCS1');
+    signer.init(false, PublicKeyParameter<RSAPublicKey>(rsaPublicKey));
+
+    try {
+      final valid = signer.verifySignature(
+        Uint8List.fromList(signedData),
+        RSASignature(signature),
+      );
+      if (!valid) {
+        throw SSOException(
+          'Invalid Azure AD JWT signature',
+          errorCode: 'invalid_signature',
+        );
+      }
+    } catch (e) {
+      if (e is SSOException) rethrow;
+      throw SSOException(
+        'Azure signature verification failed: $e',
+        errorCode: 'signature_verification_failed',
+      );
+    }
+  }
+
+  /// Decode base64url to bytes
+  Uint8List _base64UrlDecode(String input) {
+    var normalized = input.replaceAll('-', '+').replaceAll('_', '/');
+    while (normalized.length % 4 != 0) {
+      normalized += '=';
+    }
+    return Uint8List.fromList(base64.decode(normalized));
+  }
+
+  /// Decode base64url to BigInt (for RSA modulus/exponent)
+  BigInt _base64UrlDecodeBigInt(String input) {
+    final bytes = _base64UrlDecode(input);
+    return _bytesToBigInt(bytes);
+  }
+
+  /// Convert bytes to BigInt
+  BigInt _bytesToBigInt(Uint8List bytes) {
+    var result = BigInt.zero;
+    for (final byte in bytes) {
+      result = (result << 8) | BigInt.from(byte);
+    }
+    return result;
+  }
+
   void dispose() {
     _httpClient.close();
   }
@@ -274,4 +440,17 @@ String generateState([int length = 32]) {
   final random = Random.secure();
   return List.generate(length, (_) => chars[random.nextInt(chars.length)])
       .join();
+}
+
+/// Cached JWK for signature verification
+class _CachedJwk {
+  final String kid;
+  final BigInt modulus;
+  final BigInt exponent;
+
+  _CachedJwk({
+    required this.kid,
+    required this.modulus,
+    required this.exponent,
+  });
 }

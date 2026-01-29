@@ -8,12 +8,14 @@
 //! - Automatic rekey
 
 use std::net::SocketAddr;
+use std::sync::Arc;
 use std::time::Duration;
 
 use tokio::net::UdpSocket;
 use tokio::time::{interval, Interval};
 
 use crate::config::WireGuardConfig;
+use crate::daemon::TrafficStats;
 use crate::error::{NetworkError, ProtocolError, SecureGuardError};
 use crate::protocol::{
     CookieReply, CookieState, HandshakeResponse, InitiatorHandshake,
@@ -65,11 +67,19 @@ pub struct WireGuardClient {
     peer_endpoint: SocketAddr,
     /// Keepalive interval
     keepalive_interval: Option<Duration>,
+    /// Optional traffic statistics (shared with daemon)
+    traffic_stats: Option<Arc<TrafficStats>>,
 }
 
 impl WireGuardClient {
     /// Create a new WireGuard client
-    pub async fn new(config: WireGuardConfig) -> Result<Self, SecureGuardError> {
+    ///
+    /// The optional `traffic_stats` parameter allows sharing traffic counters
+    /// with the daemon for IPC status reporting.
+    pub async fn new(
+        config: WireGuardConfig,
+        traffic_stats: Option<Arc<TrafficStats>>,
+    ) -> Result<Self, SecureGuardError> {
         // Parse our interface address
         let our_address = config.interface.address
             .first()
@@ -121,6 +131,7 @@ impl WireGuardClient {
             last_mac1: [0u8; 16],
             peer_endpoint,
             keepalive_interval,
+            traffic_stats,
         })
     }
 
@@ -386,6 +397,11 @@ impl WireGuardClient {
                 reason: e.to_string(),
             })?;
 
+        // Update traffic statistics
+        if let Some(ref stats) = self.traffic_stats {
+            stats.add_sent(encrypted.len() as u64);
+        }
+
         Ok(())
     }
 
@@ -442,6 +458,11 @@ impl WireGuardClient {
         packet: &[u8],
         from: SocketAddr,
     ) -> Result<(), SecureGuardError> {
+        // Update traffic statistics (count full encrypted packet)
+        if let Some(ref stats) = self.traffic_stats {
+            stats.add_received(packet.len() as u64);
+        }
+
         let header = TransportHeader::from_bytes(packet)?;
 
         // Find session by receiver index

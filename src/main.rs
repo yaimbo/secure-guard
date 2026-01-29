@@ -98,7 +98,7 @@ async fn run(args: Args) -> Result<(), SecureGuardError> {
     match mode {
         Mode::Client => {
             tracing::info!("SecureGuard WireGuard Client starting...");
-            let mut client = WireGuardClient::new(config).await?;
+            let mut client = WireGuardClient::new(config, None).await?;
             run_with_cleanup_client(&mut client).await
         }
         Mode::Server => {

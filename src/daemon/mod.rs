@@ -7,6 +7,7 @@
 pub mod ipc;
 
 use std::path::PathBuf;
+use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Arc;
 use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
 use tokio::sync::{broadcast, watch, Mutex};
@@ -15,6 +16,52 @@ use crate::error::ConfigError;
 use crate::{SecureGuardError, WireGuardClient, WireGuardConfig};
 
 use ipc::*;
+
+/// Shared traffic statistics between daemon and VPN client
+///
+/// Uses atomic counters for lock-free, high-performance tracking.
+/// The daemon passes this to WireGuardClient, which updates the counters
+/// as packets are sent/received.
+#[derive(Debug, Default)]
+pub struct TrafficStats {
+    pub bytes_sent: AtomicU64,
+    pub bytes_received: AtomicU64,
+}
+
+impl TrafficStats {
+    pub fn new() -> Self {
+        Self {
+            bytes_sent: AtomicU64::new(0),
+            bytes_received: AtomicU64::new(0),
+        }
+    }
+
+    /// Add to bytes sent counter
+    pub fn add_sent(&self, bytes: u64) {
+        self.bytes_sent.fetch_add(bytes, Ordering::Relaxed);
+    }
+
+    /// Add to bytes received counter
+    pub fn add_received(&self, bytes: u64) {
+        self.bytes_received.fetch_add(bytes, Ordering::Relaxed);
+    }
+
+    /// Get current bytes sent
+    pub fn get_sent(&self) -> u64 {
+        self.bytes_sent.load(Ordering::Relaxed)
+    }
+
+    /// Get current bytes received
+    pub fn get_received(&self) -> u64 {
+        self.bytes_received.load(Ordering::Relaxed)
+    }
+
+    /// Reset counters (for new connection)
+    pub fn reset(&self) {
+        self.bytes_sent.store(0, Ordering::Relaxed);
+        self.bytes_received.store(0, Ordering::Relaxed);
+    }
+}
 
 /// Default socket path for Unix systems
 #[cfg(unix)]
@@ -37,8 +84,8 @@ struct DaemonState {
     vpn_ip: Option<String>,
     server_endpoint: Option<String>,
     connected_at: Option<String>,
-    bytes_sent: u64,
-    bytes_received: u64,
+    /// Shared traffic statistics (updated by VPN client)
+    traffic_stats: Arc<TrafficStats>,
     error_message: Option<String>,
     /// Shutdown signal sender - send true to stop the VPN
     shutdown_tx: Option<watch::Sender<bool>>,
@@ -52,8 +99,7 @@ impl Default for DaemonState {
             vpn_ip: None,
             server_endpoint: None,
             connected_at: None,
-            bytes_sent: 0,
-            bytes_received: 0,
+            traffic_stats: Arc::new(TrafficStats::new()),
             error_message: None,
             shutdown_tx: None,
         }
@@ -309,8 +355,14 @@ impl DaemonService {
         // Extract VPN IP for status
         let vpn_ip = config.interface.address.first().map(|a| a.to_string());
 
-        // Create and start client
-        match WireGuardClient::new(config).await {
+        // Get traffic stats to pass to client
+        let traffic_stats = {
+            let s = state.lock().await;
+            Arc::clone(&s.traffic_stats)
+        };
+
+        // Create and start client with traffic stats
+        match WireGuardClient::new(config, Some(traffic_stats)).await {
             Ok(client) => {
                 // Create shutdown channel
                 let (shutdown_tx, shutdown_rx) = watch::channel(false);
@@ -321,8 +373,7 @@ impl DaemonService {
                 s.vpn_ip = vpn_ip;
                 s.server_endpoint = server_endpoint;
                 s.connected_at = Some(chrono_now());
-                s.bytes_sent = 0;
-                s.bytes_received = 0;
+                s.traffic_stats.reset(); // Reset counters for new connection
                 s.shutdown_tx = Some(shutdown_tx);
                 drop(s);
 
@@ -449,8 +500,8 @@ impl DaemonService {
             vpn_ip: s.vpn_ip.clone(),
             server_endpoint: s.server_endpoint.clone(),
             connected_at: s.connected_at.clone(),
-            bytes_sent: s.bytes_sent,
-            bytes_received: s.bytes_received,
+            bytes_sent: s.traffic_stats.get_sent(),
+            bytes_received: s.traffic_stats.get_received(),
             last_handshake: None,
             error_message: s.error_message.clone(),
         };
@@ -470,8 +521,8 @@ impl DaemonService {
             vpn_ip: s.vpn_ip.clone(),
             server_endpoint: s.server_endpoint.clone(),
             connected_at: s.connected_at.clone(),
-            bytes_sent: s.bytes_sent,
-            bytes_received: s.bytes_received,
+            bytes_sent: s.traffic_stats.get_sent(),
+            bytes_received: s.traffic_stats.get_received(),
         };
 
         let notification = JsonRpcNotification::new(
