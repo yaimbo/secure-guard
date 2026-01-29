@@ -31,12 +31,17 @@ SecureGuard is a complete VPN management platform consisting of:
 - Audit, error, and connection logging
 - JWT-based authentication
 - First-run setup wizard
+- **SSO Authentication** (Azure AD, Okta, Google Workspace)
+- **Real-time WebSocket** for live dashboard updates
+- **Redis pub/sub** for event streaming across instances
 
 ### Admin Console (Flutter Web)
-- Dashboard with connection statistics
+- **Real-time dashboard** with live connection statistics via WebSocket
+- Active connections, bandwidth, and error monitoring
 - Client management (create, edit, enable/disable, delete)
 - Manual config download and QR code generation
-- Audit log viewer
+- Audit, error, and connection log viewers
+- SSO provider configuration
 - Dark/light theme support
 
 ### Desktop Client (Flutter)
@@ -44,6 +49,8 @@ SecureGuard is a complete VPN management platform consisting of:
 - System tray integration with connection status icons
 - Custom draggable title bar with window controls
 - IPC communication with Rust daemon (JSON-RPC 2.0)
+- **SSO authentication** via device code flow (Azure AD, Okta, Google)
+- **Connection event reporting** to server for real-time monitoring
 - Auto-update functionality:
   - Periodic config version checking (every 5 minutes)
   - Automatic binary update detection (every hour)
@@ -51,6 +58,7 @@ SecureGuard is a complete VPN management platform consisting of:
   - Ed25519 signature verification framework
 - Seamless config updates while connected
 - Traffic statistics (bytes sent/received)
+- Periodic heartbeat to server (every 60 seconds)
 - Error handling with retry support
 
 ## Quick Start
@@ -59,8 +67,9 @@ SecureGuard is a complete VPN management platform consisting of:
 
 - Rust 1.70+ (for VPN client)
 - Dart 3.0+ (for server)
-- Flutter 3.16+ (for console)
+- Flutter 3.16+ (for console and desktop client)
 - PostgreSQL 14+ (for server database)
+- Redis 6+ (for real-time events and session caching)
 
 ### 1. Build the VPN Client
 
@@ -285,6 +294,32 @@ sudo journalctl -u secureguard -f
 | GET | `/api/v1/logs/errors` | Query error log |
 | GET | `/api/v1/logs/connections` | Query connection log |
 
+### Dashboard (Admin)
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| GET | `/api/v1/dashboard/stats` | Overall dashboard statistics |
+| GET | `/api/v1/dashboard/active-clients` | Currently active clients |
+| GET | `/api/v1/dashboard/activity` | Recent activity feed |
+| GET | `/api/v1/dashboard/errors/summary` | Error counts by severity |
+| GET | `/api/v1/dashboard/connections/history` | Connection time series |
+| WS | `/api/v1/ws/dashboard?token=<jwt>` | Real-time WebSocket updates |
+
+### SSO Authentication (Public)
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| GET | `/api/v1/auth/sso/providers` | List enabled SSO providers |
+| GET | `/api/v1/auth/sso/:provider/authorize` | Start OAuth flow |
+| GET | `/api/v1/auth/sso/:provider/callback` | OAuth callback |
+| POST | `/api/v1/auth/sso/:provider/device` | Start device code flow |
+| POST | `/api/v1/auth/sso/:provider/device/poll` | Poll device code status |
+
+### SSO Configuration (Admin)
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| GET | `/api/v1/admin/sso/configs` | List SSO provider configs |
+| POST | `/api/v1/admin/sso/configs` | Save SSO provider config |
+| DELETE | `/api/v1/admin/sso/configs/:provider` | Delete SSO provider config |
+
 ### Updates (Client-facing)
 | Method | Endpoint | Description |
 |--------|----------|-------------|
@@ -302,19 +337,20 @@ sudo journalctl -u secureguard -f
 ## Architecture
 
 ```
-┌─────────────────────────────────────────────────────────────────┐
-│                     MANAGEMENT PLANE                            │
-│  ┌─────────────────┐  ┌──────────────────┐                     │
-│  │  Flutter Web    │  │  Dart REST API   │                     │
-│  │  Admin Console  │  │  Server          │                     │
-│  └────────┬────────┘  └────────┬─────────┘                     │
-│           │                    │                                │
-│           └────────────────────┴──────────────┐                │
-│                                               │                 │
-│                              ┌────────────────┴───────────────┐│
-│                              │   PostgreSQL                   ││
-│                              └────────────────────────────────┘│
-└─────────────────────────────────────────────────────────────────┘
+┌───────────────────────────────────────────────────────────────────────┐
+│                         MANAGEMENT PLANE                               │
+│  ┌─────────────────┐  ┌──────────────────┐  ┌──────────────────────┐  │
+│  │  Flutter Web    │◄─┤  Dart REST API   │  │  SSO Providers       │  │
+│  │  Admin Console  │WS│  Server          ├──┤  (Azure/Okta/Google) │  │
+│  └────────┬────────┘  └────────┬─────────┘  └──────────────────────┘  │
+│           │                    │                                       │
+│           └────────────────────┼───────────────┐                      │
+│                                │               │                       │
+│              ┌─────────────────┴─────────┐ ┌───┴───────────────────┐  │
+│              │   PostgreSQL              │ │   Redis               │  │
+│              │   (data persistence)      │ │   (pub/sub, sessions) │  │
+│              └───────────────────────────┘ └───────────────────────┘  │
+└───────────────────────────────────────────────────────────────────────┘
                                     │
               ┌─────────────────────┼─────────────────────┐
               │                     │                     │
@@ -322,7 +358,7 @@ sudo journalctl -u secureguard -f
 ┌─────────────────────┐  ┌─────────────────────┐  ┌─────────────────┐
 │  SecureGuard Client │  │  SecureGuard Client │  │ Legacy WireGuard│
 │  (Flutter + Rust)   │  │  (CLI Mode)         │  │ (manual config) │
-│  Desktop App        │  │                     │  │                 │
+│  Desktop App + SSO  │  │                     │  │                 │
 └─────────────────────┘  └─────────────────────┘  └─────────────────┘
 ```
 
@@ -340,13 +376,23 @@ sudo journalctl -u secureguard -f
 
 ### Server (.env)
 ```bash
+# Database
 DB_HOST=localhost
 DB_PORT=5432
 DB_NAME=secureguard
 DB_USER=secureguard
 DB_PASSWORD=your_password
+
+# Redis (for real-time events)
+REDIS_HOST=localhost
+REDIS_PORT=6379
+REDIS_PASSWORD=          # Optional
+
+# Server
 JWT_SECRET=your_jwt_secret
+ENCRYPTION_KEY=your_32_char_encryption_key
 PORT=8080
+HOST=0.0.0.0
 ```
 
 ### Console
@@ -412,13 +458,39 @@ flutter build windows --release
 flutter build macos --release --dart-define=UPDATE_SIGNING_PUBLIC_KEY=<base64-key>
 ```
 
+## Real-time Dashboard
+
+The admin console receives live updates via WebSocket connection to `/api/v1/ws/dashboard`.
+
+### WebSocket Events
+
+| Event Type | Description |
+|------------|-------------|
+| `initial_state` | Full dashboard state on connection |
+| `metrics_update` | Periodic stats update (every 10s) |
+| `connection_event` | Client connect/disconnect events |
+| `error_event` | System error notifications |
+| `audit_event` | Audit log entries |
+
+### Connection Event Reporting
+
+Desktop clients report their connection status to the server:
+- **Connected**: Reported when VPN tunnel is established
+- **Disconnected**: Reported with traffic stats when tunnel closes
+- **Heartbeat**: Sent every 60 seconds while connected
+
+Events are logged to PostgreSQL and published to Redis for real-time dashboard updates.
+
 ## Security Considerations
 
 - The VPN client requires root/administrator privileges to create TUN devices
 - On Linux, you can use capabilities instead of root: `sudo setcap cap_net_admin=eip ./secureguard-poc`
-- Private keys are encrypted at rest in the database
+- Private keys are encrypted at rest in the database using AES-256
 - JWT tokens expire after 24 hours
-- All API endpoints (except health and setup) require authentication
+- All API endpoints (except health, setup, and SSO flows) require authentication
+- WebSocket connections require JWT token passed as query parameter
+- SSO tokens are verified using JWKS with RS256 signature validation (Google, Okta)
+- Platform-specific secure credential storage (Keychain, Credential Manager, libsecret)
 
 ## License
 

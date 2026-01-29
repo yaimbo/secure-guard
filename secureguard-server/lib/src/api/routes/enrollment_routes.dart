@@ -4,14 +4,19 @@ import 'package:shelf/shelf.dart';
 import 'package:shelf_router/shelf_router.dart';
 
 import '../../services/client_service.dart';
+import '../../services/redis_service.dart';
 import '../../repositories/log_repository.dart';
 
 /// Device enrollment routes (client-facing)
 class EnrollmentRoutes {
   final ClientService clientService;
   final LogRepository logRepo;
+  final RedisService? redis;
 
-  EnrollmentRoutes(this.clientService, this.logRepo);
+  /// Track active connection IDs for each client (to log disconnection properly)
+  final _activeConnections = <String, int>{};
+
+  EnrollmentRoutes(this.clientService, this.logRepo, {this.redis});
 
   Router get router {
     final router = Router();
@@ -190,8 +195,19 @@ class EnrollmentRoutes {
     }
   }
 
-  /// Device heartbeat - report status
+  /// Device heartbeat - report status and connection events
   /// POST /api/v1/enrollment/heartbeat
+  ///
+  /// Body (all fields optional):
+  /// {
+  ///   "event": "connected" | "disconnected" | "heartbeat",
+  ///   "vpn_ip": "10.0.0.5",
+  ///   "bytes_sent": 12345,
+  ///   "bytes_received": 67890,
+  ///   "client_version": "1.0.0",
+  ///   "platform_version": "14.0",
+  ///   "error_message": "Connection timeout"  // only for errors
+  /// }
   Future<Response> _heartbeat(Request request) async {
     try {
       final clientId = request.context['clientId'] as String?;
@@ -203,6 +219,19 @@ class EnrollmentRoutes {
 
       final body = await request.readAsString();
       final data = body.isNotEmpty ? jsonDecode(body) as Map<String, dynamic> : <String, dynamic>{};
+
+      // Get client info for event publishing
+      final client = await clientService.getClient(clientId);
+      final clientName = client?.name ?? 'Unknown';
+      final sourceIp = request.headers['x-forwarded-for'] ??
+                       request.headers['x-real-ip'] ??
+                       'unknown';
+
+      // Parse event type (default to heartbeat)
+      final event = data['event'] as String? ?? 'heartbeat';
+      final vpnIp = data['vpn_ip'] as String?;
+      final bytesSent = data['bytes_sent'] as int?;
+      final bytesReceived = data['bytes_received'] as int?;
 
       // Update last seen
       await clientService.updateLastSeen(clientId);
@@ -217,6 +246,40 @@ class EnrollmentRoutes {
         });
       }
 
+      // Handle connection events
+      switch (event) {
+        case 'connected':
+          await _handleConnected(
+            clientId: clientId,
+            clientName: clientName,
+            sourceIp: sourceIp,
+            vpnIp: vpnIp,
+          );
+          break;
+
+        case 'disconnected':
+          await _handleDisconnected(
+            clientId: clientId,
+            clientName: clientName,
+            bytesSent: bytesSent,
+            bytesReceived: bytesReceived,
+            reason: data['error_message'] as String?,
+          );
+          break;
+
+        case 'heartbeat':
+        default:
+          // Regular heartbeat - update online status in Redis
+          await _updateOnlineStatus(
+            clientId: clientId,
+            clientName: clientName,
+            vpnIp: vpnIp,
+            bytesSent: bytesSent ?? 0,
+            bytesReceived: bytesReceived ?? 0,
+          );
+          break;
+      }
+
       return Response.ok(
         jsonEncode({'status': 'ok'}),
         headers: {'content-type': 'application/json'},
@@ -227,5 +290,142 @@ class EnrollmentRoutes {
         headers: {'content-type': 'application/json'},
       );
     }
+  }
+
+  /// Handle client connected event
+  Future<void> _handleConnected({
+    required String clientId,
+    required String clientName,
+    required String sourceIp,
+    String? vpnIp,
+  }) async {
+    // Log connection start to database
+    final connectionId = await logRepo.connectionStart(
+      clientId: clientId,
+      sourceIp: sourceIp,
+    );
+    _activeConnections[clientId] = connectionId;
+
+    // Update Redis online status
+    await _updateOnlineStatus(
+      clientId: clientId,
+      clientName: clientName,
+      vpnIp: vpnIp,
+      bytesSent: 0,
+      bytesReceived: 0,
+    );
+
+    // Publish connection event to Redis
+    if (redis != null) {
+      await redis!.publish(RedisChannels.connections, {
+        'event': 'connected',
+        'client_id': clientId,
+        'name': clientName,
+        'vpn_ip': vpnIp,
+        'timestamp': DateTime.now().toIso8601String(),
+      });
+
+      // Record metrics
+      await redis!.incrementCounter(RedisMetrics.totalConnections);
+      await redis!.recordMetric(
+        RedisMetrics.connectionCount,
+        (await redis!.getOnlineClientCount()).toDouble(),
+      );
+    }
+
+    // Audit log
+    await logRepo.auditLog(
+      actorType: 'client',
+      actorId: clientId,
+      eventType: 'VPN_CONNECTED',
+      resourceType: 'client',
+      resourceId: clientId,
+      resourceName: clientName,
+      details: {'vpn_ip': vpnIp, 'source_ip': sourceIp},
+    );
+  }
+
+  /// Handle client disconnected event
+  Future<void> _handleDisconnected({
+    required String clientId,
+    required String clientName,
+    int? bytesSent,
+    int? bytesReceived,
+    String? reason,
+  }) async {
+    // Log connection end to database
+    final connectionId = _activeConnections.remove(clientId);
+    if (connectionId != null) {
+      await logRepo.connectionEnd(
+        connectionId: connectionId,
+        bytesSent: bytesSent,
+        bytesReceived: bytesReceived,
+        disconnectReason: reason,
+      );
+    }
+
+    // Remove from Redis online set
+    if (redis != null) {
+      await redis!.setClientOffline(clientId);
+
+      // Publish disconnection event
+      await redis!.publish(RedisChannels.connections, {
+        'event': 'disconnected',
+        'client_id': clientId,
+        'name': clientName,
+        'reason': reason,
+        'bytes_sent': bytesSent,
+        'bytes_received': bytesReceived,
+        'timestamp': DateTime.now().toIso8601String(),
+      });
+
+      // Record metrics
+      await redis!.recordMetric(
+        RedisMetrics.connectionCount,
+        (await redis!.getOnlineClientCount()).toDouble(),
+      );
+
+      // Update bandwidth totals
+      if (bytesSent != null) {
+        await redis!.incrementCounter(RedisMetrics.totalBytesTx, amount: bytesSent);
+      }
+      if (bytesReceived != null) {
+        await redis!.incrementCounter(RedisMetrics.totalBytesRx, amount: bytesReceived);
+      }
+    }
+
+    // Audit log
+    await logRepo.auditLog(
+      actorType: 'client',
+      actorId: clientId,
+      eventType: 'VPN_DISCONNECTED',
+      resourceType: 'client',
+      resourceId: clientId,
+      resourceName: clientName,
+      details: {
+        'reason': reason,
+        'bytes_sent': bytesSent,
+        'bytes_received': bytesReceived,
+      },
+    );
+  }
+
+  /// Update client online status in Redis
+  Future<void> _updateOnlineStatus({
+    required String clientId,
+    required String clientName,
+    String? vpnIp,
+    required int bytesSent,
+    required int bytesReceived,
+  }) async {
+    if (redis == null) return;
+
+    await redis!.setClientOnline(clientId, {
+      'name': clientName,
+      'vpn_ip': vpnIp,
+      'bytes_sent': bytesSent,
+      'bytes_received': bytesReceived,
+      'last_heartbeat': DateTime.now().toIso8601String(),
+    });
   }
 }

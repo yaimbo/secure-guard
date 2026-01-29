@@ -4,6 +4,8 @@ import 'package:fl_chart/fl_chart.dart';
 import 'package:go_router/go_router.dart';
 
 import '../providers/auth_provider.dart';
+import '../providers/dashboard_provider.dart';
+import '../services/api_service.dart';
 import '../widgets/stat_card.dart';
 import '../config/theme.dart';
 
@@ -13,11 +15,37 @@ class DashboardScreen extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final authState = ref.watch(authStateProvider);
+    final dashboardState = ref.watch(dashboardProvider);
+    final stats = dashboardState.stats;
 
     return Scaffold(
       appBar: AppBar(
-        title: const Text('Dashboard'),
+        title: Row(
+          children: [
+            const Text('Dashboard'),
+            const SizedBox(width: 12),
+            // WebSocket connection indicator
+            Container(
+              width: 8,
+              height: 8,
+              decoration: BoxDecoration(
+                color: dashboardState.isConnected
+                    ? AppTheme.connected
+                    : AppTheme.disconnected,
+                shape: BoxShape.circle,
+              ),
+            ),
+          ],
+        ),
         actions: [
+          // Refresh button
+          IconButton(
+            icon: const Icon(Icons.refresh),
+            onPressed: dashboardState.isLoading
+                ? null
+                : () => ref.read(dashboardProvider.notifier).refresh(),
+            tooltip: 'Refresh',
+          ),
           Padding(
             padding: const EdgeInsets.only(right: 16),
             child: Row(
@@ -30,286 +58,471 @@ class DashboardScreen extends ConsumerWidget {
           ),
         ],
       ),
-      body: SingleChildScrollView(
-        padding: const EdgeInsets.all(24),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            // Stats row
-            Row(
-              children: [
-                Expanded(
-                  child: StatCard(
-                    title: 'Active Connections',
-                    value: '47',
-                    subtitle: '+3 from 1h ago',
-                    icon: Icons.wifi,
-                    iconColor: AppTheme.connected,
+      body: dashboardState.isLoading && stats == null
+          ? const Center(child: CircularProgressIndicator())
+          : dashboardState.error != null && stats == null
+              ? Center(
+                  child: Column(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      Icon(Icons.error_outline,
+                          size: 48, color: AppTheme.error),
+                      const SizedBox(height: 16),
+                      Text(dashboardState.error!),
+                      const SizedBox(height: 16),
+                      ElevatedButton(
+                        onPressed: () =>
+                            ref.read(dashboardProvider.notifier).refresh(),
+                        child: const Text('Retry'),
+                      ),
+                    ],
+                  ),
+                )
+              : SingleChildScrollView(
+                  padding: const EdgeInsets.all(24),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      // Stats row
+                      _buildStatsRow(context, stats),
+                      const SizedBox(height: 24),
+
+                      // Charts row
+                      _buildChartsRow(context, ref, dashboardState),
+                      const SizedBox(height: 24),
+
+                      // Recent activity and errors row
+                      _buildActivityRow(context, dashboardState),
+                    ],
                   ),
                 ),
-                const SizedBox(width: 16),
-                Expanded(
-                  child: StatCard(
-                    title: 'Total Clients',
-                    value: '156',
-                    subtitle: '142 active',
-                    icon: Icons.devices,
-                    iconColor: AppTheme.primary,
+    );
+  }
+
+  Widget _buildStatsRow(BuildContext context, DashboardStats? stats) {
+    return Row(
+      children: [
+        Expanded(
+          child: StatCard(
+            title: 'Active Connections',
+            value: stats?.activeConnections.toString() ?? '0',
+            subtitle: stats != null ? 'Real-time' : 'Loading...',
+            icon: Icons.wifi,
+            iconColor: AppTheme.connected,
+          ),
+        ),
+        const SizedBox(width: 16),
+        Expanded(
+          child: StatCard(
+            title: 'Total Clients',
+            value: stats?.totalClients.toString() ?? '0',
+            subtitle: stats != null
+                ? '${stats.activeClients} active'
+                : 'Loading...',
+            icon: Icons.devices,
+            iconColor: AppTheme.primary,
+          ),
+        ),
+        const SizedBox(width: 16),
+        Expanded(
+          child: StatCard(
+            title: 'Upload Rate',
+            value: stats != null
+                ? DashboardStats.formatRate(stats.uploadRate)
+                : '0 bps',
+            subtitle: stats != null
+                ? DashboardStats.formatBytes(stats.totalBytesSent)
+                : 'Loading...',
+            icon: Icons.upload,
+            iconColor: AppTheme.primary,
+          ),
+        ),
+        const SizedBox(width: 16),
+        Expanded(
+          child: StatCard(
+            title: 'Download Rate',
+            value: stats != null
+                ? DashboardStats.formatRate(stats.downloadRate)
+                : '0 bps',
+            subtitle: stats != null
+                ? DashboardStats.formatBytes(stats.totalBytesReceived)
+                : 'Loading...',
+            icon: Icons.download,
+            iconColor: AppTheme.primary,
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildChartsRow(
+      BuildContext context, WidgetRef ref, DashboardState state) {
+    return Row(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        // Connections chart
+        Expanded(
+          flex: 2,
+          child: Card(
+            child: Padding(
+              padding: const EdgeInsets.all(20),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    'Connections (24h)',
+                    style: Theme.of(context).textTheme.titleMedium,
                   ),
-                ),
-                const SizedBox(width: 16),
-                Expanded(
-                  child: StatCard(
-                    title: 'Upload Rate',
-                    value: '2.4 Gbps',
-                    subtitle: '+12% from 1h ago',
-                    icon: Icons.upload,
-                    iconColor: AppTheme.primary,
+                  const SizedBox(height: 20),
+                  SizedBox(
+                    height: 200,
+                    child: _buildConnectionChart(state.connectionHistory),
                   ),
-                ),
-                const SizedBox(width: 16),
-                Expanded(
-                  child: StatCard(
-                    title: 'Download Rate',
-                    value: '8.1 Gbps',
-                    subtitle: '+8% from 1h ago',
-                    icon: Icons.download,
-                    iconColor: AppTheme.primary,
-                  ),
-                ),
-              ],
+                ],
+              ),
             ),
-            const SizedBox(height: 24),
+          ),
+        ),
+        const SizedBox(width: 16),
 
-            // Charts row
-            Row(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                // Connections chart
-                Expanded(
-                  flex: 2,
-                  child: Card(
-                    child: Padding(
-                      padding: const EdgeInsets.all(20),
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Text(
-                            'Connections (24h)',
-                            style: Theme.of(context).textTheme.titleMedium,
-                          ),
-                          const SizedBox(height: 20),
-                          SizedBox(
-                            height: 200,
-                            child: LineChart(
-                              LineChartData(
-                                gridData: FlGridData(
-                                  show: true,
-                                  drawVerticalLine: false,
-                                  horizontalInterval: 10,
-                                  getDrawingHorizontalLine: (value) {
-                                    return FlLine(
-                                      color: Colors.white10,
-                                      strokeWidth: 1,
-                                    );
-                                  },
-                                ),
-                                titlesData: FlTitlesData(
-                                  leftTitles: AxisTitles(
-                                    sideTitles: SideTitles(
-                                      showTitles: true,
-                                      reservedSize: 40,
-                                      getTitlesWidget: (value, meta) {
-                                        return Text(
-                                          value.toInt().toString(),
-                                          style: const TextStyle(
-                                            fontSize: 10,
-                                            color: Colors.white54,
-                                          ),
-                                        );
-                                      },
-                                    ),
-                                  ),
-                                  bottomTitles: AxisTitles(
-                                    sideTitles: SideTitles(
-                                      showTitles: true,
-                                      getTitlesWidget: (value, meta) {
-                                        final hours = ['00:00', '06:00', '12:00', '18:00', 'Now'];
-                                        if (value.toInt() < hours.length) {
-                                          return Padding(
-                                            padding: const EdgeInsets.only(top: 8),
-                                            child: Text(
-                                              hours[value.toInt()],
-                                              style: const TextStyle(
-                                                fontSize: 10,
-                                                color: Colors.white54,
-                                              ),
-                                            ),
-                                          );
-                                        }
-                                        return const SizedBox();
-                                      },
-                                    ),
-                                  ),
-                                  topTitles: const AxisTitles(sideTitles: SideTitles(showTitles: false)),
-                                  rightTitles: const AxisTitles(sideTitles: SideTitles(showTitles: false)),
-                                ),
-                                borderData: FlBorderData(show: false),
-                                lineBarsData: [
-                                  LineChartBarData(
-                                    spots: const [
-                                      FlSpot(0, 30),
-                                      FlSpot(1, 45),
-                                      FlSpot(2, 38),
-                                      FlSpot(3, 52),
-                                      FlSpot(4, 47),
-                                    ],
-                                    isCurved: true,
-                                    color: AppTheme.primary,
-                                    barWidth: 3,
-                                    dotData: const FlDotData(show: false),
-                                    belowBarData: BarAreaData(
-                                      show: true,
-                                      color: AppTheme.primary.withValues(alpha: 0.1),
-                                    ),
-                                  ),
-                                ],
-                              ),
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
+        // Active clients list
+        Expanded(
+          child: Card(
+            child: Padding(
+              padding: const EdgeInsets.all(20),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    'Active Clients',
+                    style: Theme.of(context).textTheme.titleMedium,
                   ),
-                ),
-                const SizedBox(width: 16),
-
-                // Active clients list
-                Expanded(
-                  child: Card(
-                    child: Padding(
-                      padding: const EdgeInsets.all(20),
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Text(
-                            'Active Clients',
-                            style: Theme.of(context).textTheme.titleMedium,
-                          ),
-                          const SizedBox(height: 16),
-                          _buildClientItem(context, 'laptop-john', '10.0.0.2', true),
-                          _buildClientItem(context, 'server-prod', '10.0.0.3', true),
-                          _buildClientItem(context, 'phone-mary', '10.0.0.4', true),
-                          _buildClientItem(context, 'desktop-bob', '10.0.0.5', true),
-                          _buildClientItem(context, 'tablet-alice', '10.0.0.6', false),
-                          const SizedBox(height: 8),
-                          TextButton(
-                            onPressed: () => context.go('/clients'),
-                            child: const Text('View all clients...'),
-                          ),
-                        ],
+                  const SizedBox(height: 16),
+                  if (state.activeClients.isEmpty)
+                    const Padding(
+                      padding: EdgeInsets.symmetric(vertical: 20),
+                      child: Center(
+                        child: Text(
+                          'No active clients',
+                          style: TextStyle(color: Colors.grey),
+                        ),
                       ),
-                    ),
+                    )
+                  else
+                    ...state.activeClients.take(5).map((client) =>
+                        _buildClientItem(
+                            context, client.name, client.assignedIp, client.isOnline)),
+                  const SizedBox(height: 8),
+                  TextButton(
+                    onPressed: () => context.go('/clients'),
+                    child: const Text('View all clients...'),
                   ),
-                ),
-              ],
+                ],
+              ),
             ),
-            const SizedBox(height: 24),
+          ),
+        ),
+      ],
+    );
+  }
 
-            // Recent activity and errors row
-            Row(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                // Recent activity
-                Expanded(
-                  child: Card(
-                    child: Padding(
-                      padding: const EdgeInsets.all(20),
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Text(
-                            'Recent Activity',
-                            style: Theme.of(context).textTheme.titleMedium,
-                          ),
-                          const SizedBox(height: 16),
-                          _buildActivityItem(
-                            context,
-                            Icons.login,
-                            AppTheme.connected,
-                            'laptop-john connected',
-                            '2m ago',
-                          ),
-                          _buildActivityItem(
-                            context,
-                            Icons.logout,
-                            AppTheme.disconnected,
-                            'phone-mary disconnected',
-                            '5m ago',
-                          ),
-                          _buildActivityItem(
-                            context,
-                            Icons.refresh,
-                            AppTheme.primary,
-                            'server-prod rekeyed',
-                            '10m ago',
-                          ),
-                          _buildActivityItem(
-                            context,
-                            Icons.settings,
-                            AppTheme.warning,
-                            'Config updated (3 clients)',
-                            '15m ago',
-                          ),
-                          const SizedBox(height: 8),
-                          TextButton(
-                            onPressed: () => context.go('/logs'),
-                            child: const Text('View all activity...'),
-                          ),
-                        ],
-                      ),
+  Widget _buildConnectionChart(List<ConnectionDataPoint> data) {
+    if (data.isEmpty) {
+      // Show placeholder chart with sample data
+      return LineChart(
+        LineChartData(
+          gridData: FlGridData(
+            show: true,
+            drawVerticalLine: false,
+            horizontalInterval: 10,
+            getDrawingHorizontalLine: (value) {
+              return FlLine(
+                color: Colors.white10,
+                strokeWidth: 1,
+              );
+            },
+          ),
+          titlesData: FlTitlesData(
+            leftTitles: AxisTitles(
+              sideTitles: SideTitles(
+                showTitles: true,
+                reservedSize: 40,
+                getTitlesWidget: (value, meta) {
+                  return Text(
+                    value.toInt().toString(),
+                    style: const TextStyle(
+                      fontSize: 10,
+                      color: Colors.white54,
                     ),
-                  ),
-                ),
-                const SizedBox(width: 16),
-
-                // Errors
-                Expanded(
-                  child: Card(
-                    child: Padding(
-                      padding: const EdgeInsets.all(20),
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Text(
-                            'Errors (last 24h)',
-                            style: Theme.of(context).textTheme.titleMedium,
-                          ),
-                          const SizedBox(height: 16),
-                          _buildErrorBar(context, 'Handshake', 3, 10),
-                          const SizedBox(height: 12),
-                          _buildErrorBar(context, 'Timeout', 1, 10),
-                          const SizedBox(height: 12),
-                          _buildErrorBar(context, 'Auth', 0, 10),
-                          const SizedBox(height: 16),
-                          TextButton(
-                            onPressed: () => context.go('/logs'),
-                            child: const Text('View all errors...'),
-                          ),
-                        ],
+                  );
+                },
+              ),
+            ),
+            bottomTitles: AxisTitles(
+              sideTitles: SideTitles(
+                showTitles: true,
+                getTitlesWidget: (value, meta) {
+                  final hours = ['00:00', '06:00', '12:00', '18:00', 'Now'];
+                  if (value.toInt() < hours.length) {
+                    return Padding(
+                      padding: const EdgeInsets.only(top: 8),
+                      child: Text(
+                        hours[value.toInt()],
+                        style: const TextStyle(
+                          fontSize: 10,
+                          color: Colors.white54,
+                        ),
                       ),
-                    ),
-                  ),
-                ),
+                    );
+                  }
+                  return const SizedBox();
+                },
+              ),
+            ),
+            topTitles:
+                const AxisTitles(sideTitles: SideTitles(showTitles: false)),
+            rightTitles:
+                const AxisTitles(sideTitles: SideTitles(showTitles: false)),
+          ),
+          borderData: FlBorderData(show: false),
+          lineBarsData: [
+            LineChartBarData(
+              spots: const [
+                FlSpot(0, 0),
+                FlSpot(1, 0),
+                FlSpot(2, 0),
+                FlSpot(3, 0),
+                FlSpot(4, 0),
               ],
+              isCurved: true,
+              color: AppTheme.primary,
+              barWidth: 3,
+              dotData: const FlDotData(show: false),
+              belowBarData: BarAreaData(
+                show: true,
+                color: AppTheme.primary.withValues(alpha: 0.1),
+              ),
             ),
           ],
         ),
+      );
+    }
+
+    // Build chart from actual data
+    final spots = data.asMap().entries.map((e) {
+      return FlSpot(e.key.toDouble(), e.value.activeConnections.toDouble());
+    }).toList();
+
+    return LineChart(
+      LineChartData(
+        gridData: FlGridData(
+          show: true,
+          drawVerticalLine: false,
+          horizontalInterval: 10,
+          getDrawingHorizontalLine: (value) {
+            return FlLine(
+              color: Colors.white10,
+              strokeWidth: 1,
+            );
+          },
+        ),
+        titlesData: FlTitlesData(
+          leftTitles: AxisTitles(
+            sideTitles: SideTitles(
+              showTitles: true,
+              reservedSize: 40,
+              getTitlesWidget: (value, meta) {
+                return Text(
+                  value.toInt().toString(),
+                  style: const TextStyle(
+                    fontSize: 10,
+                    color: Colors.white54,
+                  ),
+                );
+              },
+            ),
+          ),
+          bottomTitles: AxisTitles(
+            sideTitles: SideTitles(
+              showTitles: true,
+              interval: (data.length / 5).ceilToDouble(),
+              getTitlesWidget: (value, meta) {
+                final index = value.toInt();
+                if (index >= 0 && index < data.length) {
+                  final time = data[index].timestamp;
+                  return Padding(
+                    padding: const EdgeInsets.only(top: 8),
+                    child: Text(
+                      '${time.hour.toString().padLeft(2, '0')}:${time.minute.toString().padLeft(2, '0')}',
+                      style: const TextStyle(
+                        fontSize: 10,
+                        color: Colors.white54,
+                      ),
+                    ),
+                  );
+                }
+                return const SizedBox();
+              },
+            ),
+          ),
+          topTitles:
+              const AxisTitles(sideTitles: SideTitles(showTitles: false)),
+          rightTitles:
+              const AxisTitles(sideTitles: SideTitles(showTitles: false)),
+        ),
+        borderData: FlBorderData(show: false),
+        lineBarsData: [
+          LineChartBarData(
+            spots: spots,
+            isCurved: true,
+            color: AppTheme.primary,
+            barWidth: 3,
+            dotData: const FlDotData(show: false),
+            belowBarData: BarAreaData(
+              show: true,
+              color: AppTheme.primary.withValues(alpha: 0.1),
+            ),
+          ),
+        ],
       ),
     );
   }
 
-  Widget _buildClientItem(BuildContext context, String name, String ip, bool online) {
+  Widget _buildActivityRow(BuildContext context, DashboardState state) {
+    return Row(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        // Recent activity
+        Expanded(
+          child: Card(
+            child: Padding(
+              padding: const EdgeInsets.all(20),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    'Recent Activity',
+                    style: Theme.of(context).textTheme.titleMedium,
+                  ),
+                  const SizedBox(height: 16),
+                  if (state.recentActivity.isEmpty)
+                    const Padding(
+                      padding: EdgeInsets.symmetric(vertical: 20),
+                      child: Center(
+                        child: Text(
+                          'No recent activity',
+                          style: TextStyle(color: Colors.grey),
+                        ),
+                      ),
+                    )
+                  else
+                    ...state.recentActivity.take(5).map((event) =>
+                        _buildActivityItem(
+                          context,
+                          _getEventIcon(event.type),
+                          _getEventColor(event.type),
+                          event.title,
+                          event.relativeTime,
+                        )),
+                  const SizedBox(height: 8),
+                  TextButton(
+                    onPressed: () => context.go('/logs'),
+                    child: const Text('View all activity...'),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ),
+        const SizedBox(width: 16),
+
+        // Errors
+        Expanded(
+          child: Card(
+            child: Padding(
+              padding: const EdgeInsets.all(20),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    'Errors (last 24h)',
+                    style: Theme.of(context).textTheme.titleMedium,
+                  ),
+                  const SizedBox(height: 16),
+                  if (state.errorSummary.isEmpty)
+                    const Padding(
+                      padding: EdgeInsets.symmetric(vertical: 20),
+                      child: Center(
+                        child: Text(
+                          'No errors',
+                          style: TextStyle(color: Colors.grey),
+                        ),
+                      ),
+                    )
+                  else
+                    ...state.errorSummary.entries.take(5).map((e) => Padding(
+                          padding: const EdgeInsets.only(bottom: 12),
+                          child:
+                              _buildErrorBar(context, e.key, e.value, _getMaxErrors(state.errorSummary)),
+                        )),
+                  const SizedBox(height: 8),
+                  TextButton(
+                    onPressed: () => context.go('/logs'),
+                    child: const Text('View all errors...'),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+
+  int _getMaxErrors(Map<String, int> errors) {
+    if (errors.isEmpty) return 10;
+    final max = errors.values.reduce((a, b) => a > b ? a : b);
+    return max > 0 ? max : 10;
+  }
+
+  IconData _getEventIcon(String type) {
+    switch (type) {
+      case 'connected':
+        return Icons.login;
+      case 'disconnected':
+        return Icons.logout;
+      case 'rekeyed':
+        return Icons.refresh;
+      case 'config_updated':
+        return Icons.settings;
+      case 'error':
+        return Icons.error_outline;
+      case 'audit':
+        return Icons.history;
+      default:
+        return Icons.info_outline;
+    }
+  }
+
+  Color _getEventColor(String type) {
+    switch (type) {
+      case 'connected':
+        return AppTheme.connected;
+      case 'disconnected':
+        return AppTheme.disconnected;
+      case 'rekeyed':
+        return AppTheme.primary;
+      case 'config_updated':
+        return AppTheme.warning;
+      case 'error':
+        return AppTheme.error;
+      default:
+        return AppTheme.primary;
+    }
+  }
+
+  Widget _buildClientItem(
+      BuildContext context, String name, String ip, bool online) {
     return Padding(
       padding: const EdgeInsets.symmetric(vertical: 8),
       child: Row(

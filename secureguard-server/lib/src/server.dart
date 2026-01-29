@@ -9,11 +9,14 @@ import 'package:shelf_router/shelf_router.dart';
 import 'config.dart';
 import 'api/routes/auth_routes.dart';
 import 'api/routes/client_routes.dart';
+import 'api/routes/dashboard_routes.dart';
 import 'api/routes/enrollment_routes.dart';
 import 'api/routes/log_routes.dart';
 import 'api/routes/sso_routes.dart';
 import 'api/routes/update_routes.dart';
 import 'api/routes/health_routes.dart';
+import 'api/routes/websocket_routes.dart';
+import 'services/redis_service.dart';
 import 'api/middleware/logging_middleware.dart';
 import 'api/middleware/auth_middleware.dart';
 import 'database/database.dart';
@@ -32,6 +35,8 @@ class SecureGuardServer {
 
   HttpServer? _server;
   Database? _database;
+  RedisService? _redis;
+  WebSocketRoutes? _wsRoutes;
 
   SecureGuardServer(this.config);
 
@@ -69,6 +74,24 @@ class SecureGuardServer {
     final ssoManager = SSOManager(_database!);
     await ssoManager.init();
     _log.info('SSO manager initialized');
+
+    // Initialize Redis for pub/sub and caching
+    _redis = RedisService(
+      host: config.redisHost,
+      port: config.redisPort,
+      password: config.redisPassword,
+    );
+    await _redis!.init();
+    _log.info('Redis service initialized');
+
+    // Initialize WebSocket routes for real-time updates
+    _wsRoutes = WebSocketRoutes(
+      redis: _redis!,
+      clientRepo: clientRepo,
+      logRepo: logRepo,
+      jwtSecret: config.jwtSecret,
+    );
+    _log.info('WebSocket routes initialized');
 
     // Initialize middleware
     final authMiddleware = AuthMiddleware(config.jwtSecret, adminRepo);
@@ -112,7 +135,7 @@ class SecureGuardServer {
     );
 
     // Enrollment routes (some require device auth)
-    final enrollmentRoutes = EnrollmentRoutes(clientService, logRepo);
+    final enrollmentRoutes = EnrollmentRoutes(clientService, logRepo, redis: _redis);
     router.mount('/api/v1/enrollment', enrollmentRoutes.router.call);
 
     // Update routes - public endpoints (check, manifest, download)
@@ -135,6 +158,23 @@ class SecureGuardServer {
           .addMiddleware(authMiddleware.requireAdmin())
           .addHandler(logRoutes.router.call),
     );
+
+    // Dashboard routes (admin auth required)
+    final dashboardRoutes = DashboardRoutes(
+      clientRepo: clientRepo,
+      logRepo: logRepo,
+      redis: _redis!,
+    );
+    router.mount(
+      '/api/v1/dashboard',
+      Pipeline()
+          .addMiddleware(authMiddleware.requireAdmin())
+          .addHandler(dashboardRoutes.router.call),
+    );
+
+    // WebSocket routes for real-time dashboard updates
+    // Note: WebSocket upgrades bypass normal middleware, so auth is handled in the handler
+    router.mount('/api/v1/ws', _wsRoutes!.router.call);
 
     // Build handler with middleware
     // Use '*' for CORS in development - browsers don't support multiple origins
@@ -161,6 +201,8 @@ class SecureGuardServer {
   }
 
   Future<void> stop() async {
+    _wsRoutes?.dispose();
+    await _redis?.close();
     await _server?.close();
     await _database?.close();
     _log.info('Server stopped');

@@ -4,6 +4,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../services/ipc_client.dart';
 import '../services/update_service.dart';
+import '../services/enrollment_service.dart';
 
 /// Provider for the IPC client singleton
 final ipcClientProvider = Provider<IpcClient>((ref) {
@@ -89,11 +90,16 @@ class _DefaultVpnStatus implements VpnStatus {
 /// Notifier for VPN state management
 class VpnNotifier extends StateNotifier<VpnState> {
   final IpcClient _client;
+  final EnrollmentService? _enrollment;
   StreamSubscription<bool>? _connectionSub;
   StreamSubscription<VpnStatus>? _statusSub;
   Timer? _reconnectTimer;
+  Timer? _heartbeatTimer;
+  VpnConnectionState? _previousState;
 
-  VpnNotifier(this._client) : super(const VpnState()) {
+  VpnNotifier(this._client, {EnrollmentService? enrollment})
+      : _enrollment = enrollment,
+        super(const VpnState()) {
     _init();
   }
 
@@ -108,6 +114,7 @@ class VpnNotifier extends StateNotifier<VpnState> {
 
     // Listen to VPN status updates
     _statusSub = _client.statusStream.listen((status) {
+      _handleStatusChange(status);
       state = state.copyWith(status: status, clearError: true);
     });
 
@@ -116,6 +123,85 @@ class VpnNotifier extends StateNotifier<VpnState> {
 
     // Try initial connection
     await connectToDaemon();
+  }
+
+  /// Handle VPN status changes and report to server
+  void _handleStatusChange(VpnStatus status) {
+    final currentState = status.state;
+    final previousState = _previousState;
+    _previousState = currentState;
+
+    // Skip if no change or no enrollment service
+    if (_enrollment == null || currentState == previousState) return;
+
+    // Report connection events to server
+    if (currentState == VpnConnectionState.connected &&
+        previousState != VpnConnectionState.connected) {
+      // Connected - report to server and start heartbeat
+      _reportConnected(status);
+      _startHeartbeat();
+    } else if (currentState == VpnConnectionState.disconnected &&
+        previousState == VpnConnectionState.connected) {
+      // Disconnected - report to server and stop heartbeat
+      _reportDisconnected(status);
+      _stopHeartbeat();
+    } else if (currentState == VpnConnectionState.error) {
+      // Error - report to server
+      _reportDisconnected(status, errorMessage: status.errorMessage);
+      _stopHeartbeat();
+    }
+  }
+
+  /// Report connected event to server
+  Future<void> _reportConnected(VpnStatus status) async {
+    try {
+      await _enrollment?.reportConnected(vpnIp: status.vpnIp);
+    } catch (e) {
+      // Don't fail VPN connection if server reporting fails
+    }
+  }
+
+  /// Report disconnected event to server
+  Future<void> _reportDisconnected(VpnStatus status, {String? errorMessage}) async {
+    try {
+      await _enrollment?.reportDisconnected(
+        bytesSent: status.bytesSent,
+        bytesReceived: status.bytesReceived,
+        errorMessage: errorMessage,
+      );
+    } catch (e) {
+      // Don't fail if server reporting fails
+    }
+  }
+
+  /// Start periodic heartbeat when connected
+  void _startHeartbeat() {
+    _stopHeartbeat();
+    // Send heartbeat every 60 seconds
+    _heartbeatTimer = Timer.periodic(const Duration(seconds: 60), (_) {
+      _sendHeartbeat();
+    });
+  }
+
+  /// Stop heartbeat timer
+  void _stopHeartbeat() {
+    _heartbeatTimer?.cancel();
+    _heartbeatTimer = null;
+  }
+
+  /// Send heartbeat to server with current status
+  Future<void> _sendHeartbeat() async {
+    if (_enrollment == null || !state.status.isConnected) return;
+
+    try {
+      await _enrollment.sendHeartbeat(
+        vpnIp: state.status.vpnIp,
+        bytesSent: state.status.bytesSent,
+        bytesReceived: state.status.bytesReceived,
+      );
+    } catch (e) {
+      // Don't fail if heartbeat fails
+    }
   }
 
   /// Handle config update from server
@@ -251,12 +337,19 @@ class VpnNotifier extends StateNotifier<VpnState> {
     _connectionSub?.cancel();
     _statusSub?.cancel();
     _reconnectTimer?.cancel();
+    _heartbeatTimer?.cancel();
     super.dispose();
   }
 }
 
+/// Provider for enrollment service
+final enrollmentServiceProvider = Provider<EnrollmentService>((ref) {
+  return EnrollmentService.instance;
+});
+
 /// Provider for VPN state
 final vpnProvider = StateNotifierProvider<VpnNotifier, VpnState>((ref) {
   final client = ref.watch(ipcClientProvider);
-  return VpnNotifier(client);
+  final enrollment = ref.watch(enrollmentServiceProvider);
+  return VpnNotifier(client, enrollment: enrollment);
 });

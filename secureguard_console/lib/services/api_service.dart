@@ -58,6 +58,9 @@ class ApiService {
     _accessToken = token;
   }
 
+  /// Get the current access token (for WebSocket authentication)
+  String? get accessToken => _accessToken;
+
   // ═══════════════════════════════════════════════════════════════════
   // AUTH
   // ═══════════════════════════════════════════════════════════════════
@@ -281,6 +284,44 @@ class ApiService {
   }
 
   // ═══════════════════════════════════════════════════════════════════
+  // DASHBOARD
+  // ═══════════════════════════════════════════════════════════════════
+
+  Future<DashboardStats> getDashboardStats() async {
+    final response = await _dio.get('/dashboard/stats');
+    return DashboardStats.fromJson(response.data);
+  }
+
+  Future<List<ActiveClient>> getActiveClients({int limit = 10}) async {
+    final response = await _dio.get('/dashboard/active-clients', queryParameters: {
+      'limit': limit,
+    });
+    final items = response.data['clients'] as List? ?? [];
+    return items.map((json) => ActiveClient.fromJson(json)).toList();
+  }
+
+  Future<List<ActivityEvent>> getRecentActivity({int limit = 10}) async {
+    final response = await _dio.get('/dashboard/activity', queryParameters: {
+      'limit': limit,
+    });
+    final items = response.data['events'] as List? ?? [];
+    return items.map((json) => ActivityEvent.fromJson(json)).toList();
+  }
+
+  Future<Map<String, int>> getErrorSummary() async {
+    final response = await _dio.get('/dashboard/errors/summary');
+    return Map<String, int>.from(response.data);
+  }
+
+  Future<List<ConnectionDataPoint>> getConnectionHistory({int hours = 24}) async {
+    final response = await _dio.get('/dashboard/connections/history', queryParameters: {
+      'hours': hours,
+    });
+    final items = response.data['data'] as List? ?? [];
+    return items.map((json) => ConnectionDataPoint.fromJson(json)).toList();
+  }
+
+  // ═══════════════════════════════════════════════════════════════════
   // HEALTH
   // ═══════════════════════════════════════════════════════════════════
 
@@ -375,6 +416,177 @@ class SSOProviderInfo {
       id: json['id'] as String,
       name: json['name'] as String,
       enabled: json['enabled'] as bool? ?? false,
+    );
+  }
+}
+
+// ═══════════════════════════════════════════════════════════════════
+// DASHBOARD MODELS
+// ═══════════════════════════════════════════════════════════════════
+
+/// Dashboard statistics
+class DashboardStats {
+  final int activeConnections;
+  final int totalClients;
+  final int activeClients;
+  final int uploadRate; // bytes per second
+  final int downloadRate; // bytes per second
+  final int totalBytesSent;
+  final int totalBytesReceived;
+  final DateTime timestamp;
+
+  DashboardStats({
+    required this.activeConnections,
+    required this.totalClients,
+    required this.activeClients,
+    required this.uploadRate,
+    required this.downloadRate,
+    required this.totalBytesSent,
+    required this.totalBytesReceived,
+    required this.timestamp,
+  });
+
+  factory DashboardStats.fromJson(Map<String, dynamic> json) {
+    final bandwidth = json['bandwidth'] as Map<String, dynamic>? ?? {};
+    return DashboardStats(
+      activeConnections: json['active_connections'] as int? ?? 0,
+      totalClients: json['total_clients'] as int? ?? 0,
+      activeClients: json['active_clients'] as int? ?? 0,
+      uploadRate: bandwidth['upload_rate'] as int? ?? 0,
+      downloadRate: bandwidth['download_rate'] as int? ?? 0,
+      totalBytesSent: json['total_bytes_sent'] as int? ?? 0,
+      totalBytesReceived: json['total_bytes_received'] as int? ?? 0,
+      timestamp: json['timestamp'] != null
+          ? DateTime.parse(json['timestamp'] as String)
+          : DateTime.now(),
+    );
+  }
+
+  /// Format bytes to human readable string
+  static String formatBytes(int bytes) {
+    if (bytes < 1024) return '$bytes B';
+    if (bytes < 1024 * 1024) return '${(bytes / 1024).toStringAsFixed(1)} KB';
+    if (bytes < 1024 * 1024 * 1024) {
+      return '${(bytes / (1024 * 1024)).toStringAsFixed(1)} MB';
+    }
+    return '${(bytes / (1024 * 1024 * 1024)).toStringAsFixed(1)} GB';
+  }
+
+  /// Format rate to human readable string (e.g., "2.4 Gbps")
+  static String formatRate(int bytesPerSecond) {
+    final bitsPerSecond = bytesPerSecond * 8;
+    if (bitsPerSecond < 1000) return '$bitsPerSecond bps';
+    if (bitsPerSecond < 1000000) {
+      return '${(bitsPerSecond / 1000).toStringAsFixed(1)} Kbps';
+    }
+    if (bitsPerSecond < 1000000000) {
+      return '${(bitsPerSecond / 1000000).toStringAsFixed(1)} Mbps';
+    }
+    return '${(bitsPerSecond / 1000000000).toStringAsFixed(1)} Gbps';
+  }
+}
+
+/// Active client for dashboard display
+class ActiveClient {
+  final String id;
+  final String name;
+  final String assignedIp;
+  final bool isOnline;
+  final DateTime? lastSeen;
+  final int bytesSent;
+  final int bytesReceived;
+
+  ActiveClient({
+    required this.id,
+    required this.name,
+    required this.assignedIp,
+    required this.isOnline,
+    this.lastSeen,
+    this.bytesSent = 0,
+    this.bytesReceived = 0,
+  });
+
+  factory ActiveClient.fromJson(Map<String, dynamic> json) {
+    return ActiveClient(
+      id: json['id'] as String,
+      name: json['name'] as String,
+      assignedIp: json['assigned_ip'] as String? ?? '',
+      isOnline: json['is_online'] as bool? ?? false,
+      lastSeen: json['last_seen'] != null
+          ? DateTime.parse(json['last_seen'] as String)
+          : null,
+      bytesSent: json['bytes_sent'] as int? ?? 0,
+      bytesReceived: json['bytes_received'] as int? ?? 0,
+    );
+  }
+}
+
+/// Activity event for recent activity display
+class ActivityEvent {
+  final String id;
+  final String type; // connected, disconnected, rekeyed, config_updated, error
+  final String title;
+  final String? clientId;
+  final String? clientName;
+  final DateTime timestamp;
+  final Map<String, dynamic>? details;
+
+  ActivityEvent({
+    required this.id,
+    required this.type,
+    required this.title,
+    this.clientId,
+    this.clientName,
+    required this.timestamp,
+    this.details,
+  });
+
+  factory ActivityEvent.fromJson(Map<String, dynamic> json) {
+    return ActivityEvent(
+      id: json['id'] as String? ?? '',
+      type: json['type'] as String? ?? 'unknown',
+      title: json['title'] as String? ?? '',
+      clientId: json['client_id'] as String?,
+      clientName: json['client_name'] as String?,
+      timestamp: json['timestamp'] != null
+          ? DateTime.parse(json['timestamp'] as String)
+          : DateTime.now(),
+      details: json['details'] as Map<String, dynamic>?,
+    );
+  }
+
+  /// Format timestamp as relative time (e.g., "2m ago")
+  String get relativeTime {
+    final now = DateTime.now();
+    final diff = now.difference(timestamp);
+
+    if (diff.inSeconds < 60) return '${diff.inSeconds}s ago';
+    if (diff.inMinutes < 60) return '${diff.inMinutes}m ago';
+    if (diff.inHours < 24) return '${diff.inHours}h ago';
+    return '${diff.inDays}d ago';
+  }
+}
+
+/// Connection data point for charts
+class ConnectionDataPoint {
+  final DateTime timestamp;
+  final int activeConnections;
+  final int bytesSent;
+  final int bytesReceived;
+
+  ConnectionDataPoint({
+    required this.timestamp,
+    required this.activeConnections,
+    this.bytesSent = 0,
+    this.bytesReceived = 0,
+  });
+
+  factory ConnectionDataPoint.fromJson(Map<String, dynamic> json) {
+    return ConnectionDataPoint(
+      timestamp: DateTime.parse(json['timestamp'] as String),
+      activeConnections: json['active_connections'] as int? ?? 0,
+      bytesSent: json['bytes_sent'] as int? ?? 0,
+      bytesReceived: json['bytes_received'] as int? ?? 0,
     );
   }
 }

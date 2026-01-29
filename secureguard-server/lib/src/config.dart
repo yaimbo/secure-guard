@@ -15,6 +15,7 @@ class ServerConfig {
   // Redis
   final String redisHost;
   final int redisPort;
+  final String? redisPassword;
 
   // Security
   final String jwtSecret;
@@ -33,6 +34,7 @@ class ServerConfig {
     required this.dbPassword,
     required this.redisHost,
     required this.redisPort,
+    this.redisPassword,
     required this.jwtSecret,
     this.encryptionKey,
     required this.corsOrigins,
@@ -50,6 +52,7 @@ class ServerConfig {
       dbPassword: _env('DB_PASSWORD', ''),
       redisHost: _env('REDIS_HOST', 'localhost'),
       redisPort: int.parse(_env('REDIS_PORT', '6379')),
+      redisPassword: _envOrNull('REDIS_PASSWORD'),
       jwtSecret: _env('JWT_SECRET', 'change-me-in-production'),
       encryptionKey: _envOrNull('ENCRYPTION_KEY'),
       corsOrigins: _env('CORS_ORIGINS', 'http://localhost:3000').split(','),

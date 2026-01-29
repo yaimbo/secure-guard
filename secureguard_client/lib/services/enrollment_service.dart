@@ -410,7 +410,6 @@ class EnrollmentService {
 
   /// Send heartbeat to server with device status
   Future<void> sendHeartbeat({
-    required bool isConnected,
     String? vpnIp,
     int? bytesSent,
     int? bytesReceived,
@@ -418,11 +417,40 @@ class EnrollmentService {
     await _api.post(
       '/api/v1/enrollment/heartbeat',
       body: {
-        'connected': isConnected,
+        'event': 'heartbeat',
         'vpn_ip': vpnIp,
         'bytes_sent': bytesSent,
         'bytes_received': bytesReceived,
-        'timestamp': DateTime.now().toIso8601String(),
+      },
+    );
+  }
+
+  /// Report VPN connected event to server
+  Future<void> reportConnected({
+    String? vpnIp,
+  }) async {
+    await _api.post(
+      '/api/v1/enrollment/heartbeat',
+      body: {
+        'event': 'connected',
+        'vpn_ip': vpnIp,
+      },
+    );
+  }
+
+  /// Report VPN disconnected event to server
+  Future<void> reportDisconnected({
+    int? bytesSent,
+    int? bytesReceived,
+    String? errorMessage,
+  }) async {
+    await _api.post(
+      '/api/v1/enrollment/heartbeat',
+      body: {
+        'event': 'disconnected',
+        'bytes_sent': bytesSent,
+        'bytes_received': bytesReceived,
+        if (errorMessage != null) 'error_message': errorMessage,
       },
     );
   }

@@ -205,6 +205,71 @@ dart run bin/server.dart
 - `POST /api/v1/admin/sso/configs` - Save SSO provider config
 - `DELETE /api/v1/admin/sso/configs/:provider` - Delete SSO provider config
 
+**Dashboard Endpoints (admin auth required):**
+- `GET /api/v1/dashboard/stats` - Overall dashboard statistics
+- `GET /api/v1/dashboard/active-clients` - List of currently active clients
+- `GET /api/v1/dashboard/activity` - Recent activity feed
+- `GET /api/v1/dashboard/errors/summary` - Error counts by severity (last 24h)
+- `GET /api/v1/dashboard/connections/history` - Connection count time series
+
+**WebSocket (token auth via query param):**
+- `WS /api/v1/ws/dashboard?token=<jwt>` - Real-time dashboard updates
+
+### WebSocket Protocol
+
+The dashboard WebSocket provides real-time updates for metrics and events.
+
+**Authentication:** JWT token passed as `token` query parameter.
+
+**Message Types (server → client):**
+```json
+// Initial state on connect
+{"type": "initial_state", "data": {...stats...}}
+
+// Periodic metrics update (every 10s)
+{"type": "metrics_update", "data": {...stats...}}
+
+// Connection events (client connect/disconnect)
+{"type": "connection_event", "data": {"event": "connected", "client_id": "...", "name": "..."}}
+
+// Error events
+{"type": "error_event", "data": {"severity": "error", "message": "..."}}
+
+// Audit events
+{"type": "audit_event", "data": {"event_type": "...", "actor_name": "..."}}
+
+// Heartbeat response
+{"type": "pong"}
+```
+
+**Message Types (client → server):**
+```json
+// Heartbeat
+{"type": "ping"}
+
+// Subscribe to specific channels (optional)
+{"type": "subscribe", "channels": ["connections", "errors"]}
+```
+
+### Redis Configuration
+
+The server requires Redis for pub/sub event streaming and real-time metrics.
+
+**Environment Variables:**
+- `REDIS_HOST` - Redis server hostname (default: localhost)
+- `REDIS_PORT` - Redis server port (default: 6379)
+- `REDIS_PASSWORD` - Redis password (optional)
+
+**Redis Channels:**
+- `channel:connections` - Connection/disconnection events
+- `channel:errors` - Error events
+- `channel:audit` - Audit log events
+- `channel:metrics` - General metrics updates
+
+**Redis Keys:**
+- `client:online:<client_id>` - Online client data (TTL: 2 minutes)
+- `metrics:connections:*` - Time series connection data
+
 ## Flutter Web Management Console
 
 Located in `secureguard_console/`. A Flutter web admin interface for managing VPN clients.
@@ -263,10 +328,11 @@ secureguard_console/lib/
 ├── services/
 │   └── api_service.dart   # REST API client + ServerUnavailableException
 ├── providers/
-│   ├── auth_provider.dart     # Authentication state + serverUnavailable flag
-│   ├── clients_provider.dart  # Client list management
-│   ├── logs_provider.dart     # Audit/error/connection logs
-│   └── settings_provider.dart # Server config
+│   ├── auth_provider.dart      # Authentication state + serverUnavailable flag
+│   ├── clients_provider.dart   # Client list management
+│   ├── dashboard_provider.dart # Real-time dashboard state + WebSocket
+│   ├── logs_provider.dart      # Audit/error/connection logs
+│   └── settings_provider.dart  # Server config
 ├── models/
 │   ├── client.dart        # Client data model
 │   └── logs.dart          # Log entry models
@@ -297,7 +363,7 @@ Default: `http://localhost:8080/api/v1`
 
 - Log export not yet implemented (shows "coming soon" message)
 - Client key regeneration UI exists but action not connected
-- Logout doesn't invalidate refresh tokens in Redis (Redis not yet integrated)
+- Logout doesn't invalidate refresh tokens in Redis (TODO: implement token blacklist)
 
 ## Flutter Desktop Client
 
