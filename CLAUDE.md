@@ -296,10 +296,14 @@ Located in `secureguard_client/`. A Flutter desktop app for end-users to control
 ```bash
 cd secureguard_client
 
-# Get dependencies
-flutter pub get
+# Start both daemon and Flutter client (recommended)
+./start.sh
 
-# Run in development mode (daemon must be running)
+# Stop all instances
+./stop.sh
+
+# Or run manually:
+flutter pub get
 flutter run -d macos   # or -d linux, -d windows
 
 # Build for production

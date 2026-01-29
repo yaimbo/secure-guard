@@ -96,14 +96,20 @@ cd secureguard_console
 ./start.sh
 ```
 
-### 4. Build the Desktop Client
+### 4. Run the Desktop Client
 
 ```bash
 cd secureguard_client
-flutter pub get
 
-# Run in development mode (requires daemon running)
+# Start both daemon and Flutter client (recommended)
+./start.sh
+
+# Or run manually:
+flutter pub get
 flutter run -d macos   # or -d linux, -d windows
+
+# Stop all instances
+./stop.sh
 
 # Build for production
 flutter build macos --release   # or linux, windows
