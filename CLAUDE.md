@@ -146,6 +146,7 @@ The daemon runs as a background service, controlled via Unix socket IPC (JSON-RP
 **Platform installers:**
 - macOS: `installer/macos/install.sh` (LaunchDaemon)
 - Linux: `installer/linux/install.sh` (systemd)
+- Windows: `installer/windows/install.ps1` (Windows Service)
 
 ### Key Implementation Details
 

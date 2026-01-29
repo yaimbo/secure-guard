@@ -4,6 +4,9 @@
 ; Prerequisites:
 ; - NSIS 3.0+ installed
 ; - secureguard-service.exe in this directory
+; - Optional: secureguard.ico (app icon)
+; - Optional: welcome.bmp (installer sidebar image, 164x314 pixels)
+; - A LICENSE file in the repo root (or comment out the license page)
 
 ;--------------------------------
 ; Includes
@@ -43,15 +46,17 @@ VIAddVersionKey "ProductVersion" "${PRODUCT_VERSION}"
 ; Interface Settings
 
 !define MUI_ABORTWARNING
-!define MUI_ICON "secureguard.ico"
-!define MUI_UNICON "secureguard.ico"
-!define MUI_WELCOMEFINISHPAGE_BITMAP "welcome.bmp"
+; Uncomment these lines when icon/bitmap assets are available:
+; !define MUI_ICON "secureguard.ico"
+; !define MUI_UNICON "secureguard.ico"
+; !define MUI_WELCOMEFINISHPAGE_BITMAP "welcome.bmp"
 
 ;--------------------------------
 ; Pages
 
 !insertmacro MUI_PAGE_WELCOME
-!insertmacro MUI_PAGE_LICENSE "..\..\LICENSE"
+; Uncomment when LICENSE file exists in repo root:
+; !insertmacro MUI_PAGE_LICENSE "..\..\LICENSE"
 !insertmacro MUI_PAGE_DIRECTORY
 !insertmacro MUI_PAGE_INSTFILES
 !insertmacro MUI_PAGE_FINISH
