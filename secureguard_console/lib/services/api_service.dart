@@ -73,6 +73,26 @@ class ApiService {
     return response.data;
   }
 
+  Future<bool> checkNeedsSetup() async {
+    try {
+      final response = await _dio.get('/auth/setup/status');
+      return response.data['needs_setup'] == true;
+    } catch (e) {
+      // If endpoint doesn't exist or server error, assume no setup needed
+      return false;
+    }
+  }
+
+  Future<void> setupAdmin({
+    required String email,
+    required String password,
+  }) async {
+    await _dio.post('/auth/setup', data: {
+      'email': email,
+      'password': password,
+    });
+  }
+
   // ═══════════════════════════════════════════════════════════════════
   // CLIENTS
   // ═══════════════════════════════════════════════════════════════════

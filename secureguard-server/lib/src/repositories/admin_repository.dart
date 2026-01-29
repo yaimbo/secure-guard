@@ -109,7 +109,7 @@ class AdminRepository {
 
   /// Check if any admin exists (for initial setup)
   Future<bool> hasAnyAdmin() async {
-    final result = await db.execute('SELECT COUNT(*) FROM admins');
-    return (result.first[0] as int) > 0;
+    final result = await db.execute('SELECT EXISTS(SELECT 1 FROM admins)');
+    return result.first[0] as bool;
   }
 }

@@ -6,6 +6,7 @@ import '../services/api_service.dart';
 // Auth state
 class AuthState {
   final bool isAuthenticated;
+  final bool needsSetup;
   final String? userId;
   final String? email;
   final String? role;
@@ -14,6 +15,7 @@ class AuthState {
 
   const AuthState({
     this.isAuthenticated = false,
+    this.needsSetup = false,
     this.userId,
     this.email,
     this.role,
@@ -23,6 +25,7 @@ class AuthState {
 
   AuthState copyWith({
     bool? isAuthenticated,
+    bool? needsSetup,
     String? userId,
     String? email,
     String? role,
@@ -31,6 +34,7 @@ class AuthState {
   }) {
     return AuthState(
       isAuthenticated: isAuthenticated ?? this.isAuthenticated,
+      needsSetup: needsSetup ?? this.needsSetup,
       userId: userId ?? this.userId,
       email: email ?? this.email,
       role: role ?? this.role,
@@ -55,6 +59,13 @@ class AuthNotifier extends StateNotifier<AuthState> {
     state = state.copyWith(isLoading: true);
 
     try {
+      // First check if setup is needed
+      final setupNeeded = await _api.checkNeedsSetup();
+      if (setupNeeded) {
+        state = state.copyWith(isLoading: false, needsSetup: true);
+        return;
+      }
+
       final accessToken = await _storage.read(key: 'access_token');
       final refreshToken = await _storage.read(key: 'refresh_token');
 
@@ -68,6 +79,7 @@ class AuthNotifier extends StateNotifier<AuthState> {
             await _saveTokens(result);
             state = state.copyWith(
               isAuthenticated: true,
+              needsSetup: false,
               userId: result['user']?['id'],
               email: result['user']?['email'],
               role: result['user']?['role'],
@@ -81,7 +93,7 @@ class AuthNotifier extends StateNotifier<AuthState> {
         }
       }
     } catch (e) {
-      // Storage access failed
+      // Storage access failed or server not ready
     }
 
     state = state.copyWith(isLoading: false);
@@ -127,6 +139,25 @@ class AuthNotifier extends StateNotifier<AuthState> {
 
     await _clearTokens();
     state = const AuthState();
+  }
+
+  Future<bool> setupAdmin(String email, String password) async {
+    state = state.copyWith(isLoading: true, error: null);
+
+    try {
+      await _api.setupAdmin(email: email, password: password);
+      state = state.copyWith(
+        isLoading: false,
+        needsSetup: false,
+      );
+      return true;
+    } catch (e) {
+      state = state.copyWith(
+        isLoading: false,
+        error: 'Failed to create admin account: ${e.toString()}',
+      );
+      return false;
+    }
   }
 
   Future<void> _saveTokens(Map<String, dynamic> result) async {

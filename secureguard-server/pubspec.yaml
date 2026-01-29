@@ -16,7 +16,7 @@ dependencies:
   postgres: ^3.1.1
 
   # Redis
-  redis: ^3.3.0
+  redis: ^4.0.0
 
   # Authentication
   dart_jsonwebtoken: ^2.12.1

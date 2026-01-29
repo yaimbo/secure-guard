@@ -19,11 +19,99 @@ class AuthRoutes {
   Router get router {
     final router = Router();
 
+    // Setup routes (unauthenticated)
+    router.get('/setup/status', _checkSetupStatus);
+    router.post('/setup', _setupAdmin);
+
+    // Auth routes
     router.post('/login', _login);
     router.post('/logout', _logout);
     router.post('/refresh', _refresh);
 
     return router;
+  }
+
+  Future<Response> _checkSetupStatus(Request request) async {
+    try {
+      final hasAdmins = await adminRepo.hasAnyAdmin();
+      return Response.ok(
+        jsonEncode({'needs_setup': !hasAdmins}),
+        headers: {'content-type': 'application/json'},
+      );
+    } catch (e) {
+      return Response.internalServerError(
+        body: jsonEncode({'error': 'Failed to check setup status: $e'}),
+        headers: {'content-type': 'application/json'},
+      );
+    }
+  }
+
+  Future<Response> _setupAdmin(Request request) async {
+    try {
+      // Check if setup is still needed
+      final hasAdmins = await adminRepo.hasAnyAdmin();
+      if (hasAdmins) {
+        return Response(403,
+            body: jsonEncode({'error': 'Setup already completed'}),
+            headers: {'content-type': 'application/json'});
+      }
+
+      final body = await request.readAsString();
+      final data = jsonDecode(body) as Map<String, dynamic>;
+
+      final email = data['email'] as String?;
+      final password = data['password'] as String?;
+
+      if (email == null || email.isEmpty) {
+        return Response(400,
+            body: jsonEncode({'error': 'Email is required'}),
+            headers: {'content-type': 'application/json'});
+      }
+
+      if (password == null || password.length < 8) {
+        return Response(400,
+            body: jsonEncode({'error': 'Password must be at least 8 characters'}),
+            headers: {'content-type': 'application/json'});
+      }
+
+      // Hash password
+      final passwordHash = BCrypt.hashpw(password, BCrypt.gensalt());
+
+      // Create admin
+      final admin = await adminRepo.create(
+        email: email,
+        passwordHash: passwordHash,
+        role: 'super_admin',
+      );
+
+      // Log the setup
+      await logRepo.auditLog(
+        actorType: 'system',
+        eventType: 'INITIAL_SETUP',
+        resourceType: 'admin',
+        resourceId: admin.id,
+        resourceName: email,
+        details: {'message': 'Initial admin account created'},
+        ipAddress: request.headers['x-forwarded-for'] ?? request.headers['x-real-ip'],
+      );
+
+      return Response.ok(
+        jsonEncode({
+          'message': 'Admin account created successfully',
+          'admin': {
+            'id': admin.id,
+            'email': admin.email,
+            'role': admin.role,
+          },
+        }),
+        headers: {'content-type': 'application/json'},
+      );
+    } catch (e) {
+      return Response.internalServerError(
+        body: jsonEncode({'error': 'Setup failed: $e'}),
+        headers: {'content-type': 'application/json'},
+      );
+    }
   }
 
   Future<Response> _login(Request request) async {
