@@ -1,3 +1,5 @@
+import '../database/postgres_utils.dart';
+
 /// Audit log event model
 class AuditEvent {
   final int id;
@@ -40,7 +42,7 @@ class AuditEvent {
       resourceId: row['resource_id'] as String?,
       resourceName: row['resource_name'] as String?,
       details: row['details'] as Map<String, dynamic>?,
-      ipAddress: row['ip_address'] as String?,
+      ipAddress: row['ip_address'] != null ? pgToString(row['ip_address']) : null,
       userAgent: row['user_agent'] as String?,
     );
   }

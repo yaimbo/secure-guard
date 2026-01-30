@@ -110,8 +110,26 @@ class ClientRoutes {
           body: jsonEncode(responseData),
           headers: {'content-type': 'application/json'});
     } catch (e) {
+      // Handle specific PostgreSQL errors with user-friendly messages
+      final errorStr = e.toString();
+      if (errorStr.contains('23505')) {
+        // Unique constraint violation
+        if (errorStr.contains('assigned_ip')) {
+          return Response(409,
+              body: jsonEncode({'error': 'No available IP addresses in the subnet. Please contact your administrator.'}),
+              headers: {'content-type': 'application/json'});
+        }
+        if (errorStr.contains('name')) {
+          return Response(409,
+              body: jsonEncode({'error': 'A client with this name already exists'}),
+              headers: {'content-type': 'application/json'});
+        }
+        return Response(409,
+            body: jsonEncode({'error': 'A client with these details already exists'}),
+            headers: {'content-type': 'application/json'});
+      }
       return Response.internalServerError(
-        body: jsonEncode({'error': 'Failed to create client: $e'}),
+        body: jsonEncode({'error': 'Failed to create client. Please try again.'}),
         headers: {'content-type': 'application/json'},
       );
     }

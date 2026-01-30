@@ -282,11 +282,51 @@ The server requires Redis for pub/sub event streaming and real-time metrics.
 
 **Redis Keys:**
 - `client:online:<client_id>` - Online client data (TTL: 2 minutes)
-- `metrics:connections:*` - Time series connection data
-- `ratelimit:enrollment:redeem:<ip>` - Rate limit counter for enrollment code redemption (TTL: 60s)
+- `client:online:set` - Set of all online client IDs
+- `metrics:connections:count` - Sorted set time series of connection counts (24h retention)
+- `metrics:bandwidth:tx` - Upload bandwidth counter
+- `metrics:bandwidth:rx` - Download bandwidth counter
+- `metrics:total:connections` - Total connections counter
+- `metrics:total:bytes_tx` - Total bytes uploaded
+- `metrics:total:bytes_rx` - Total bytes downloaded
+- `ratelimit:enrollment:redeem:<ip>` - Rate limit counter (TTL: 60s, max 5/min)
 - `email:queue` - Email job queue (List, FIFO with LPUSH/RPOP)
 - `email:failed` - Failed email jobs after max retries (List)
 - `email:sent:count` - Total emails sent counter (Integer)
+
+### API Response Format Reference
+
+**CRITICAL**: List endpoints return data under DIFFERENT keys. The Flutter console must use the correct key.
+
+| Endpoint | Response Key | Example |
+|----------|-------------|---------|
+| `GET /clients` | `clients` | `{"clients": [...], "pagination": {...}}` |
+| `GET /logs/audit` | `events` | `{"events": [...], "pagination": {...}}` |
+| `GET /logs/errors` | `errors` | `{"errors": [...], "pagination": {...}}` |
+| `GET /logs/connections` | `connections` | `{"connections": [...], "pagination": {...}}` |
+| `GET /admin/settings/admins` | `data` | `{"data": [...]}` |
+| `GET /admin/settings/api-keys` | `data` | `{"data": [...]}` |
+| `GET /admin/sso/configs` | `configs` | `{"configs": [...]}` |
+| `GET /dashboard/active-clients` | `clients` | `{"clients": [...]}` |
+| `GET /dashboard/activity` | `events` | `{"events": [...]}` |
+| `GET /dashboard/connections/history` | `data` | `{"data": [...]}` |
+
+**Pagination structure** (when present):
+```json
+{
+  "pagination": {
+    "page": 1,
+    "limit": 50,
+    "total": 100,
+    "total_pages": 2
+  }
+}
+```
+
+**Error responses** always use:
+```json
+{"error": "Error message here"}
+```
 
 ### PostgreSQL Type Handling
 

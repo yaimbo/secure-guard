@@ -123,7 +123,7 @@ class ApiService {
       if (status != null) 'status': status,
       if (search != null && search.isNotEmpty) 'search': search,
     });
-    final items = response.data['data'] as List? ?? [];
+    final items = response.data['clients'] as List? ?? [];
     return items.map((json) => Client.fromJson(json)).toList();
   }
 

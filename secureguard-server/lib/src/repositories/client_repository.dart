@@ -274,9 +274,9 @@ class ClientRepository {
     final baseIp = parts[0];
     final baseParts = baseIp.split('.').map(int.parse).toList();
 
-    // Find used IPs
+    // Find used IPs (cast to text to get plain IP without CIDR suffix)
     final result = await db.execute('''
-      SELECT assigned_ip FROM clients
+      SELECT host(assigned_ip) FROM clients
       WHERE assigned_ip << @subnet::inet
       ORDER BY assigned_ip
     ''', {'subnet': subnet});
