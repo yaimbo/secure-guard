@@ -152,11 +152,11 @@ class EmailService {
     await send(message, _smtpServer!);
   }
 
-  /// Encrypt a password for storage
-  Future<Uint8List> encryptPassword(String password) async {
+  /// Encrypt a password for storage (returns base64 string)
+  Future<String> encryptPassword(String password) async {
     if (encryptionKey == null || encryptionKey!.isEmpty) {
-      // No encryption configured - store as UTF-8 bytes
-      return Uint8List.fromList(utf8.encode(password));
+      // No encryption configured - store as base64-encoded UTF-8 bytes
+      return base64Encode(utf8.encode(password));
     }
 
     final algorithm = AesGcm.with256bits();
@@ -170,16 +170,19 @@ class EmailService {
       nonce: nonce,
     );
 
-    // Combine nonce + ciphertext + mac for storage
-    return Uint8List.fromList([
+    // Combine nonce + ciphertext + mac and return as base64
+    final combined = Uint8List.fromList([
       ...secretBox.nonce,
       ...secretBox.cipherText,
       ...secretBox.mac.bytes,
     ]);
+    return base64Encode(combined);
   }
 
-  /// Decrypt a password from storage
-  Future<String> decryptPassword(Uint8List encrypted) async {
+  /// Decrypt a password from storage (accepts base64 string)
+  Future<String> decryptPassword(String encryptedBase64) async {
+    final encrypted = base64Decode(encryptedBase64);
+
     if (encryptionKey == null || encryptionKey!.isEmpty) {
       // No encryption configured - decode UTF-8 directly
       return utf8.decode(encrypted);

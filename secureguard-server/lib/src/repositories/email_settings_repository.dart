@@ -1,7 +1,4 @@
-import 'dart:typed_data';
-
 import '../database/database.dart';
-import '../database/postgres_utils.dart';
 import '../services/email_service.dart';
 
 /// Email settings model for database storage
@@ -10,7 +7,7 @@ class EmailSettingsModel {
   final String? smtpHost;
   final int smtpPort;
   final String? smtpUsername;
-  final Uint8List? smtpPasswordEnc;
+  final String? smtpPasswordEnc;
   final bool useSsl;
   final bool useStarttls;
   final String? fromEmail;
@@ -40,7 +37,7 @@ class EmailSettingsModel {
       smtpHost: row['smtp_host'] as String?,
       smtpPort: row['smtp_port'] as int? ?? 587,
       smtpUsername: row['smtp_username'] as String?,
-      smtpPasswordEnc: bytesToUint8List(row['smtp_password_enc']),
+      smtpPasswordEnc: row['smtp_password_enc'] as String?,
       useSsl: row['use_ssl'] as bool? ?? false,
       useStarttls: row['use_starttls'] as bool? ?? true,
       fromEmail: row['from_email'] as String?,
@@ -102,7 +99,7 @@ class EmailSettingsRepository {
     String? smtpHost,
     int smtpPort = 587,
     String? smtpUsername,
-    Uint8List? smtpPasswordEnc,
+    String? smtpPasswordEnc,
     bool useSsl = false,
     bool useStarttls = true,
     String? fromEmail,
@@ -161,11 +158,11 @@ class EmailSettingsRepository {
   }
 
   /// Get encrypted password (for internal use only)
-  Future<Uint8List?> getEncryptedPassword() async {
+  Future<String?> getEncryptedPassword() async {
     final result = await db.execute(
       'SELECT smtp_password_enc FROM email_settings WHERE id = 1',
     );
     if (result.isEmpty) return null;
-    return bytesToUint8List(result.first[0]);
+    return result.first[0] as String?;
   }
 }

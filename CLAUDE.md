@@ -290,15 +290,15 @@ The server requires Redis for pub/sub event streaming and real-time metrics.
 
 ### PostgreSQL Type Handling
 
-The postgres v3 Dart driver returns BYTEA, CIDR, INET, and INET[] columns as `UndecodedBytes` objects instead of `Uint8List` or `String`. Use the shared utilities in `lib/src/database/postgres_utils.dart`:
+Keys and encrypted data are stored as TEXT (base64 encoded) for simplicity. CIDR/INET types may come as `UndecodedBytes` from the postgres v3 driver. Use utilities in `lib/src/database/postgres_utils.dart`:
 
 ```dart
 import '../database/postgres_utils.dart';
 
-// BYTEA → base64 string (for JSON responses)
+// TEXT (base64) → returns string directly
 publicKey: bytesToBase64(row['public_key']),
 
-// BYTEA → Uint8List (for internal use)
+// TEXT (base64) → Uint8List (for decryption)
 passwordEnc: bytesToUint8List(row['password_enc']),
 
 // CIDR/INET → String
@@ -311,7 +311,7 @@ allowedIps: parseInetArray(row['allowed_ips']),
 dnsServers: parseInetArray(row['dns_servers'], stripCidr: true),
 ```
 
-**Important**: Never cast PostgreSQL column values directly to `Uint8List` or assume they are `String`. Always use these utilities to handle `UndecodedBytes`.
+**Key storage**: Pass base64 strings directly to INSERT/UPDATE - no need to decode to bytes first.
 
 ## Flutter Web Management Console
 

@@ -107,8 +107,8 @@ const _migrations = <_Migration>[
     -- Server config (singleton)
     CREATE TABLE IF NOT EXISTS server_config (
       id INTEGER PRIMARY KEY DEFAULT 1 CHECK (id = 1),
-      private_key_enc BYTEA NOT NULL,
-      public_key BYTEA NOT NULL,
+      private_key_enc TEXT NOT NULL,
+      public_key TEXT NOT NULL,
       endpoint VARCHAR(255) NOT NULL,
       listen_port INTEGER DEFAULT 51820,
       ip_subnet CIDR NOT NULL,
@@ -140,10 +140,10 @@ const _migrations = <_Migration>[
       sso_provider VARCHAR(50),
       sso_subject VARCHAR(255),
 
-      -- WireGuard keys
-      public_key BYTEA NOT NULL UNIQUE,
-      private_key_enc BYTEA NOT NULL,
-      preshared_key BYTEA,
+      -- WireGuard keys (base64 encoded)
+      public_key TEXT NOT NULL UNIQUE,
+      private_key_enc TEXT NOT NULL,
+      preshared_key TEXT,
 
       -- Network
       assigned_ip INET NOT NULL UNIQUE,
@@ -283,7 +283,7 @@ const _migrations = <_Migration>[
       smtp_host VARCHAR(255),
       smtp_port INTEGER DEFAULT 587,
       smtp_username VARCHAR(255),
-      smtp_password_enc BYTEA,
+      smtp_password_enc TEXT,
       use_ssl BOOLEAN DEFAULT false,
       use_starttls BOOLEAN DEFAULT true,
       from_email VARCHAR(255),

@@ -1,5 +1,3 @@
-import 'dart:convert';
-
 import '../database/database.dart';
 import '../models/client.dart';
 
@@ -81,10 +79,9 @@ class ClientRepository {
 
   /// Get client by public key
   Future<Client?> getByPublicKey(String publicKey) async {
-    final keyBytes = base64Decode(publicKey);
     final result = await db.execute(
       'SELECT * FROM clients WHERE public_key = @key',
-      {'key': keyBytes},
+      {'key': publicKey},
     );
 
     if (result.isEmpty) return null;
@@ -116,10 +113,6 @@ class ClientRepository {
     String? platform,
     String? hardwareId,
   }) async {
-    final pubKeyBytes = base64Decode(publicKey);
-    final privKeyBytes = base64Decode(privateKeyEnc);
-    final pskBytes = presharedKey != null ? base64Decode(presharedKey) : null;
-
     final result = await db.execute('''
       INSERT INTO clients (
         name, description, user_email, user_name,
@@ -136,9 +129,9 @@ class ClientRepository {
       'description': description,
       'user_email': userEmail,
       'user_name': userName,
-      'public_key': pubKeyBytes,
-      'private_key_enc': privKeyBytes,
-      'preshared_key': pskBytes,
+      'public_key': publicKey,
+      'private_key_enc': privateKeyEnc,
+      'preshared_key': presharedKey,
       'assigned_ip': assignedIp,
       'allowed_ips': allowedIps != null ? '{${allowedIps.join(',')}}' : '{10.0.0.0/24}',
       'platform': platform,
@@ -212,10 +205,6 @@ class ClientRepository {
     required String privateKeyEnc,
     String? presharedKey,
   }) async {
-    final pubKeyBytes = base64Decode(publicKey);
-    final privKeyBytes = base64Decode(privateKeyEnc);
-    final pskBytes = presharedKey != null ? base64Decode(presharedKey) : null;
-
     final result = await db.execute('''
       UPDATE clients
       SET public_key = @public_key,
@@ -226,9 +215,9 @@ class ClientRepository {
       RETURNING *
     ''', {
       'id': id,
-      'public_key': pubKeyBytes,
-      'private_key_enc': privKeyBytes,
-      'preshared_key': pskBytes,
+      'public_key': publicKey,
+      'private_key_enc': privateKeyEnc,
+      'preshared_key': presharedKey,
     });
 
     if (result.isEmpty) return null;

@@ -4,26 +4,26 @@ import 'dart:typed_data';
 import 'package:postgres/postgres.dart' show UndecodedBytes;
 
 /// Utility functions for handling PostgreSQL types from the postgres v3 driver.
-/// The driver returns BYTEA, CIDR, INET types as UndecodedBytes objects.
+/// Keys are stored as TEXT (base64). CIDR/INET types may come as UndecodedBytes.
 
-/// Convert BYTEA column to base64 string
-String bytesToBase64(dynamic bytes) {
-  if (bytes is Uint8List) {
-    return base64Encode(bytes);
-  } else if (bytes is UndecodedBytes) {
-    return base64Encode(Uint8List.fromList(bytes.bytes));
-  } else if (bytes is List<int>) {
-    return base64Encode(Uint8List.fromList(bytes));
+/// Convert TEXT column (base64) or legacy BYTEA to base64 string
+String bytesToBase64(dynamic value) {
+  if (value is String) return value; // TEXT column - already base64
+  if (value is Uint8List) return base64Encode(value);
+  if (value is UndecodedBytes) {
+    return base64Encode(Uint8List.fromList(value.bytes));
   }
-  return bytes.toString();
+  if (value is List<int>) return base64Encode(Uint8List.fromList(value));
+  return value.toString();
 }
 
-/// Convert BYTEA column to Uint8List
-Uint8List? bytesToUint8List(dynamic bytes) {
-  if (bytes == null) return null;
-  if (bytes is Uint8List) return bytes;
-  if (bytes is UndecodedBytes) return Uint8List.fromList(bytes.bytes);
-  if (bytes is List<int>) return Uint8List.fromList(bytes);
+/// Convert TEXT column (base64) or legacy BYTEA to Uint8List
+Uint8List? bytesToUint8List(dynamic value) {
+  if (value == null) return null;
+  if (value is String) return base64Decode(value); // TEXT column - base64 string
+  if (value is Uint8List) return value;
+  if (value is UndecodedBytes) return Uint8List.fromList(value.bytes);
+  if (value is List<int>) return Uint8List.fromList(value);
   return null;
 }
 

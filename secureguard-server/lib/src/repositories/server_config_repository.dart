@@ -1,5 +1,3 @@
-import 'dart:convert';
-
 import '../database/database.dart';
 import '../models/server_config_model.dart';
 
@@ -32,9 +30,6 @@ class ServerConfigRepository {
     List<String>? dnsServers,
     int mtu = 1420,
   }) async {
-    final privKeyBytes = base64Decode(privateKeyEnc);
-    final pubKeyBytes = base64Decode(publicKey);
-
     final result = await db.execute('''
       INSERT INTO server_config (
         id, private_key_enc, public_key, endpoint, listen_port,
@@ -56,8 +51,8 @@ class ServerConfigRepository {
         ip_subnet::text AS ip_subnet, dns_servers::text[] AS dns_servers,
         mtu, updated_at
     ''', {
-      'private_key_enc': privKeyBytes,
-      'public_key': pubKeyBytes,
+      'private_key_enc': privateKeyEnc,
+      'public_key': publicKey,
       'endpoint': endpoint,
       'listen_port': listenPort,
       'ip_subnet': ipSubnet,
