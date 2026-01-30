@@ -128,13 +128,9 @@ class _ClientsScreenState extends ConsumerState<ClientsScreen> {
                         onTap: () => context.go('/clients/${client.id}'),
                         cells: [
                           DataCell(
-                            Container(
-                              width: 10,
-                              height: 10,
-                              decoration: BoxDecoration(
-                                color: _getStatusColor(client.status),
-                                shape: BoxShape.circle,
-                              ),
+                            _StatusWithAlertIndicator(
+                              clientId: client.id,
+                              statusColor: _getStatusColor(client.status),
                             ),
                           ),
                           DataCell(
@@ -159,6 +155,11 @@ class _ClientsScreenState extends ConsumerState<ClientsScreen> {
                             Row(
                               mainAxisSize: MainAxisSize.min,
                               children: [
+                                IconButton(
+                                  icon: const Icon(Icons.edit_outlined, size: 20),
+                                  tooltip: 'Edit',
+                                  onPressed: () => _showEditClientDialog(context, client),
+                                ),
                                 IconButton(
                                   icon: const Icon(Icons.download, size: 20),
                                   tooltip: 'Download Config',
@@ -229,6 +230,13 @@ class _ClientsScreenState extends ConsumerState<ClientsScreen> {
     showDialog(
       context: context,
       builder: (context) => const CreateClientDialog(),
+    );
+  }
+
+  void _showEditClientDialog(BuildContext context, Client client) {
+    showDialog(
+      context: context,
+      builder: (context) => EditClientDialog(client: client),
     );
   }
 
@@ -391,6 +399,137 @@ class _CreateClientDialogState extends ConsumerState<CreateClientDialog> {
   }
 }
 
+// Edit Client Dialog
+class EditClientDialog extends ConsumerStatefulWidget {
+  final Client client;
+
+  const EditClientDialog({super.key, required this.client});
+
+  @override
+  ConsumerState<EditClientDialog> createState() => _EditClientDialogState();
+}
+
+class _EditClientDialogState extends ConsumerState<EditClientDialog> {
+  final _formKey = GlobalKey<FormState>();
+  late final TextEditingController _nameController;
+  late final TextEditingController _descriptionController;
+  late final TextEditingController _userEmailController;
+  bool _isLoading = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _nameController = TextEditingController(text: widget.client.name);
+    _descriptionController = TextEditingController(text: widget.client.description ?? '');
+    _userEmailController = TextEditingController(text: widget.client.userEmail ?? '');
+  }
+
+  @override
+  void dispose() {
+    _nameController.dispose();
+    _descriptionController.dispose();
+    _userEmailController.dispose();
+    super.dispose();
+  }
+
+  Future<void> _updateClient() async {
+    if (!_formKey.currentState!.validate()) return;
+
+    setState(() => _isLoading = true);
+
+    try {
+      await ref.read(clientsProvider.notifier).updateClient(
+        widget.client.id,
+        name: _nameController.text.trim(),
+        description: _descriptionController.text.trim().isEmpty
+            ? null
+            : _descriptionController.text.trim(),
+        userEmail: _userEmailController.text.trim().isEmpty
+            ? null
+            : _userEmailController.text.trim(),
+      );
+      if (mounted) {
+        Navigator.of(context).pop();
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Client updated successfully')),
+        );
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Error updating client: $e')),
+        );
+      }
+    } finally {
+      if (mounted) setState(() => _isLoading = false);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return AlertDialog(
+      title: const Text('Edit Client'),
+      content: SizedBox(
+        width: 400,
+        child: Form(
+          key: _formKey,
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              TextFormField(
+                controller: _nameController,
+                decoration: const InputDecoration(
+                  labelText: 'Name *',
+                  hintText: 'e.g., laptop-john',
+                ),
+                validator: (value) {
+                  if (value == null || value.trim().isEmpty) {
+                    return 'Name is required';
+                  }
+                  return null;
+                },
+              ),
+              const SizedBox(height: 16),
+              TextFormField(
+                controller: _descriptionController,
+                decoration: const InputDecoration(
+                  labelText: 'Description',
+                  hintText: 'Optional description',
+                ),
+              ),
+              const SizedBox(height: 16),
+              TextFormField(
+                controller: _userEmailController,
+                decoration: const InputDecoration(
+                  labelText: 'User Email',
+                  hintText: 'user@example.com',
+                ),
+                keyboardType: TextInputType.emailAddress,
+              ),
+            ],
+          ),
+        ),
+      ),
+      actions: [
+        TextButton(
+          onPressed: _isLoading ? null : () => Navigator.of(context).pop(),
+          child: const Text('Cancel'),
+        ),
+        FilledButton(
+          onPressed: _isLoading ? null : _updateClient,
+          child: _isLoading
+              ? const SizedBox(
+                  width: 20,
+                  height: 20,
+                  child: CircularProgressIndicator(strokeWidth: 2),
+                )
+              : const Text('Save'),
+        ),
+      ],
+    );
+  }
+}
+
 // QR Code Dialog
 class QrCodeDialog extends ConsumerWidget {
   final String clientId;
@@ -420,6 +559,61 @@ class QrCodeDialog extends ConsumerWidget {
         TextButton(
           onPressed: () => Navigator.of(context).pop(),
           child: const Text('Close'),
+        ),
+      ],
+    );
+  }
+}
+
+// Status indicator with security alert icon
+class _StatusWithAlertIndicator extends ConsumerWidget {
+  final String clientId;
+  final Color statusColor;
+
+  const _StatusWithAlertIndicator({
+    required this.clientId,
+    required this.statusColor,
+  });
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final alertsAsync = ref.watch(clientSecurityAlertsProvider(clientId));
+
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Container(
+          width: 10,
+          height: 10,
+          decoration: BoxDecoration(
+            color: statusColor,
+            shape: BoxShape.circle,
+          ),
+        ),
+        alertsAsync.when(
+          loading: () => const SizedBox.shrink(),
+          error: (_, __) => const SizedBox.shrink(),
+          data: (alerts) {
+            if (!alerts.hasAlerts) return const SizedBox.shrink();
+            return Padding(
+              padding: const EdgeInsets.only(left: 6),
+              child: Tooltip(
+                message: '${alerts.alertCount} security alert${alerts.alertCount > 1 ? 's' : ''} - Click to view',
+                child: InkWell(
+                  onTap: () {
+                    // Navigate to logs filtered by this client's security alerts
+                    context.go('/logs?tab=audit&resource_type=client&resource_id=$clientId&event_type=HOSTNAME_MISMATCH');
+                  },
+                  borderRadius: BorderRadius.circular(12),
+                  child: Icon(
+                    Icons.warning_amber_rounded,
+                    size: 18,
+                    color: AppTheme.warning,
+                  ),
+                ),
+              ),
+            );
+          },
         ),
       ],
     );

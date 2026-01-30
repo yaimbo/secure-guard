@@ -1,6 +1,7 @@
 import 'dart:convert';
 
 import '../database/database.dart';
+import '../database/postgres_utils.dart';
 import '../models/audit_event.dart';
 
 /// Repository for audit, error, and connection logs
@@ -375,7 +376,14 @@ class LogRepository {
       LIMIT @limit OFFSET @offset
     ''', queryParams);
 
-    final connections = result.map((row) => row.toColumnMap()).toList();
+    // Convert source_ip INET binary to string
+    final connections = result.map((row) {
+      final map = row.toColumnMap();
+      if (map['source_ip'] != null) {
+        map['source_ip'] = pgToString(map['source_ip']);
+      }
+      return map;
+    }).toList();
 
     return {
       'connections': connections,

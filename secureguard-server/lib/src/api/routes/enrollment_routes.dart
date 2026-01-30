@@ -406,6 +406,48 @@ class EnrollmentRoutes {
                        request.headers['x-real-ip'] ??
                        'unknown';
 
+      // Handle hostname lock enforcement
+      final hostname = data['hostname'] as String?;
+      if (hostname != null && hostname.isNotEmpty) {
+        final storedHostname = await clientRepo.getHostname(clientId);
+        if (storedHostname == null) {
+          // First connection - lock the hostname
+          await clientRepo.setHostnameIfEmpty(clientId, hostname);
+          await logRepo.auditLog(
+            actorType: 'client',
+            actorId: clientId,
+            eventType: 'HOSTNAME_LOCKED',
+            resourceType: 'client',
+            resourceId: clientId,
+            resourceName: clientName,
+            details: {'hostname': hostname},
+            ipAddress: sourceIp,
+          );
+        } else if (storedHostname != hostname) {
+          // Hostname mismatch - reject connection
+          await logRepo.auditLog(
+            actorType: 'client',
+            actorId: clientId,
+            eventType: 'HOSTNAME_MISMATCH',
+            resourceType: 'client',
+            resourceId: clientId,
+            resourceName: clientName,
+            details: {
+              'expected_hostname': storedHostname,
+              'received_hostname': hostname,
+              'source_ip': sourceIp,
+            },
+            ipAddress: sourceIp,
+          );
+          return Response(403,
+              body: jsonEncode({
+                'error': 'hostname_mismatch',
+                'message': 'This client is locked to a different device',
+              }),
+              headers: {'content-type': 'application/json'});
+        }
+      }
+
       // Parse event type (default to heartbeat)
       final event = data['event'] as String? ?? 'heartbeat';
       final vpnIp = data['vpn_ip'] as String?;

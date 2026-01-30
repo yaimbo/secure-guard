@@ -8,6 +8,7 @@ class Client {
   final String status;
   final String? platform;
   final String? clientVersion;
+  final String? hostname;
   final DateTime? lastSeenAt;
   final DateTime? lastConfigFetch;
   final DateTime createdAt;
@@ -23,6 +24,7 @@ class Client {
     required this.status,
     this.platform,
     this.clientVersion,
+    this.hostname,
     this.lastSeenAt,
     this.lastConfigFetch,
     required this.createdAt,
@@ -40,6 +42,7 @@ class Client {
       status: json['status'] as String,
       platform: json['platform'] as String?,
       clientVersion: json['client_version'] as String?,
+      hostname: json['hostname'] as String?,
       lastSeenAt: json['last_seen_at'] != null
           ? DateTime.parse(json['last_seen_at'] as String)
           : null,
@@ -62,6 +65,7 @@ class Client {
       'status': status,
       'platform': platform,
       'client_version': clientVersion,
+      'hostname': hostname,
       'last_seen_at': lastSeenAt?.toIso8601String(),
       'last_config_fetch': lastConfigFetch?.toIso8601String(),
       'created_at': createdAt.toIso8601String(),
@@ -79,6 +83,7 @@ class Client {
     String? status,
     String? platform,
     String? clientVersion,
+    String? hostname,
     DateTime? lastSeenAt,
     DateTime? lastConfigFetch,
     DateTime? createdAt,
@@ -94,6 +99,7 @@ class Client {
       status: status ?? this.status,
       platform: platform ?? this.platform,
       clientVersion: clientVersion ?? this.clientVersion,
+      hostname: hostname ?? this.hostname,
       lastSeenAt: lastSeenAt ?? this.lastSeenAt,
       lastConfigFetch: lastConfigFetch ?? this.lastConfigFetch,
       createdAt: createdAt ?? this.createdAt,

@@ -24,6 +24,7 @@ class Client {
   final String? platformVersion;
   final String? clientVersion;
   final String? hardwareId;
+  final String? hostname; // Locked on first connection
 
   // Status
   final String status; // active, disabled, pending
@@ -51,6 +52,7 @@ class Client {
     this.platformVersion,
     this.clientVersion,
     this.hardwareId,
+    this.hostname,
     required this.status,
     this.lastSeenAt,
     this.lastConfigFetch,
@@ -79,6 +81,7 @@ class Client {
       platformVersion: row['platform_version'] as String?,
       clientVersion: row['client_version'] as String?,
       hardwareId: row['hardware_id'] as String?,
+      hostname: row['hostname'] as String?,
       status: row['status'] as String,
       lastSeenAt: row['last_seen_at'] as DateTime?,
       lastConfigFetch: row['last_config_fetch'] as DateTime?,
@@ -102,6 +105,7 @@ class Client {
       'platform': platform,
       'platform_version': platformVersion,
       'client_version': clientVersion,
+      'hostname': hostname,
       'status': status,
       'last_seen_at': lastSeenAt?.toIso8601String(),
       'last_config_fetch': lastConfigFetch?.toIso8601String(),

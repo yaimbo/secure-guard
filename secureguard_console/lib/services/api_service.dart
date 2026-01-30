@@ -438,6 +438,12 @@ class ApiService {
     final response = await _dio.post('/clients/$clientId/send-enrollment-email');
     return response.data;
   }
+
+  /// Get security alerts for a client (hostname mismatches, etc.)
+  Future<SecurityAlerts> getSecurityAlerts(String clientId) async {
+    final response = await _dio.get('/clients/$clientId/security-alerts');
+    return SecurityAlerts.fromJson(response.data);
+  }
 }
 
 /// SSO configuration model
@@ -995,4 +1001,34 @@ class ApiKeyCreated {
       key: json['key'] as String,
     );
   }
+}
+
+// ═══════════════════════════════════════════════════════════════════
+// SECURITY ALERTS MODEL
+// ═══════════════════════════════════════════════════════════════════
+
+/// Security alerts for a client (hostname mismatches, etc.)
+class SecurityAlerts {
+  final String clientId;
+  final int alertCount;
+  final List<Map<String, dynamic>> alerts;
+
+  SecurityAlerts({
+    required this.clientId,
+    required this.alertCount,
+    required this.alerts,
+  });
+
+  factory SecurityAlerts.fromJson(Map<String, dynamic> json) {
+    return SecurityAlerts(
+      clientId: json['client_id'] as String,
+      alertCount: json['alert_count'] as int? ?? 0,
+      alerts: (json['alerts'] as List<dynamic>?)
+              ?.map((e) => Map<String, dynamic>.from(e as Map))
+              .toList() ??
+          [],
+    );
+  }
+
+  bool get hasAlerts => alertCount > 0;
 }

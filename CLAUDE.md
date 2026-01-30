@@ -193,12 +193,23 @@ dart run bin/server.dart
 - `POST /api/v1/enrollment/redeem` - Redeem enrollment code for device token + config (rate limited: 5/min per IP)
 - `GET /api/v1/enrollment/config` - Fetch WireGuard config (device auth required)
 - `GET /api/v1/enrollment/config/version` - Check config version for updates
-- `POST /api/v1/enrollment/heartbeat` - Report device status
+- `POST /api/v1/enrollment/heartbeat` - Report device status (includes hostname locking)
+
+**Hostname Locking:**
+
+The heartbeat endpoint enforces hostname-based device identity:
+- First heartbeat with a hostname: locks the client record to that hostname
+- Subsequent heartbeats: hostname must match or request is rejected with 403
+- Mismatches create `HOSTNAME_MISMATCH` audit log entries
+- Console shows amber warning icon for clients with security alerts
 
 **Enrollment Code Management (admin auth required):**
 - `GET /api/v1/clients/:id/enrollment-code` - Get active enrollment code for client
 - `POST /api/v1/clients/:id/enrollment-code` - Generate new enrollment code (24h expiry)
 - `DELETE /api/v1/clients/:id/enrollment-code` - Revoke enrollment code
+
+**Security Alerts (admin auth required):**
+- `GET /api/v1/clients/:id/security-alerts` - Get security alerts for client (hostname mismatches)
 
 **SSO Authentication (public):**
 - `GET /api/v1/auth/sso/providers` - List enabled SSO providers

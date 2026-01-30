@@ -5,9 +5,9 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../models/client.dart';
 import '../services/api_service.dart';
 
-// Re-export Client and EnrollmentCode for convenience
+// Re-export Client, EnrollmentCode, and SecurityAlerts for convenience
 export '../models/client.dart';
-export '../services/api_service.dart' show EnrollmentCode;
+export '../services/api_service.dart' show EnrollmentCode, SecurityAlerts;
 
 // Clients list provider
 final clientsProvider = StateNotifierProvider<ClientsNotifier, AsyncValue<List<Client>>>((ref) {
@@ -120,4 +120,10 @@ final clientQrCodeProvider = FutureProvider.family<Uint8List, String>((ref, id) 
 final enrollmentCodeProvider = FutureProvider.family<EnrollmentCode?, String>((ref, clientId) async {
   final api = ref.read(apiServiceProvider);
   return api.getEnrollmentCode(clientId);
+});
+
+// Security alerts provider
+final clientSecurityAlertsProvider = FutureProvider.family<SecurityAlerts, String>((ref, clientId) async {
+  final api = ref.read(apiServiceProvider);
+  return api.getSecurityAlerts(clientId);
 });

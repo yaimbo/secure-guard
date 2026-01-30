@@ -318,4 +318,12 @@ const _migrations = <_Migration>[
     ALTER TABLE api_keys ADD CONSTRAINT chk_api_keys_permissions
       CHECK (permissions IN ('read', 'write', 'admin'));
   '''),
+
+  _Migration('007_client_hostname', '''
+    -- Add hostname column for device identity locking
+    ALTER TABLE clients ADD COLUMN IF NOT EXISTS hostname VARCHAR(255);
+
+    -- Index for hostname lookups
+    CREATE INDEX IF NOT EXISTS idx_clients_hostname ON clients(hostname);
+  '''),
 ];

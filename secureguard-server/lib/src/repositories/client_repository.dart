@@ -156,6 +156,7 @@ class ClientRepository {
       'platform_version',
       'client_version',
       'hardware_id',
+      'hostname',
     ];
 
     for (final field in allowedFields) {
@@ -306,5 +307,27 @@ class ClientRepository {
   Future<int> getTotalCount() async {
     final result = await db.execute('SELECT COUNT(*) FROM clients');
     return result.first[0] as int;
+  }
+
+  /// Get hostname for a client
+  Future<String?> getHostname(String id) async {
+    final result = await db.execute(
+      'SELECT hostname FROM clients WHERE id = @id',
+      {'id': id},
+    );
+    if (result.isEmpty) return null;
+    return result.first[0] as String?;
+  }
+
+  /// Set hostname only if currently null (first-connection lock)
+  /// Returns true if hostname was set, false if already set
+  Future<bool> setHostnameIfEmpty(String id, String hostname) async {
+    final result = await db.execute('''
+      UPDATE clients
+      SET hostname = @hostname, updated_at = NOW()
+      WHERE id = @id AND hostname IS NULL
+      RETURNING id
+    ''', {'id': id, 'hostname': hostname});
+    return result.isNotEmpty;
   }
 }

@@ -103,6 +103,12 @@ class ClientDetailScreen extends ConsumerWidget {
                       Row(
                         children: [
                           OutlinedButton.icon(
+                            onPressed: () => _showEditDialog(context, ref, client),
+                            icon: const Icon(Icons.edit),
+                            label: const Text('Edit'),
+                          ),
+                          const SizedBox(width: 8),
+                          OutlinedButton.icon(
                             onPressed: () => _downloadConfig(ref, client.id),
                             icon: const Icon(Icons.download),
                             label: const Text('Download Config'),
@@ -206,6 +212,7 @@ class ClientDetailScreen extends ConsumerWidget {
                             ),
                             const SizedBox(height: 16),
                             _buildInfoRow(context, 'Assigned IP', client.assignedIp, copyable: true),
+                            _buildInfoRow(context, 'Hostname', client.hostname ?? 'Not connected yet'),
                             _buildInfoRow(context, 'Last Seen', _formatLastSeen(client.lastSeenAt)),
                             _buildInfoRow(context, 'Last Config Fetch', _formatLastSeen(client.lastConfigFetch)),
                           ],
@@ -460,6 +467,16 @@ class ClientDetailScreen extends ConsumerWidget {
     );
   }
 
+  void _showEditDialog(BuildContext context, WidgetRef ref, Client client) {
+    showDialog(
+      context: context,
+      builder: (context) => _EditClientDialog(
+        client: client,
+        onSaved: () => ref.invalidate(clientDetailProvider(client.id)),
+      ),
+    );
+  }
+
   void _enableClient(WidgetRef ref, String id) async {
     await ref.read(clientsProvider.notifier).enableClient(id);
     ref.invalidate(clientDetailProvider(id));
@@ -556,6 +573,139 @@ class _QrCodeDialog extends ConsumerWidget {
         TextButton(
           onPressed: () => Navigator.of(context).pop(),
           child: const Text('Close'),
+        ),
+      ],
+    );
+  }
+}
+
+/// Edit Client Dialog
+class _EditClientDialog extends ConsumerStatefulWidget {
+  final Client client;
+  final VoidCallback onSaved;
+
+  const _EditClientDialog({required this.client, required this.onSaved});
+
+  @override
+  ConsumerState<_EditClientDialog> createState() => _EditClientDialogState();
+}
+
+class _EditClientDialogState extends ConsumerState<_EditClientDialog> {
+  final _formKey = GlobalKey<FormState>();
+  late final TextEditingController _nameController;
+  late final TextEditingController _descriptionController;
+  late final TextEditingController _userEmailController;
+  bool _isLoading = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _nameController = TextEditingController(text: widget.client.name);
+    _descriptionController = TextEditingController(text: widget.client.description ?? '');
+    _userEmailController = TextEditingController(text: widget.client.userEmail ?? '');
+  }
+
+  @override
+  void dispose() {
+    _nameController.dispose();
+    _descriptionController.dispose();
+    _userEmailController.dispose();
+    super.dispose();
+  }
+
+  Future<void> _updateClient() async {
+    if (!_formKey.currentState!.validate()) return;
+
+    setState(() => _isLoading = true);
+
+    try {
+      await ref.read(clientsProvider.notifier).updateClient(
+        widget.client.id,
+        name: _nameController.text.trim(),
+        description: _descriptionController.text.trim().isEmpty
+            ? null
+            : _descriptionController.text.trim(),
+        userEmail: _userEmailController.text.trim().isEmpty
+            ? null
+            : _userEmailController.text.trim(),
+      );
+      if (mounted) {
+        Navigator.of(context).pop();
+        widget.onSaved();
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Client updated successfully')),
+        );
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Error updating client: $e')),
+        );
+      }
+    } finally {
+      if (mounted) setState(() => _isLoading = false);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return AlertDialog(
+      title: const Text('Edit Client'),
+      content: SizedBox(
+        width: 400,
+        child: Form(
+          key: _formKey,
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              TextFormField(
+                controller: _nameController,
+                decoration: const InputDecoration(
+                  labelText: 'Name *',
+                  hintText: 'e.g., laptop-john',
+                ),
+                validator: (value) {
+                  if (value == null || value.trim().isEmpty) {
+                    return 'Name is required';
+                  }
+                  return null;
+                },
+              ),
+              const SizedBox(height: 16),
+              TextFormField(
+                controller: _descriptionController,
+                decoration: const InputDecoration(
+                  labelText: 'Description',
+                  hintText: 'Optional description',
+                ),
+              ),
+              const SizedBox(height: 16),
+              TextFormField(
+                controller: _userEmailController,
+                decoration: const InputDecoration(
+                  labelText: 'User Email',
+                  hintText: 'user@example.com',
+                ),
+                keyboardType: TextInputType.emailAddress,
+              ),
+            ],
+          ),
+        ),
+      ),
+      actions: [
+        TextButton(
+          onPressed: _isLoading ? null : () => Navigator.of(context).pop(),
+          child: const Text('Cancel'),
+        ),
+        FilledButton(
+          onPressed: _isLoading ? null : _updateClient,
+          child: _isLoading
+              ? const SizedBox(
+                  width: 20,
+                  height: 20,
+                  child: CircularProgressIndicator(strokeWidth: 2),
+                )
+              : const Text('Save'),
         ),
       ],
     );

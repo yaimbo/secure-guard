@@ -43,6 +43,9 @@ class ClientRoutes {
     // Email sending
     router.post('/<id>/send-enrollment-email', _sendEnrollmentEmail);
 
+    // Security alerts
+    router.get('/<id>/security-alerts', _getSecurityAlerts);
+
     return router;
   }
 
@@ -582,6 +585,37 @@ class ClientRoutes {
     } catch (e) {
       return Response.internalServerError(
         body: jsonEncode({'error': 'Failed to send enrollment email: $e'}),
+        headers: {'content-type': 'application/json'},
+      );
+    }
+  }
+
+  /// Get security alerts for a client (hostname mismatches, etc.)
+  /// GET /api/v1/clients/:id/security-alerts
+  Future<Response> _getSecurityAlerts(Request request, String id) async {
+    try {
+      // Query audit log for HOSTNAME_MISMATCH events for this client
+      final result = await logRepo.queryAuditLog(
+        resourceType: 'client',
+        resourceId: id,
+        eventType: 'HOSTNAME_MISMATCH',
+        limit: 100,
+      );
+
+      final events = result['events'] as List;
+      final count = events.length;
+
+      return Response.ok(
+        jsonEncode({
+          'client_id': id,
+          'alert_count': count,
+          'alerts': events,
+        }),
+        headers: {'content-type': 'application/json'},
+      );
+    } catch (e) {
+      return Response.internalServerError(
+        body: jsonEncode({'error': 'Failed to get security alerts: $e'}),
         headers: {'content-type': 'application/json'},
       );
     }
