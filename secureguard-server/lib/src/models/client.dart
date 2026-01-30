@@ -73,7 +73,7 @@ class Client {
       presharedKey: row['preshared_key'] != null
           ? bytesToBase64(row['preshared_key'])
           : null,
-      assignedIp: row['assigned_ip'] as String,
+      assignedIp: pgToString(row['assigned_ip']),
       allowedIps: parseInetArray(row['allowed_ips']),
       platform: row['platform'] as String?,
       platformVersion: row['platform_version'] as String?,

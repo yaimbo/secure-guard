@@ -70,6 +70,8 @@ class AppTheme {
         inputDecorationTheme: InputDecorationTheme(
           filled: true,
           fillColor: _darkCard,
+          labelStyle: TextStyle(color: Colors.white.withValues(alpha: 0.1)),
+          floatingLabelStyle: TextStyle(color: Colors.white.withValues(alpha: 0.1)),
           border: OutlineInputBorder(
             borderRadius: BorderRadius.circular(8),
             borderSide: BorderSide(color: Colors.white.withValues(alpha: 0.1)),
@@ -101,6 +103,14 @@ class AppTheme {
         dividerTheme: const DividerThemeData(
           color: _darkCard,
           thickness: 1,
+        ),
+        snackBarTheme: SnackBarThemeData(
+          backgroundColor: _darkCard,
+          contentTextStyle: const TextStyle(color: Colors.white),
+          behavior: SnackBarBehavior.floating,
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(8),
+          ),
         ),
       );
 
@@ -147,6 +157,8 @@ class AppTheme {
         inputDecorationTheme: InputDecorationTheme(
           filled: true,
           fillColor: _lightCard,
+          labelStyle: TextStyle(color: Colors.black.withValues(alpha: 0.12)),
+          floatingLabelStyle: TextStyle(color: Colors.black.withValues(alpha: 0.12)),
           border: OutlineInputBorder(
             borderRadius: BorderRadius.circular(8),
             borderSide: BorderSide(color: Colors.black.withValues(alpha: 0.12)),
@@ -168,6 +180,14 @@ class AppTheme {
             shape: RoundedRectangleBorder(
               borderRadius: BorderRadius.circular(8),
             ),
+          ),
+        ),
+        snackBarTheme: SnackBarThemeData(
+          backgroundColor: const Color(0xFF1E293B), // Slate 800
+          contentTextStyle: const TextStyle(color: Colors.white),
+          behavior: SnackBarBehavior.floating,
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(8),
           ),
         ),
       );

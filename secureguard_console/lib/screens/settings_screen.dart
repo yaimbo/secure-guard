@@ -743,14 +743,17 @@ class _SSOConfigSectionState extends ConsumerState<_SSOConfigSection> {
           Container(
             padding: const EdgeInsets.all(24),
             decoration: BoxDecoration(
-              color: Colors.grey[100],
+              color: Theme.of(context).colorScheme.surfaceContainerHighest,
               borderRadius: BorderRadius.circular(8),
             ),
             child: Row(
               children: [
-                Icon(Icons.info_outline, color: Colors.grey[500]),
+                Icon(Icons.info_outline,
+                    color: Theme.of(context).colorScheme.onSurfaceVariant),
                 const SizedBox(width: 12),
-                const Text('No SSO providers configured'),
+                Text('No SSO providers configured',
+                    style: TextStyle(
+                        color: Theme.of(context).colorScheme.onSurfaceVariant)),
               ],
             ),
           )
