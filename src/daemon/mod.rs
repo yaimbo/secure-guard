@@ -835,31 +835,188 @@ impl DaemonService {
                 JsonRpcResponse::success(request.id, serde_json::to_value(response).unwrap())
             }
             Err(e) => {
-                // Update failed - send notification
-                let notification = JsonRpcNotification::new(
-                    "config_update_failed",
-                    serde_json::json!({
-                        "error": e.to_string(),
-                        "rolled_back": false // No automatic rollback for now
-                    }),
-                );
-                if let Ok(json) = serde_json::to_string(&notification) {
-                    let _ = status_tx.send(json);
+                tracing::warn!("Config update failed: {}, attempting rollback", e);
+
+                // Attempt rollback to previous config if available
+                if let Some(prev_config) = current_config {
+                    let rollback_vpn_ip = prev_config
+                        .interface
+                        .address
+                        .first()
+                        .map(|a| a.addr().to_string())
+                        .unwrap_or_default();
+                    let rollback_endpoint = prev_config
+                        .peers
+                        .first()
+                        .and_then(|p| p.endpoint.map(|ep| ep.to_string()))
+                        .unwrap_or_default();
+
+                    // Get fresh traffic stats for rollback attempt
+                    let rollback_traffic_stats = {
+                        let s = state.lock().await;
+                        Arc::clone(&s.traffic_stats)
+                    };
+
+                    match WireGuardClient::new(prev_config.clone(), Some(rollback_traffic_stats))
+                        .await
+                    {
+                        Ok(rollback_client) => {
+                            tracing::info!(
+                                "Rollback successful, reconnected with previous config"
+                            );
+
+                            // Create new shutdown channel for rollback session
+                            let (rollback_shutdown_tx, rollback_shutdown_rx) =
+                                watch::channel(false);
+
+                            {
+                                let mut s = state.lock().await;
+                                s.connection_state = ConnectionState::Connected;
+                                s.mode = Some(VpnMode::Client {
+                                    vpn_ip: rollback_vpn_ip.clone(),
+                                    server_endpoint: rollback_endpoint.clone(),
+                                    current_config: prev_config,
+                                    previous_config: None, // No previous after rollback
+                                });
+                                s.started_at = Some(chrono_now());
+                                s.shutdown_tx = Some(rollback_shutdown_tx);
+                            }
+
+                            let _ = Self::send_status_notification(state, status_tx).await;
+
+                            // Send rolled_back: true notification
+                            let notification = JsonRpcNotification::new(
+                                "config_update_failed",
+                                serde_json::json!({
+                                    "error": e.to_string(),
+                                    "rolled_back": true
+                                }),
+                            );
+                            if let Ok(json) = serde_json::to_string(&notification) {
+                                let _ = status_tx.send(json);
+                            }
+
+                            // Spawn background task for rollback session
+                            let state_clone = Arc::clone(state);
+                            let status_tx_clone = status_tx.clone();
+                            tokio::spawn(async move {
+                                let mut client = rollback_client;
+                                let mut shutdown_rx = rollback_shutdown_rx;
+
+                                let result = tokio::select! {
+                                    result = client.run() => result,
+                                    _ = async {
+                                        loop {
+                                            shutdown_rx.changed().await.ok();
+                                            if *shutdown_rx.borrow() {
+                                                break;
+                                            }
+                                        }
+                                    } => {
+                                        tracing::info!("Shutdown signal received");
+                                        Ok(())
+                                    }
+                                };
+
+                                // Update state based on result
+                                {
+                                    let mut s = state_clone.lock().await;
+                                    match result {
+                                        Ok(_) => {
+                                            tracing::info!("VPN client disconnected");
+                                            s.connection_state = ConnectionState::Disconnected;
+                                        }
+                                        Err(err) => {
+                                            tracing::error!("VPN client error: {}", err);
+                                            s.connection_state = ConnectionState::Error;
+                                            s.error_message = Some(format!("{}", err));
+                                        }
+                                    }
+                                    s.mode = None;
+                                    s.started_at = None;
+                                    s.shutdown_tx = None;
+                                }
+
+                                let _ = Self::send_status_notification(
+                                    &state_clone,
+                                    &status_tx_clone,
+                                )
+                                .await;
+
+                                if let Err(err) = client.cleanup().await {
+                                    tracing::error!("Cleanup error: {}", err);
+                                }
+                            });
+
+                            return JsonRpcResponse::error(
+                                request.id,
+                                UPDATE_FAILED,
+                                format!("Config update failed but rolled back: {}", e),
+                            );
+                        }
+                        Err(rollback_err) => {
+                            tracing::error!("Rollback also failed: {}", rollback_err);
+
+                            // Both failed - enter error state
+                            let notification = JsonRpcNotification::new(
+                                "config_update_failed",
+                                serde_json::json!({
+                                    "error": format!("Update failed: {}. Rollback also failed: {}", e, rollback_err),
+                                    "rolled_back": false
+                                }),
+                            );
+                            if let Ok(json) = serde_json::to_string(&notification) {
+                                let _ = status_tx.send(json);
+                            }
+
+                            let mut s = state.lock().await;
+                            s.connection_state = ConnectionState::Error;
+                            s.error_message = Some(format!(
+                                "Update failed: {}. Rollback failed: {}",
+                                e, rollback_err
+                            ));
+                            s.mode = None;
+                            drop(s);
+
+                            let _ = Self::send_status_notification(state, status_tx).await;
+
+                            return JsonRpcResponse::error(
+                                request.id,
+                                UPDATE_FAILED,
+                                format!(
+                                    "Config update failed and rollback failed: {} / {}",
+                                    e, rollback_err
+                                ),
+                            );
+                        }
+                    }
+                } else {
+                    // No previous config to roll back to
+                    let notification = JsonRpcNotification::new(
+                        "config_update_failed",
+                        serde_json::json!({
+                            "error": e.to_string(),
+                            "rolled_back": false
+                        }),
+                    );
+                    if let Ok(json) = serde_json::to_string(&notification) {
+                        let _ = status_tx.send(json);
+                    }
+
+                    let mut s = state.lock().await;
+                    s.connection_state = ConnectionState::Error;
+                    s.error_message = Some(format!("Config update failed: {}", e));
+                    s.mode = None;
+                    drop(s);
+
+                    let _ = Self::send_status_notification(state, status_tx).await;
+
+                    JsonRpcResponse::error(
+                        request.id,
+                        UPDATE_FAILED,
+                        format!("Config update failed (no rollback available): {}", e),
+                    )
                 }
-
-                let mut s = state.lock().await;
-                s.connection_state = ConnectionState::Error;
-                s.error_message = Some(format!("Config update failed: {}", e));
-                s.mode = None;
-                drop(s);
-
-                let _ = Self::send_status_notification(state, status_tx).await;
-
-                JsonRpcResponse::error(
-                    request.id,
-                    UPDATE_FAILED,
-                    format!("Config update failed: {}", e),
-                )
             }
         }
     }
