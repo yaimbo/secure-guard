@@ -26,6 +26,11 @@ class UpdateService {
   String? _currentConfigVersion;
   final String _clientVersion = '1.0.0';
 
+  /// IPC client for direct daemon communication (optional)
+  /// If set, config updates will use the daemon's update_config method
+  /// for seamless reconnection instead of just calling the callback.
+  IpcClient? ipcClient;
+
   /// Callbacks for update events
   void Function(String newConfig)? onConfigUpdated;
   void Function(UpdateInfo updateInfo)? onUpdateAvailable;
@@ -88,6 +93,15 @@ class UpdateService {
         final prefs = await SharedPreferences.getInstance();
         await prefs.setString(_configVersionKey, serverVersion);
 
+        // If IPC client is available and connected, use update_config for seamless reconnection
+        if (ipcClient != null && ipcClient!.isConnectedToDaemon) {
+          try {
+            await _applyConfigUpdate(configResult.config!);
+          } catch (e) {
+            // Log error but continue - callback will still be called
+          }
+        }
+
         onConfigUpdated?.call(configResult.config!);
         return ConfigVersionResult.updated(configResult.config!);
       }
@@ -119,6 +133,26 @@ class UpdateService {
     // Config is returned as plain text
     final config = response.data as String;
     return ConfigFetchResult.success(config);
+  }
+
+  /// Apply config update via IPC daemon
+  ///
+  /// Uses the daemon's update_config method for seamless reconnection.
+  /// If connected, the daemon will disconnect and reconnect with new config.
+  Future<void> _applyConfigUpdate(String newConfig) async {
+    if (ipcClient == null || !ipcClient!.isConnectedToDaemon) {
+      return;
+    }
+
+    try {
+      final result = await ipcClient!.updateConfig(newConfig);
+      if (result.updated) {
+        // Config update successful - daemon handled reconnection
+      }
+    } catch (e) {
+      // Config update failed - error will be reported via configUpdateFailedStream
+      rethrow;
+    }
   }
 
   /// Check for binary updates

@@ -37,12 +37,15 @@ pub const DEFAULT_PIPE_NAME: &str = r"\\.\pipe\secureguard";
 // ============================================================================
 
 /// The active VPN mode with mode-specific state
-#[derive(Debug)]
 enum VpnMode {
     /// Client mode - connects to a VPN server
     Client {
         vpn_ip: String,
         server_endpoint: String,
+        /// Current config (for rollback on update failure)
+        current_config: WireGuardConfig,
+        /// Previous working config (set after successful handshake)
+        previous_config: Option<WireGuardConfig>,
     },
     /// Server mode - accepts connections from VPN clients
     Server {
@@ -264,6 +267,7 @@ impl DaemonService {
             "connect" => Self::handle_connect(request, state, status_tx).await,
             "disconnect" => Self::handle_disconnect(request, state, status_tx).await,
             "status" => Self::handle_status(request, state).await,
+            "update_config" => Self::handle_update_config(request, state, status_tx).await,
             // Server mode lifecycle
             "start" => Self::handle_start_server(request, state, status_tx).await,
             "stop" => Self::handle_stop_server(request, state, status_tx).await,
@@ -358,6 +362,9 @@ impl DaemonService {
             Arc::clone(&s.traffic_stats)
         };
 
+        // Clone config for storage before moving to client
+        let config_for_storage = config.clone();
+
         // Create and start client with traffic stats
         match WireGuardClient::new(config, Some(traffic_stats)).await {
             Ok(client) => {
@@ -370,6 +377,8 @@ impl DaemonService {
                     s.mode = Some(VpnMode::Client {
                         vpn_ip: vpn_ip.clone(),
                         server_endpoint: server_endpoint.clone(),
+                        current_config: config_for_storage,
+                        previous_config: None,
                     });
                     s.started_at = Some(chrono_now());
                     s.traffic_stats.reset(); // Reset counters for new connection
@@ -456,7 +465,7 @@ impl DaemonService {
     ) -> JsonRpcResponse {
         let mut s = state.lock().await;
 
-        // Check if in client mode
+        // Check if in client mode (ignore config fields with ..)
         match &s.mode {
             Some(VpnMode::Client { .. }) => {}
             Some(VpnMode::Server { .. }) => {
@@ -495,7 +504,7 @@ impl DaemonService {
         let s = state.lock().await;
 
         match &s.mode {
-            Some(VpnMode::Client { vpn_ip, server_endpoint }) => {
+            Some(VpnMode::Client { vpn_ip, server_endpoint, .. }) => {
                 let status = StatusResponse {
                     state: s.connection_state,
                     vpn_ip: Some(vpn_ip.clone()),
@@ -553,7 +562,7 @@ impl DaemonService {
 
         // Build notification based on mode
         let notification = match &s.mode {
-            Some(VpnMode::Client { vpn_ip, server_endpoint }) => {
+            Some(VpnMode::Client { vpn_ip, server_endpoint, .. }) => {
                 let params = StatusChangedParams {
                     state: s.connection_state,
                     vpn_ip: Some(vpn_ip.clone()),
@@ -606,6 +615,245 @@ impl DaemonService {
         status_tx.send(json).map_err(|_| ())?;
 
         Ok(())
+    }
+
+    // ========================================================================
+    // Client Config Update Handler
+    // ========================================================================
+
+    /// Handle update_config request (client mode - dynamic config update)
+    async fn handle_update_config(
+        request: JsonRpcRequest,
+        state: &Arc<Mutex<DaemonState>>,
+        status_tx: &broadcast::Sender<String>,
+    ) -> JsonRpcResponse {
+        // Parse params
+        let params: UpdateConfigParams = match serde_json::from_value(request.params.clone()) {
+            Ok(p) => p,
+            Err(e) => {
+                return JsonRpcResponse::error(
+                    request.id,
+                    INVALID_PARAMS,
+                    format!("Invalid params: {}", e),
+                );
+            }
+        };
+
+        // Step 1: Parse and validate new config BEFORE disconnecting
+        let new_config = match WireGuardConfig::from_string(&params.config) {
+            Ok(c) => c,
+            Err(e) => {
+                return JsonRpcResponse::error(
+                    request.id,
+                    CONFIG_VALIDATION_FAILED,
+                    format!("Invalid config: {}", e),
+                );
+            }
+        };
+
+        // Validate config has required fields for client mode
+        if new_config.peers.is_empty() {
+            return JsonRpcResponse::error(
+                request.id,
+                CONFIG_VALIDATION_FAILED,
+                "Config must have at least one peer",
+            );
+        }
+
+        let peer = &new_config.peers[0];
+        if peer.endpoint.is_none() {
+            return JsonRpcResponse::error(
+                request.id,
+                CONFIG_VALIDATION_FAILED,
+                "Peer must have an endpoint for client mode",
+            );
+        }
+
+        // Extract new connection info
+        let new_vpn_ip = new_config
+            .interface
+            .address
+            .first()
+            .map(|a| a.addr().to_string())
+            .unwrap_or_default();
+        let new_server_endpoint = new_config
+            .peers
+            .first()
+            .and_then(|p| p.endpoint.map(|e| e.to_string()))
+            .unwrap_or_default();
+
+        let mut s = state.lock().await;
+
+        // Step 2: Check current state
+        let (current_config, was_connected) = match &s.mode {
+            Some(VpnMode::Client { current_config, .. }) => {
+                let connected = s.connection_state == ConnectionState::Connected;
+                (Some(current_config.clone()), connected)
+            }
+            Some(VpnMode::Server { .. }) => {
+                return JsonRpcResponse::error(
+                    request.id,
+                    INVALID_REQUEST,
+                    "Cannot update config in server mode",
+                );
+            }
+            None => {
+                // Not connected - we can't update config when not in client mode
+                // The caller should use 'connect' with the new config instead
+                return JsonRpcResponse::error(
+                    request.id,
+                    NOT_CONNECTED,
+                    "Not in client mode. Use 'connect' to start a new connection.",
+                );
+            }
+        };
+
+        // Step 3: If connected, disconnect current session
+        if was_connected {
+            s.connection_state = ConnectionState::Disconnecting;
+
+            // Send shutdown signal to the background task
+            if let Some(ref shutdown_tx) = s.shutdown_tx {
+                let _ = shutdown_tx.send(true);
+            }
+        }
+
+        drop(s);
+
+        // Give the background task time to clean up
+        if was_connected {
+            tokio::time::sleep(tokio::time::Duration::from_millis(200)).await;
+        }
+
+        // Step 4: Reconnect with new config
+        let traffic_stats = {
+            let s = state.lock().await;
+            Arc::clone(&s.traffic_stats)
+        };
+
+        // Clone new config for storage
+        let config_for_storage = new_config.clone();
+
+        // Create and start client with new config
+        match WireGuardClient::new(new_config, Some(traffic_stats)).await {
+            Ok(client) => {
+                // Create shutdown channel
+                let (shutdown_tx, shutdown_rx) = watch::channel(false);
+
+                {
+                    let mut s = state.lock().await;
+                    s.connection_state = ConnectionState::Connected;
+                    s.mode = Some(VpnMode::Client {
+                        vpn_ip: new_vpn_ip.clone(),
+                        server_endpoint: new_server_endpoint.clone(),
+                        current_config: config_for_storage,
+                        previous_config: current_config, // Store old config for potential future rollback
+                    });
+                    s.started_at = Some(chrono_now());
+                    s.shutdown_tx = Some(shutdown_tx);
+                }
+
+                let _ = Self::send_status_notification(state, status_tx).await;
+
+                // Send config_updated notification
+                let notification = JsonRpcNotification::new(
+                    "config_updated",
+                    serde_json::json!({
+                        "vpn_ip": new_vpn_ip,
+                        "server_endpoint": new_server_endpoint,
+                        "reconnected": was_connected
+                    }),
+                );
+                if let Ok(json) = serde_json::to_string(&notification) {
+                    let _ = status_tx.send(json);
+                }
+
+                // Start the client run loop in background
+                let state_clone = Arc::clone(state);
+                let status_tx_clone = status_tx.clone();
+                tokio::spawn(async move {
+                    let mut client = client;
+
+                    // Run client with shutdown monitoring
+                    let mut shutdown_rx = shutdown_rx;
+                    let result = tokio::select! {
+                        result = client.run() => result,
+                        _ = async {
+                            loop {
+                                shutdown_rx.changed().await.ok();
+                                if *shutdown_rx.borrow() {
+                                    break;
+                                }
+                            }
+                        } => {
+                            tracing::info!("Shutdown signal received");
+                            Ok(())
+                        }
+                    };
+
+                    // Update state based on result
+                    {
+                        let mut s = state_clone.lock().await;
+                        match result {
+                            Ok(_) => {
+                                tracing::info!("VPN client disconnected");
+                                s.connection_state = ConnectionState::Disconnected;
+                            }
+                            Err(e) => {
+                                tracing::error!("VPN client error: {}", e);
+                                s.connection_state = ConnectionState::Error;
+                                s.error_message = Some(format!("{}", e));
+                            }
+                        }
+                        s.mode = None;
+                        s.started_at = None;
+                        s.shutdown_tx = None;
+                    }
+
+                    // Send status notification
+                    let _ = Self::send_status_notification(&state_clone, &status_tx_clone).await;
+
+                    // Cleanup
+                    if let Err(e) = client.cleanup().await {
+                        tracing::error!("Cleanup error: {}", e);
+                    }
+                });
+
+                let response = UpdateConfigResponse {
+                    updated: true,
+                    vpn_ip: Some(new_vpn_ip),
+                    server_endpoint: Some(new_server_endpoint),
+                };
+                JsonRpcResponse::success(request.id, serde_json::to_value(response).unwrap())
+            }
+            Err(e) => {
+                // Update failed - send notification
+                let notification = JsonRpcNotification::new(
+                    "config_update_failed",
+                    serde_json::json!({
+                        "error": e.to_string(),
+                        "rolled_back": false // No automatic rollback for now
+                    }),
+                );
+                if let Ok(json) = serde_json::to_string(&notification) {
+                    let _ = status_tx.send(json);
+                }
+
+                let mut s = state.lock().await;
+                s.connection_state = ConnectionState::Error;
+                s.error_message = Some(format!("Config update failed: {}", e));
+                s.mode = None;
+                drop(s);
+
+                let _ = Self::send_status_notification(state, status_tx).await;
+
+                JsonRpcResponse::error(
+                    request.id,
+                    UPDATE_FAILED,
+                    format!("Config update failed: {}", e),
+                )
+            }
+        }
     }
 
     // ========================================================================

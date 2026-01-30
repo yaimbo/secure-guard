@@ -140,6 +140,7 @@ The daemon runs as a background service, controlled via Unix socket IPC (JSON-RP
 - `connect` - Start VPN client: `{"method": "connect", "params": {"config": "<wireguard-config>"}}`
 - `disconnect` - Stop VPN client: `{"method": "disconnect"}`
 - `status` - Get connection status: `{"method": "status"}`
+- `update_config` - Update config dynamically (reconnects if connected): `{"method": "update_config", "params": {"config": "<wireguard-config>"}}`
 
 **IPC Commands (Server Mode):**
 - `start` - Start VPN server: `{"method": "start", "params": {"config": "<wireguard-config>"}}`
@@ -149,13 +150,17 @@ The daemon runs as a background service, controlled via Unix socket IPC (JSON-RP
 - `add_peer` - Add peer dynamically: `{"method": "add_peer", "params": {"public_key": "<base64>", "allowed_ips": ["10.0.0.2/32"], "preshared_key": "<base64-optional>"}}`
 - `remove_peer` - Remove peer (terminates connection): `{"method": "remove_peer", "params": {"public_key": "<base64>"}}`
 
-**Notifications:**
-- `status_changed` - Client mode state changes
-- `server_status_changed` - Server mode state changes
-- `peer_connected` - Peer completed handshake (server mode)
-- `peer_disconnected` - Peer session terminated (server mode)
-- `peer_added` - New peer added dynamically (server mode)
-- `peer_removed` - Peer removed (server mode)
+**Notifications (Client Mode):**
+- `status_changed` - Connection state changes
+- `config_updated` - Config update succeeded (includes vpn_ip, server_endpoint, reconnected)
+- `config_update_failed` - Config update failed (includes error, rolled_back)
+
+**Notifications (Server Mode):**
+- `server_status_changed` - Server state changes
+- `peer_connected` - Peer completed handshake
+- `peer_disconnected` - Peer session terminated
+- `peer_added` - New peer added dynamically
+- `peer_removed` - Peer removed
 
 **Platform installers:**
 - macOS: `installer/macos/install.sh` (LaunchDaemon)
@@ -555,6 +560,7 @@ The client communicates with the Rust daemon via Unix socket at `/var/run/secure
 - `connect` - Connect with WireGuard config
 - `disconnect` - Disconnect VPN
 - `status` - Get current connection status
+- `update_config` - Update config dynamically (validates before disconnect, reconnects with new config)
 
 ### Auto-Update Service
 
@@ -564,7 +570,7 @@ The client automatically checks for updates:
 
 When a config update is detected, the client:
 1. Fetches new config from server
-2. If connected, seamlessly reconnects with new config
+2. If connected, uses `update_config` IPC for seamless reconnection (validates config before disconnect)
 3. If disconnected, stores config for next connection
 
 Binary updates:

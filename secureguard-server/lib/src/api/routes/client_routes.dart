@@ -5,6 +5,7 @@ import 'package:shelf_router/shelf_router.dart';
 
 import '../../services/client_service.dart';
 import '../../services/email_queue_service.dart';
+import '../../services/vpn_daemon_client.dart';
 import '../../repositories/log_repository.dart';
 
 /// Client management routes (admin only)
@@ -14,11 +15,16 @@ class ClientRoutes {
   final EmailQueueService? emailQueueService;
   final String serverDomain;
 
+  /// Optional VPN daemon client for syncing peers
+  /// If null, peer sync is skipped (daemon may not be running)
+  final VpnDaemonClient? vpnDaemonClient;
+
   ClientRoutes(
     this.clientService,
     this.logRepo, {
     this.emailQueueService,
     this.serverDomain = '',
+    this.vpnDaemonClient,
   });
 
   Router get router {
@@ -104,6 +110,12 @@ class ClientRoutes {
         resourceName: client.name,
         details: {'name': client.name, 'ip': client.assignedIp},
         ipAddress: request.headers['x-forwarded-for'] ?? request.headers['x-real-ip'],
+      );
+
+      // Sync peer to VPN daemon (best-effort)
+      await _syncAddPeerToDaemon(
+        client.publicKey,
+        client.allowedIps,
       );
 
       // Return client with enrollment code
@@ -212,6 +224,9 @@ class ClientRoutes {
             headers: {'content-type': 'application/json'});
       }
 
+      // Remove peer from VPN daemon first (terminates active connection)
+      await _syncRemovePeerFromDaemon(client.publicKey);
+
       await clientService.deleteClient(id);
 
       // Audit log
@@ -259,6 +274,12 @@ class ClientRoutes {
         ipAddress: request.headers['x-forwarded-for'] ?? request.headers['x-real-ip'],
       );
 
+      // Add peer back to VPN daemon (allow new connections)
+      await _syncAddPeerToDaemon(
+        client.publicKey,
+        client.allowedIps,
+      );
+
       return Response.ok(
         jsonEncode(client.toJson()),
         headers: {'content-type': 'application/json'},
@@ -294,6 +315,9 @@ class ClientRoutes {
         resourceName: client.name,
         ipAddress: request.headers['x-forwarded-for'] ?? request.headers['x-real-ip'],
       );
+
+      // Remove peer from VPN daemon (terminates active connection)
+      await _syncRemovePeerFromDaemon(client.publicKey);
 
       return Response.ok(
         jsonEncode(client.toJson()),
@@ -647,6 +671,55 @@ class ClientRoutes {
       return '$minutes minute${minutes > 1 ? 's' : ''}';
     } else {
       return 'less than a minute';
+    }
+  }
+
+  // ============================================================
+  // VPN Daemon Sync Helpers
+  // ============================================================
+
+  /// Sync peer addition to VPN daemon
+  ///
+  /// This is best-effort - if daemon isn't running, we log and continue.
+  /// The daemon will load peers from database when it starts.
+  Future<void> _syncAddPeerToDaemon(
+    String publicKey,
+    List<String> allowedIps, {
+    String? presharedKey,
+  }) async {
+    if (vpnDaemonClient == null) return;
+
+    try {
+      if (!vpnDaemonClient!.isConnected) {
+        await vpnDaemonClient!.connect();
+      }
+
+      await vpnDaemonClient!.addPeer(
+        publicKey: publicKey,
+        allowedIps: allowedIps,
+        presharedKey: presharedKey,
+      );
+    } catch (e) {
+      // Log but don't fail - daemon may not be running
+      print('Warning: Could not sync peer to VPN daemon: $e');
+    }
+  }
+
+  /// Sync peer removal to VPN daemon
+  ///
+  /// This is best-effort - if daemon isn't running, we log and continue.
+  Future<void> _syncRemovePeerFromDaemon(String publicKey) async {
+    if (vpnDaemonClient == null) return;
+
+    try {
+      if (!vpnDaemonClient!.isConnected) {
+        await vpnDaemonClient!.connect();
+      }
+
+      await vpnDaemonClient!.removePeer(publicKey);
+    } catch (e) {
+      // Log but don't fail - daemon may not be running
+      print('Warning: Could not remove peer from VPN daemon: $e');
     }
   }
 }

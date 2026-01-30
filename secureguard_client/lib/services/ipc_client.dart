@@ -71,6 +71,8 @@ class IpcClient {
   final Map<int, Completer<Map<String, dynamic>>> _pendingRequests = {};
   final StreamController<VpnStatus> _statusController = StreamController.broadcast();
   final StreamController<bool> _connectionController = StreamController.broadcast();
+  final StreamController<ConfigUpdateNotification> _configUpdatedController = StreamController.broadcast();
+  final StreamController<ConfigUpdateFailedNotification> _configUpdateFailedController = StreamController.broadcast();
   StringBuffer _buffer = StringBuffer();
 
   IpcClient({this.socketPath = defaultSocketPath});
@@ -80,6 +82,12 @@ class IpcClient {
 
   /// Stream of daemon connection state
   Stream<bool> get connectionStream => _connectionController.stream;
+
+  /// Stream of config update success notifications
+  Stream<ConfigUpdateNotification> get configUpdatedStream => _configUpdatedController.stream;
+
+  /// Stream of config update failure notifications
+  Stream<ConfigUpdateFailedNotification> get configUpdateFailedStream => _configUpdateFailedController.stream;
 
   /// Whether connected to daemon
   bool get isConnectedToDaemon => _socket != null;
@@ -166,8 +174,16 @@ class IpcClient {
     final method = json['method'] as String?;
     final params = json['params'] as Map<String, dynamic>? ?? {};
 
-    if (method == 'status_changed') {
-      _statusController.add(VpnStatus.fromJson(params));
+    switch (method) {
+      case 'status_changed':
+        _statusController.add(VpnStatus.fromJson(params));
+        break;
+      case 'config_updated':
+        _configUpdatedController.add(ConfigUpdateNotification.fromJson(params));
+        break;
+      case 'config_update_failed':
+        _configUpdateFailedController.add(ConfigUpdateFailedNotification.fromJson(params));
+        break;
     }
   }
 
@@ -233,11 +249,85 @@ class IpcClient {
     return VpnStatus.fromJson(result);
   }
 
+  /// Update VPN configuration dynamically
+  ///
+  /// If connected, will disconnect and reconnect with new config.
+  /// If disconnected, returns an error (use connectVpn instead).
+  ///
+  /// Listen to [configUpdatedStream] for success notifications and
+  /// [configUpdateFailedStream] for failure notifications.
+  Future<UpdateConfigResponse> updateConfig(String config) async {
+    final result = await _request('update_config', {'config': config});
+    return UpdateConfigResponse.fromJson(result);
+  }
+
   /// Dispose resources
   void dispose() {
     disconnect();
     _statusController.close();
     _connectionController.close();
+    _configUpdatedController.close();
+    _configUpdateFailedController.close();
+  }
+}
+
+/// Response from update_config request
+class UpdateConfigResponse {
+  final bool updated;
+  final String? vpnIp;
+  final String? serverEndpoint;
+
+  UpdateConfigResponse({
+    required this.updated,
+    this.vpnIp,
+    this.serverEndpoint,
+  });
+
+  factory UpdateConfigResponse.fromJson(Map<String, dynamic> json) {
+    return UpdateConfigResponse(
+      updated: json['updated'] as bool? ?? false,
+      vpnIp: json['vpn_ip'] as String?,
+      serverEndpoint: json['server_endpoint'] as String?,
+    );
+  }
+}
+
+/// Config update notification data
+class ConfigUpdateNotification {
+  final String vpnIp;
+  final String serverEndpoint;
+  final bool reconnected;
+
+  ConfigUpdateNotification({
+    required this.vpnIp,
+    required this.serverEndpoint,
+    required this.reconnected,
+  });
+
+  factory ConfigUpdateNotification.fromJson(Map<String, dynamic> json) {
+    return ConfigUpdateNotification(
+      vpnIp: json['vpn_ip'] as String? ?? '',
+      serverEndpoint: json['server_endpoint'] as String? ?? '',
+      reconnected: json['reconnected'] as bool? ?? false,
+    );
+  }
+}
+
+/// Config update failed notification data
+class ConfigUpdateFailedNotification {
+  final String error;
+  final bool rolledBack;
+
+  ConfigUpdateFailedNotification({
+    required this.error,
+    required this.rolledBack,
+  });
+
+  factory ConfigUpdateFailedNotification.fromJson(Map<String, dynamic> json) {
+    return ConfigUpdateFailedNotification(
+      error: json['error'] as String? ?? 'Unknown error',
+      rolledBack: json['rolled_back'] as bool? ?? false,
+    );
   }
 }
 

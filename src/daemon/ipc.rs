@@ -55,6 +55,8 @@ pub const NOT_CONNECTED: i32 = -1;
 pub const ALREADY_CONNECTED: i32 = -2;
 pub const CONNECTION_FAILED: i32 = -3;
 pub const INVALID_CONFIG: i32 = -4;
+pub const CONFIG_VALIDATION_FAILED: i32 = -5;
+pub const UPDATE_FAILED: i32 = -6;
 
 // Application-specific error codes (server mode)
 pub const SERVER_NOT_RUNNING: i32 = -10;
@@ -119,6 +121,46 @@ pub struct StatusChangedParams {
 pub struct ErrorParams {
     pub code: String,
     pub message: String,
+}
+
+// ============================================================================
+// Client Mode Config Update Types
+// ============================================================================
+
+/// Update config request parameters
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct UpdateConfigParams {
+    /// New WireGuard configuration content
+    pub config: String,
+}
+
+/// Update config response
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct UpdateConfigResponse {
+    pub updated: bool,
+    /// New VPN IP if config changed Address
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub vpn_ip: Option<String>,
+    /// New server endpoint if changed
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub server_endpoint: Option<String>,
+}
+
+/// Config update notification params (for Flutter client)
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ConfigUpdatedParams {
+    pub vpn_ip: String,
+    pub server_endpoint: String,
+    /// True if reconnection was required
+    pub reconnected: bool,
+}
+
+/// Config update failed notification params
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ConfigUpdateFailedParams {
+    pub error: String,
+    /// True if rolled back to previous config
+    pub rolled_back: bool,
 }
 
 // ============================================================================
