@@ -4,11 +4,61 @@
 
 use std::collections::HashMap;
 use std::net::{Ipv4Addr, SocketAddr};
+use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::Arc;
 use std::time::{Duration, Instant};
 
 use ipnet::IpNet;
 
 use crate::protocol::transport::TransportState;
+
+// ============================================================================
+// Traffic Statistics
+// ============================================================================
+
+/// Thread-safe traffic statistics using atomic counters
+///
+/// Uses `AtomicU64` for lock-free updates from the packet processing loop.
+#[derive(Debug, Default)]
+pub struct TrafficStats {
+    pub bytes_sent: AtomicU64,
+    pub bytes_received: AtomicU64,
+}
+
+impl TrafficStats {
+    pub fn new() -> Self {
+        Self {
+            bytes_sent: AtomicU64::new(0),
+            bytes_received: AtomicU64::new(0),
+        }
+    }
+
+    /// Add to bytes sent counter
+    pub fn add_sent(&self, bytes: u64) {
+        self.bytes_sent.fetch_add(bytes, Ordering::Relaxed);
+    }
+
+    /// Add to bytes received counter
+    pub fn add_received(&self, bytes: u64) {
+        self.bytes_received.fetch_add(bytes, Ordering::Relaxed);
+    }
+
+    /// Get bytes sent
+    pub fn get_sent(&self) -> u64 {
+        self.bytes_sent.load(Ordering::Relaxed)
+    }
+
+    /// Get bytes received
+    pub fn get_received(&self) -> u64 {
+        self.bytes_received.load(Ordering::Relaxed)
+    }
+
+    /// Reset counters to zero
+    pub fn reset(&self) {
+        self.bytes_sent.store(0, Ordering::Relaxed);
+        self.bytes_received.store(0, Ordering::Relaxed);
+    }
+}
 
 /// Initiate rekey after this many seconds
 pub const REKEY_AFTER_TIME: Duration = Duration::from_secs(120);
@@ -300,6 +350,10 @@ pub struct PeerState {
     /// Last timestamp seen (replay protection for handshakes)
     /// TAI64N is 12 bytes
     pub last_timestamp: Option<[u8; 12]>,
+    /// Per-peer traffic statistics
+    pub traffic_stats: Arc<TrafficStats>,
+    /// Timestamp of last successful handshake
+    pub last_handshake: Option<Instant>,
 }
 
 impl PeerState {
@@ -313,7 +367,14 @@ impl PeerState {
             previous_session: None,
             endpoint: None,
             last_timestamp: None,
+            traffic_stats: Arc::new(TrafficStats::new()),
+            last_handshake: None,
         }
+    }
+
+    /// Get traffic statistics for this peer
+    pub fn get_traffic_stats(&self) -> &Arc<TrafficStats> {
+        &self.traffic_stats
     }
 
     /// Check if this peer has an active session
@@ -359,6 +420,7 @@ impl PeerState {
             self.previous_session = Some(current);
         }
         self.session = Some(session);
+        self.last_handshake = Some(Instant::now());
     }
 
     /// Check if an IP is in this peer's allowed IPs
@@ -465,6 +527,35 @@ impl PeerManager {
     /// Check if empty
     pub fn is_empty(&self) -> bool {
         self.peers.is_empty()
+    }
+
+    /// Check if a peer with the given public key exists
+    pub fn has_peer(&self, public_key: &[u8; 32]) -> bool {
+        self.peers.contains_key(public_key)
+    }
+
+    /// Get count of peers with active sessions
+    pub fn connected_count(&self) -> usize {
+        self.peers.values().filter(|p| p.has_session()).count()
+    }
+
+    /// Remove a peer and clean up associated session indexes
+    ///
+    /// Returns the removed `PeerState` if found, `None` otherwise.
+    /// This will terminate any active session for the peer.
+    pub fn remove_peer(&mut self, public_key: &[u8; 32]) -> Option<PeerState> {
+        if let Some(peer) = self.peers.remove(public_key) {
+            // Clean up index mappings for both sessions
+            if let Some(ref session) = peer.session {
+                self.index_to_peer.remove(&session.local_index);
+            }
+            if let Some(ref session) = peer.previous_session {
+                self.index_to_peer.remove(&session.local_index);
+            }
+            Some(peer)
+        } else {
+            None
+        }
     }
 
     /// Iterate over all peers

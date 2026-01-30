@@ -604,6 +604,21 @@ impl RouteManager {
         Ok(())
     }
 
+    /// Remove a single route (for dynamic peer removal)
+    pub async fn remove_route(&mut self, network: Ipv4Net) -> Result<(), SecureGuardError> {
+        if let Err(e) = remove_route_platform(&self.device_name, &network).await {
+            tracing::warn!("Failed to remove route {}: {}", network, e);
+            return Err(e);
+        }
+
+        // Remove from tracked routes
+        self.added_routes.retain(|r| r != &network);
+        self.save_state();
+
+        tracing::info!("Removed route: {} from {}", network, self.device_name);
+        Ok(())
+    }
+
     /// Remove all routes that were added
     pub async fn cleanup(&mut self) -> Result<(), SecureGuardError> {
         let mut errors = Vec::new();

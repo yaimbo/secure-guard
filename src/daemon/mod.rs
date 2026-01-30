@@ -7,61 +7,22 @@
 pub mod ipc;
 
 use std::path::PathBuf;
-use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Arc;
 use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
-use tokio::sync::{broadcast, watch, Mutex};
+use tokio::sync::{broadcast, mpsc, watch, Mutex};
+
+use base64::{engine::general_purpose::STANDARD as BASE64, Engine};
+use ipnet::IpNet;
 
 use crate::error::ConfigError;
-use crate::{SecureGuardError, WireGuardClient, WireGuardConfig};
+use crate::protocol::session::PeerManager;
+use crate::server::{PeerEvent, PeerUpdate};
+use crate::{SecureGuardError, WireGuardClient, WireGuardConfig, WireGuardServer};
 
 use ipc::*;
 
-/// Shared traffic statistics between daemon and VPN client
-///
-/// Uses atomic counters for lock-free, high-performance tracking.
-/// The daemon passes this to WireGuardClient, which updates the counters
-/// as packets are sent/received.
-#[derive(Debug, Default)]
-pub struct TrafficStats {
-    pub bytes_sent: AtomicU64,
-    pub bytes_received: AtomicU64,
-}
-
-impl TrafficStats {
-    pub fn new() -> Self {
-        Self {
-            bytes_sent: AtomicU64::new(0),
-            bytes_received: AtomicU64::new(0),
-        }
-    }
-
-    /// Add to bytes sent counter
-    pub fn add_sent(&self, bytes: u64) {
-        self.bytes_sent.fetch_add(bytes, Ordering::Relaxed);
-    }
-
-    /// Add to bytes received counter
-    pub fn add_received(&self, bytes: u64) {
-        self.bytes_received.fetch_add(bytes, Ordering::Relaxed);
-    }
-
-    /// Get current bytes sent
-    pub fn get_sent(&self) -> u64 {
-        self.bytes_sent.load(Ordering::Relaxed)
-    }
-
-    /// Get current bytes received
-    pub fn get_received(&self) -> u64 {
-        self.bytes_received.load(Ordering::Relaxed)
-    }
-
-    /// Reset counters (for new connection)
-    pub fn reset(&self) {
-        self.bytes_sent.store(0, Ordering::Relaxed);
-        self.bytes_received.store(0, Ordering::Relaxed);
-    }
-}
+// Re-export TrafficStats from protocol layer for backwards compatibility
+pub use crate::protocol::session::TrafficStats;
 
 /// Default socket path for Unix systems
 #[cfg(unix)]
@@ -71,6 +32,29 @@ pub const DEFAULT_SOCKET_PATH: &str = "/var/run/secureguard.sock";
 #[cfg(windows)]
 pub const DEFAULT_PIPE_NAME: &str = r"\\.\pipe\secureguard";
 
+// ============================================================================
+// VPN Mode and State Types
+// ============================================================================
+
+/// The active VPN mode with mode-specific state
+#[derive(Debug)]
+enum VpnMode {
+    /// Client mode - connects to a VPN server
+    Client {
+        vpn_ip: String,
+        server_endpoint: String,
+    },
+    /// Server mode - accepts connections from VPN clients
+    Server {
+        listen_port: u16,
+        interface_address: String,
+        /// Channel to send peer updates to the server event loop
+        peer_update_tx: mpsc::Sender<PeerUpdate>,
+        /// Shared peer manager for IPC queries
+        peers: Arc<Mutex<PeerManager>>,
+    },
+}
+
 /// Daemon service that manages VPN connections via IPC
 pub struct DaemonService {
     socket_path: PathBuf,
@@ -79,13 +63,15 @@ pub struct DaemonService {
 }
 
 struct DaemonState {
+    /// Current connection state
     connection_state: ConnectionState,
-    client: Option<WireGuardClient>,
-    vpn_ip: Option<String>,
-    server_endpoint: Option<String>,
-    connected_at: Option<String>,
-    /// Shared traffic statistics (updated by VPN client)
+    /// Active VPN mode (None when disconnected)
+    mode: Option<VpnMode>,
+    /// When the connection/server started
+    started_at: Option<String>,
+    /// Shared traffic statistics (updated by VPN client/server)
     traffic_stats: Arc<TrafficStats>,
+    /// Error message (if in error state)
     error_message: Option<String>,
     /// Shutdown signal sender - send true to stop the VPN
     shutdown_tx: Option<watch::Sender<bool>>,
@@ -95,10 +81,8 @@ impl Default for DaemonState {
     fn default() -> Self {
         Self {
             connection_state: ConnectionState::Disconnected,
-            client: None,
-            vpn_ip: None,
-            server_endpoint: None,
-            connected_at: None,
+            mode: None,
+            started_at: None,
             traffic_stats: Arc::new(TrafficStats::new()),
             error_message: None,
             shutdown_tx: None,
@@ -276,9 +260,19 @@ impl DaemonService {
 
         // Dispatch to handler
         match request.method.as_str() {
+            // Client mode methods
             "connect" => Self::handle_connect(request, state, status_tx).await,
             "disconnect" => Self::handle_disconnect(request, state, status_tx).await,
             "status" => Self::handle_status(request, state).await,
+            // Server mode lifecycle
+            "start" => Self::handle_start_server(request, state, status_tx).await,
+            "stop" => Self::handle_stop_server(request, state, status_tx).await,
+            // Server mode peer queries
+            "list_peers" => Self::handle_list_peers(request, state).await,
+            "peer_status" => Self::handle_peer_status(request, state).await,
+            // Server mode dynamic peer management
+            "add_peer" => Self::handle_add_peer(request, state, status_tx).await,
+            "remove_peer" => Self::handle_remove_peer(request, state, status_tx).await,
             _ => JsonRpcResponse::error(
                 request.id,
                 METHOD_NOT_FOUND,
@@ -287,7 +281,7 @@ impl DaemonService {
         }
     }
 
-    /// Handle connect request
+    /// Handle connect request (client mode)
     async fn handle_connect(
         request: JsonRpcRequest,
         state: &Arc<Mutex<DaemonState>>,
@@ -305,7 +299,7 @@ impl DaemonService {
             }
         };
 
-        // Check if already connected
+        // Check if already running (client or server)
         {
             let s = state.lock().await;
             if s.connection_state == ConnectionState::Connected
@@ -314,7 +308,7 @@ impl DaemonService {
                 return JsonRpcResponse::error(
                     request.id,
                     ALREADY_CONNECTED,
-                    "Already connected or connecting",
+                    "Already connected or running",
                 );
             }
         }
@@ -350,10 +344,13 @@ impl DaemonService {
             .peers
             .first()
             .and_then(|p| p.endpoint.as_ref())
-            .map(|e| e.to_string());
+            .map(|e| e.to_string())
+            .unwrap_or_default();
 
         // Extract VPN IP for status
-        let vpn_ip = config.interface.address.first().map(|a| a.to_string());
+        let vpn_ip = config.interface.address.first()
+            .map(|a| a.to_string())
+            .unwrap_or_default();
 
         // Get traffic stats to pass to client
         let traffic_stats = {
@@ -367,50 +364,45 @@ impl DaemonService {
                 // Create shutdown channel
                 let (shutdown_tx, shutdown_rx) = watch::channel(false);
 
-                let mut s = state.lock().await;
-                s.client = Some(client);
-                s.connection_state = ConnectionState::Connected;
-                s.vpn_ip = vpn_ip;
-                s.server_endpoint = server_endpoint;
-                s.connected_at = Some(chrono_now());
-                s.traffic_stats.reset(); // Reset counters for new connection
-                s.shutdown_tx = Some(shutdown_tx);
-                drop(s);
+                {
+                    let mut s = state.lock().await;
+                    s.connection_state = ConnectionState::Connected;
+                    s.mode = Some(VpnMode::Client {
+                        vpn_ip: vpn_ip.clone(),
+                        server_endpoint: server_endpoint.clone(),
+                    });
+                    s.started_at = Some(chrono_now());
+                    s.traffic_stats.reset(); // Reset counters for new connection
+                    s.shutdown_tx = Some(shutdown_tx);
+                }
 
                 let _ = Self::send_status_notification(state, status_tx).await;
 
                 // Start the client run loop in background
-                // The client.run() method handles the VPN tunnel event loop
-                // We spawn it so the IPC can respond immediately
                 let state_clone = Arc::clone(state);
                 let status_tx_clone = status_tx.clone();
                 tokio::spawn(async move {
-                    // Take the client out of state to run it
-                    let client_opt = {
-                        let mut s = state_clone.lock().await;
-                        s.client.take()
+                    let mut client = client;
+
+                    // Run client with shutdown monitoring
+                    let mut shutdown_rx = shutdown_rx;
+                    let result = tokio::select! {
+                        result = client.run() => result,
+                        _ = async {
+                            loop {
+                                shutdown_rx.changed().await.ok();
+                                if *shutdown_rx.borrow() {
+                                    break;
+                                }
+                            }
+                        } => {
+                            tracing::info!("Shutdown signal received");
+                            Ok(())
+                        }
                     };
 
-                    if let Some(mut client) = client_opt {
-                        // Run client with shutdown monitoring
-                        // Use tokio::select! to monitor both the VPN and shutdown signal
-                        let mut shutdown_rx = shutdown_rx;
-                        let result = tokio::select! {
-                            result = client.run() => result,
-                            _ = async {
-                                loop {
-                                    shutdown_rx.changed().await.ok();
-                                    if *shutdown_rx.borrow() {
-                                        break;
-                                    }
-                                }
-                            } => {
-                                tracing::info!("Shutdown signal received");
-                                Ok(())
-                            }
-                        };
-
-                        // Update state based on result
+                    // Update state based on result
+                    {
                         let mut s = state_clone.lock().await;
                         match result {
                             Ok(_) => {
@@ -423,19 +415,17 @@ impl DaemonService {
                                 s.error_message = Some(format!("{}", e));
                             }
                         }
-                        s.vpn_ip = None;
-                        s.server_endpoint = None;
-                        s.connected_at = None;
+                        s.mode = None;
+                        s.started_at = None;
                         s.shutdown_tx = None;
-                        drop(s);
+                    }
 
-                        // Send status notification
-                        let _ = Self::send_status_notification(&state_clone, &status_tx_clone).await;
+                    // Send status notification
+                    let _ = Self::send_status_notification(&state_clone, &status_tx_clone).await;
 
-                        // Cleanup
-                        if let Err(e) = client.cleanup().await {
-                            tracing::error!("Cleanup error: {}", e);
-                        }
+                    // Cleanup
+                    if let Err(e) = client.cleanup().await {
+                        tracing::error!("Cleanup error: {}", e);
                     }
                 });
 
@@ -458,7 +448,7 @@ impl DaemonService {
         }
     }
 
-    /// Handle disconnect request
+    /// Handle disconnect request (client mode)
     async fn handle_disconnect(
         request: JsonRpcRequest,
         state: &Arc<Mutex<DaemonState>>,
@@ -466,8 +456,19 @@ impl DaemonService {
     ) -> JsonRpcResponse {
         let mut s = state.lock().await;
 
-        if s.connection_state == ConnectionState::Disconnected {
-            return JsonRpcResponse::error(request.id, NOT_CONNECTED, "Not connected");
+        // Check if in client mode
+        match &s.mode {
+            Some(VpnMode::Client { .. }) => {}
+            Some(VpnMode::Server { .. }) => {
+                return JsonRpcResponse::error(
+                    request.id,
+                    NOT_CONNECTED,
+                    "Use 'stop' to stop server mode",
+                );
+            }
+            None => {
+                return JsonRpcResponse::error(request.id, NOT_CONNECTED, "Not connected");
+            }
         }
 
         s.connection_state = ConnectionState::Disconnecting;
@@ -483,30 +484,64 @@ impl DaemonService {
         // Give the background task a moment to clean up
         tokio::time::sleep(tokio::time::Duration::from_millis(100)).await;
 
-        // The background task will update state to Disconnected when it finishes
-        // But we can respond immediately since we've signaled the shutdown
         JsonRpcResponse::success(request.id, serde_json::json!({"disconnected": true}))
     }
 
-    /// Handle status request
+    /// Handle status request - returns mode-specific response
     async fn handle_status(
         request: JsonRpcRequest,
         state: &Arc<Mutex<DaemonState>>,
     ) -> JsonRpcResponse {
         let s = state.lock().await;
 
-        let status = StatusResponse {
-            state: s.connection_state,
-            vpn_ip: s.vpn_ip.clone(),
-            server_endpoint: s.server_endpoint.clone(),
-            connected_at: s.connected_at.clone(),
-            bytes_sent: s.traffic_stats.get_sent(),
-            bytes_received: s.traffic_stats.get_received(),
-            last_handshake: None,
-            error_message: s.error_message.clone(),
-        };
+        match &s.mode {
+            Some(VpnMode::Client { vpn_ip, server_endpoint }) => {
+                let status = StatusResponse {
+                    state: s.connection_state,
+                    vpn_ip: Some(vpn_ip.clone()),
+                    server_endpoint: Some(server_endpoint.clone()),
+                    connected_at: s.started_at.clone(),
+                    bytes_sent: s.traffic_stats.get_sent(),
+                    bytes_received: s.traffic_stats.get_received(),
+                    last_handshake: None,
+                    error_message: s.error_message.clone(),
+                };
+                JsonRpcResponse::success(request.id, serde_json::to_value(status).unwrap())
+            }
+            Some(VpnMode::Server { listen_port, interface_address, peers, .. }) => {
+                // Get peer counts
+                let peers_guard = peers.blocking_lock();
+                let peer_count = peers_guard.len();
+                let connected_peer_count = peers_guard.connected_count();
+                drop(peers_guard);
 
-        JsonRpcResponse::success(request.id, serde_json::to_value(status).unwrap())
+                let status = ServerStatusResponse {
+                    state: s.connection_state,
+                    listen_port: Some(*listen_port),
+                    interface_address: Some(interface_address.clone()),
+                    peer_count,
+                    connected_peer_count,
+                    started_at: s.started_at.clone(),
+                    bytes_sent: s.traffic_stats.get_sent(),
+                    bytes_received: s.traffic_stats.get_received(),
+                    error_message: s.error_message.clone(),
+                };
+                JsonRpcResponse::success(request.id, serde_json::to_value(status).unwrap())
+            }
+            None => {
+                let status = StatusResponse {
+                    state: s.connection_state,
+                    vpn_ip: None,
+                    server_endpoint: None,
+                    connected_at: None,
+                    bytes_sent: 0,
+                    bytes_received: 0,
+                    last_handshake: None,
+                    error_message: s.error_message.clone(),
+                };
+                JsonRpcResponse::success(request.id, serde_json::to_value(status).unwrap())
+            }
+        }
     }
 
     /// Send status notification to all connected clients
@@ -516,19 +551,56 @@ impl DaemonService {
     ) -> Result<(), ()> {
         let s = state.lock().await;
 
-        let params = StatusChangedParams {
-            state: s.connection_state,
-            vpn_ip: s.vpn_ip.clone(),
-            server_endpoint: s.server_endpoint.clone(),
-            connected_at: s.connected_at.clone(),
-            bytes_sent: s.traffic_stats.get_sent(),
-            bytes_received: s.traffic_stats.get_received(),
-        };
+        // Build notification based on mode
+        let notification = match &s.mode {
+            Some(VpnMode::Client { vpn_ip, server_endpoint }) => {
+                let params = StatusChangedParams {
+                    state: s.connection_state,
+                    vpn_ip: Some(vpn_ip.clone()),
+                    server_endpoint: Some(server_endpoint.clone()),
+                    connected_at: s.started_at.clone(),
+                    bytes_sent: s.traffic_stats.get_sent(),
+                    bytes_received: s.traffic_stats.get_received(),
+                };
+                JsonRpcNotification::new(
+                    "status_changed",
+                    serde_json::to_value(params).unwrap_or_default(),
+                )
+            }
+            Some(VpnMode::Server { peers, .. }) => {
+                // For server mode, we send a different notification
+                let peers_guard = peers.blocking_lock();
+                let peer_count = peers_guard.len();
+                let connected_peer_count = peers_guard.connected_count();
+                drop(peers_guard);
 
-        let notification = JsonRpcNotification::new(
-            "status_changed",
-            serde_json::to_value(params).unwrap_or_default(),
-        );
+                let params = ServerStatusChangedParams {
+                    state: s.connection_state,
+                    peer_count,
+                    connected_peer_count,
+                    bytes_sent: s.traffic_stats.get_sent(),
+                    bytes_received: s.traffic_stats.get_received(),
+                };
+                JsonRpcNotification::new(
+                    "server_status_changed",
+                    serde_json::to_value(params).unwrap_or_default(),
+                )
+            }
+            None => {
+                let params = StatusChangedParams {
+                    state: s.connection_state,
+                    vpn_ip: None,
+                    server_endpoint: None,
+                    connected_at: None,
+                    bytes_sent: 0,
+                    bytes_received: 0,
+                };
+                JsonRpcNotification::new(
+                    "status_changed",
+                    serde_json::to_value(params).unwrap_or_default(),
+                )
+            }
+        };
 
         let json = serde_json::to_string(&notification).map_err(|_| ())?;
         status_tx.send(json).map_err(|_| ())?;
@@ -536,18 +608,638 @@ impl DaemonService {
         Ok(())
     }
 
+    // ========================================================================
+    // Server Mode Handlers
+    // ========================================================================
+
+    /// Handle start server request (server mode)
+    async fn handle_start_server(
+        request: JsonRpcRequest,
+        state: &Arc<Mutex<DaemonState>>,
+        status_tx: &broadcast::Sender<String>,
+    ) -> JsonRpcResponse {
+        // Parse params
+        let params: StartServerParams = match serde_json::from_value(request.params.clone()) {
+            Ok(p) => p,
+            Err(e) => {
+                return JsonRpcResponse::error(
+                    request.id,
+                    INVALID_PARAMS,
+                    format!("Invalid params: {}", e),
+                );
+            }
+        };
+
+        // Check if already running (client or server)
+        {
+            let s = state.lock().await;
+            if s.connection_state == ConnectionState::Connected
+                || s.connection_state == ConnectionState::Connecting
+            {
+                return JsonRpcResponse::error(
+                    request.id,
+                    ALREADY_RUNNING,
+                    "Already running (client or server mode)",
+                );
+            }
+        }
+
+        // Update state to connecting
+        {
+            let mut s = state.lock().await;
+            s.connection_state = ConnectionState::Connecting;
+            s.error_message = None;
+        }
+
+        let _ = Self::send_status_notification(state, status_tx).await;
+
+        // Parse config
+        let config = match WireGuardConfig::from_string(&params.config) {
+            Ok(c) => c,
+            Err(e) => {
+                let mut s = state.lock().await;
+                s.connection_state = ConnectionState::Error;
+                s.error_message = Some(format!("Invalid config: {}", e));
+                let _ = Self::send_status_notification(state, status_tx).await;
+                return JsonRpcResponse::error(
+                    request.id,
+                    INVALID_CONFIG,
+                    format!("Invalid config: {}", e),
+                );
+            }
+        };
+
+        // Extract server settings for status
+        let listen_port = config.interface.listen_port.unwrap_or(51820);
+        let interface_address = config
+            .interface
+            .address
+            .first()
+            .map(|a| a.to_string())
+            .unwrap_or_default();
+
+        // Get traffic stats to pass to server
+        let traffic_stats = {
+            let s = state.lock().await;
+            Arc::clone(&s.traffic_stats)
+        };
+
+        // Create channels for peer management
+        let (peer_update_tx, peer_update_rx) = mpsc::channel(32);
+        let (peer_event_tx, mut peer_event_rx) = mpsc::channel(32);
+
+        // Create shared peer manager
+        let peers = Arc::new(Mutex::new(PeerManager::new()));
+
+        // Initialize peers from bootstrap config (if any)
+        {
+            let mut peers_guard = peers.lock().await;
+            for peer_config in &config.peers {
+                let allowed_ips: Vec<IpNet> = peer_config
+                    .allowed_ips
+                    .iter()
+                    .filter_map(|net| {
+                        // Convert Ipv4Net to IpNet
+                        let ip_net: IpNet = (*net).into();
+                        Some(ip_net)
+                    })
+                    .collect();
+                peers_guard.add_peer(
+                    peer_config.public_key,
+                    peer_config.preshared_key,
+                    allowed_ips,
+                );
+            }
+        }
+
+        // Create server with channels
+        match WireGuardServer::new_with_channels(
+            config,
+            Arc::clone(&peers),
+            peer_update_rx,
+            peer_event_tx,
+            traffic_stats,
+        )
+        .await
+        {
+            Ok(server) => {
+                // Create shutdown channel
+                let (shutdown_tx, shutdown_rx) = watch::channel(false);
+
+                {
+                    let mut s = state.lock().await;
+                    s.connection_state = ConnectionState::Connected;
+                    s.mode = Some(VpnMode::Server {
+                        listen_port,
+                        interface_address: interface_address.clone(),
+                        peer_update_tx: peer_update_tx.clone(),
+                        peers: Arc::clone(&peers),
+                    });
+                    s.started_at = Some(chrono_now());
+                    s.traffic_stats.reset();
+                    s.shutdown_tx = Some(shutdown_tx);
+                }
+
+                let _ = Self::send_status_notification(state, status_tx).await;
+
+                // Start the server run loop in background
+                let state_clone = Arc::clone(state);
+                let status_tx_clone = status_tx.clone();
+                tokio::spawn(async move {
+                    let mut server = server;
+                    let mut shutdown_rx = shutdown_rx;
+
+                    // Spawn peer event forwarder
+                    let status_tx_events = status_tx_clone.clone();
+                    let event_forwarder = tokio::spawn(async move {
+                        while let Some(event) = peer_event_rx.recv().await {
+                            Self::send_peer_event_notification(&event, &status_tx_events);
+                        }
+                    });
+
+                    // Run server with shutdown monitoring
+                    let result = tokio::select! {
+                        result = server.run() => result,
+                        _ = async {
+                            loop {
+                                shutdown_rx.changed().await.ok();
+                                if *shutdown_rx.borrow() {
+                                    break;
+                                }
+                            }
+                        } => {
+                            tracing::info!("Server shutdown signal received");
+                            Ok(())
+                        }
+                    };
+
+                    // Stop event forwarder
+                    event_forwarder.abort();
+
+                    // Update state based on result
+                    {
+                        let mut s = state_clone.lock().await;
+                        match result {
+                            Ok(_) => {
+                                tracing::info!("VPN server stopped");
+                                s.connection_state = ConnectionState::Disconnected;
+                            }
+                            Err(e) => {
+                                tracing::error!("VPN server error: {}", e);
+                                s.connection_state = ConnectionState::Error;
+                                s.error_message = Some(format!("{}", e));
+                            }
+                        }
+                        s.mode = None;
+                        s.started_at = None;
+                        s.shutdown_tx = None;
+                    }
+
+                    let _ = Self::send_status_notification(&state_clone, &status_tx_clone).await;
+
+                    // Cleanup
+                    if let Err(e) = server.cleanup().await {
+                        tracing::error!("Server cleanup error: {}", e);
+                    }
+                });
+
+                JsonRpcResponse::success(request.id, serde_json::json!({"started": true}))
+            }
+            Err(e) => {
+                let mut s = state.lock().await;
+                s.connection_state = ConnectionState::Error;
+                s.error_message = Some(format!("{}", e));
+                drop(s);
+
+                let _ = Self::send_status_notification(state, status_tx).await;
+
+                JsonRpcResponse::error(
+                    request.id,
+                    CONNECTION_FAILED,
+                    format!("Failed to start server: {}", e),
+                )
+            }
+        }
+    }
+
+    /// Handle stop server request (server mode)
+    async fn handle_stop_server(
+        request: JsonRpcRequest,
+        state: &Arc<Mutex<DaemonState>>,
+        status_tx: &broadcast::Sender<String>,
+    ) -> JsonRpcResponse {
+        let mut s = state.lock().await;
+
+        // Check if in server mode
+        match &s.mode {
+            Some(VpnMode::Server { .. }) => {}
+            Some(VpnMode::Client { .. }) => {
+                return JsonRpcResponse::error(
+                    request.id,
+                    SERVER_NOT_RUNNING,
+                    "Use 'disconnect' to stop client mode",
+                );
+            }
+            None => {
+                return JsonRpcResponse::error(
+                    request.id,
+                    SERVER_NOT_RUNNING,
+                    "Server not running",
+                );
+            }
+        }
+
+        s.connection_state = ConnectionState::Disconnecting;
+
+        // Send shutdown signal to the background task
+        if let Some(ref shutdown_tx) = s.shutdown_tx {
+            let _ = shutdown_tx.send(true);
+        }
+        drop(s);
+
+        let _ = Self::send_status_notification(state, status_tx).await;
+
+        // Give the background task a moment to clean up
+        tokio::time::sleep(tokio::time::Duration::from_millis(100)).await;
+
+        JsonRpcResponse::success(request.id, serde_json::json!({"stopped": true}))
+    }
+
+    /// Handle list peers request (server mode)
+    async fn handle_list_peers(
+        request: JsonRpcRequest,
+        state: &Arc<Mutex<DaemonState>>,
+    ) -> JsonRpcResponse {
+        let s = state.lock().await;
+
+        let peers = match &s.mode {
+            Some(VpnMode::Server { peers, .. }) => Arc::clone(peers),
+            _ => {
+                return JsonRpcResponse::error(
+                    request.id,
+                    SERVER_NOT_RUNNING,
+                    "Server not running",
+                );
+            }
+        };
+        drop(s);
+
+        let peers_guard = peers.lock().await;
+        let peer_list: Vec<PeerInfo> = peers_guard
+            .iter()
+            .map(|peer_state| {
+                PeerInfo {
+                    public_key: BASE64.encode(&peer_state.public_key),
+                    allowed_ips: peer_state
+                        .allowed_ips
+                        .iter()
+                        .map(|ip| ip.to_string())
+                        .collect(),
+                    endpoint: peer_state.endpoint.map(|e| e.to_string()),
+                    has_session: peer_state.session.is_some(),
+                    last_handshake: peer_state.last_handshake.map(|_| chrono_now()),
+                    bytes_sent: peer_state.traffic_stats.get_sent(),
+                    bytes_received: peer_state.traffic_stats.get_received(),
+                }
+            })
+            .collect();
+
+        let response = ListPeersResponse { peers: peer_list };
+        JsonRpcResponse::success(request.id, serde_json::to_value(response).unwrap())
+    }
+
+    /// Handle peer status request (server mode)
+    async fn handle_peer_status(
+        request: JsonRpcRequest,
+        state: &Arc<Mutex<DaemonState>>,
+    ) -> JsonRpcResponse {
+        // Parse params
+        let params: PeerStatusParams = match serde_json::from_value(request.params.clone()) {
+            Ok(p) => p,
+            Err(e) => {
+                return JsonRpcResponse::error(
+                    request.id,
+                    INVALID_PARAMS,
+                    format!("Invalid params: {}", e),
+                );
+            }
+        };
+
+        // Decode public key
+        let public_key: [u8; 32] = match BASE64.decode(&params.public_key) {
+            Ok(bytes) if bytes.len() == 32 => {
+                let mut arr = [0u8; 32];
+                arr.copy_from_slice(&bytes);
+                arr
+            }
+            _ => {
+                return JsonRpcResponse::error(
+                    request.id,
+                    INVALID_PUBLIC_KEY,
+                    "Invalid public key: must be 32 bytes base64",
+                );
+            }
+        };
+
+        let s = state.lock().await;
+
+        let peers = match &s.mode {
+            Some(VpnMode::Server { peers, .. }) => Arc::clone(peers),
+            _ => {
+                return JsonRpcResponse::error(
+                    request.id,
+                    SERVER_NOT_RUNNING,
+                    "Server not running",
+                );
+            }
+        };
+        drop(s);
+
+        let peers_guard = peers.lock().await;
+        match peers_guard.get_peer(&public_key) {
+            Some(peer_state) => {
+                let info = PeerInfo {
+                    public_key: params.public_key,
+                    allowed_ips: peer_state
+                        .allowed_ips
+                        .iter()
+                        .map(|ip| ip.to_string())
+                        .collect(),
+                    endpoint: peer_state.endpoint.map(|e| e.to_string()),
+                    has_session: peer_state.session.is_some(),
+                    last_handshake: peer_state.last_handshake.map(|_| chrono_now()),
+                    bytes_sent: peer_state.traffic_stats.get_sent(),
+                    bytes_received: peer_state.traffic_stats.get_received(),
+                };
+                JsonRpcResponse::success(request.id, serde_json::to_value(info).unwrap())
+            }
+            None => JsonRpcResponse::error(request.id, PEER_NOT_FOUND, "Peer not found"),
+        }
+    }
+
+    /// Handle add peer request (server mode - dynamic peer management)
+    async fn handle_add_peer(
+        request: JsonRpcRequest,
+        state: &Arc<Mutex<DaemonState>>,
+        _status_tx: &broadcast::Sender<String>,
+    ) -> JsonRpcResponse {
+        // Parse params
+        let params: AddPeerParams = match serde_json::from_value(request.params.clone()) {
+            Ok(p) => p,
+            Err(e) => {
+                return JsonRpcResponse::error(
+                    request.id,
+                    INVALID_PARAMS,
+                    format!("Invalid params: {}", e),
+                );
+            }
+        };
+
+        // Decode public key
+        let public_key: [u8; 32] = match BASE64.decode(&params.public_key) {
+            Ok(bytes) if bytes.len() == 32 => {
+                let mut arr = [0u8; 32];
+                arr.copy_from_slice(&bytes);
+                arr
+            }
+            _ => {
+                return JsonRpcResponse::error(
+                    request.id,
+                    INVALID_PUBLIC_KEY,
+                    "Invalid public key: must be 32 bytes base64",
+                );
+            }
+        };
+
+        // Parse allowed IPs
+        let allowed_ips: Vec<IpNet> = {
+            let mut ips = Vec::new();
+            for ip_str in &params.allowed_ips {
+                match ip_str.parse::<IpNet>() {
+                    Ok(ip) => ips.push(ip),
+                    Err(_) => {
+                        return JsonRpcResponse::error(
+                            request.id,
+                            INVALID_ALLOWED_IPS,
+                            format!("Invalid CIDR notation: {}", ip_str),
+                        );
+                    }
+                }
+            }
+            ips
+        };
+
+        // Decode optional PSK
+        let psk: Option<[u8; 32]> = match &params.preshared_key {
+            Some(psk_str) => match BASE64.decode(psk_str) {
+                Ok(bytes) if bytes.len() == 32 => {
+                    let mut arr = [0u8; 32];
+                    arr.copy_from_slice(&bytes);
+                    Some(arr)
+                }
+                _ => {
+                    return JsonRpcResponse::error(
+                        request.id,
+                        INVALID_PARAMS,
+                        "Invalid preshared key: must be 32 bytes base64",
+                    );
+                }
+            },
+            None => None,
+        };
+
+        let s = state.lock().await;
+
+        let (peer_update_tx, peers) = match &s.mode {
+            Some(VpnMode::Server {
+                peer_update_tx,
+                peers,
+                ..
+            }) => (peer_update_tx.clone(), Arc::clone(peers)),
+            _ => {
+                return JsonRpcResponse::error(
+                    request.id,
+                    SERVER_NOT_RUNNING,
+                    "Server not running",
+                );
+            }
+        };
+        drop(s);
+
+        // Check peer doesn't already exist
+        {
+            let peers_guard = peers.lock().await;
+            if peers_guard.has_peer(&public_key) {
+                return JsonRpcResponse::error(
+                    request.id,
+                    PEER_ALREADY_EXISTS,
+                    "Peer already exists",
+                );
+            }
+        }
+
+        // Send update to server event loop
+        if peer_update_tx
+            .send(PeerUpdate::Add {
+                public_key,
+                psk,
+                allowed_ips,
+            })
+            .await
+            .is_err()
+        {
+            return JsonRpcResponse::error(
+                request.id,
+                SERVER_NOT_RUNNING,
+                "Server channel closed",
+            );
+        }
+
+        let response = AddPeerResponse {
+            added: true,
+            public_key: params.public_key,
+        };
+        JsonRpcResponse::success(request.id, serde_json::to_value(response).unwrap())
+    }
+
+    /// Handle remove peer request (server mode - dynamic peer management)
+    async fn handle_remove_peer(
+        request: JsonRpcRequest,
+        state: &Arc<Mutex<DaemonState>>,
+        _status_tx: &broadcast::Sender<String>,
+    ) -> JsonRpcResponse {
+        // Parse params
+        let params: RemovePeerParams = match serde_json::from_value(request.params.clone()) {
+            Ok(p) => p,
+            Err(e) => {
+                return JsonRpcResponse::error(
+                    request.id,
+                    INVALID_PARAMS,
+                    format!("Invalid params: {}", e),
+                );
+            }
+        };
+
+        // Decode public key
+        let public_key: [u8; 32] = match BASE64.decode(&params.public_key) {
+            Ok(bytes) if bytes.len() == 32 => {
+                let mut arr = [0u8; 32];
+                arr.copy_from_slice(&bytes);
+                arr
+            }
+            _ => {
+                return JsonRpcResponse::error(
+                    request.id,
+                    INVALID_PUBLIC_KEY,
+                    "Invalid public key: must be 32 bytes base64",
+                );
+            }
+        };
+
+        let s = state.lock().await;
+
+        let (peer_update_tx, peers) = match &s.mode {
+            Some(VpnMode::Server {
+                peer_update_tx,
+                peers,
+                ..
+            }) => (peer_update_tx.clone(), Arc::clone(peers)),
+            _ => {
+                return JsonRpcResponse::error(
+                    request.id,
+                    SERVER_NOT_RUNNING,
+                    "Server not running",
+                );
+            }
+        };
+        drop(s);
+
+        // Check peer exists and get connection status
+        let was_connected = {
+            let peers_guard = peers.lock().await;
+            match peers_guard.get_peer(&public_key) {
+                Some(peer) => peer.session.is_some(),
+                None => {
+                    return JsonRpcResponse::error(request.id, PEER_NOT_FOUND, "Peer not found");
+                }
+            }
+        };
+
+        // Send update to server event loop
+        if peer_update_tx
+            .send(PeerUpdate::Remove { public_key })
+            .await
+            .is_err()
+        {
+            return JsonRpcResponse::error(
+                request.id,
+                SERVER_NOT_RUNNING,
+                "Server channel closed",
+            );
+        }
+
+        let response = RemovePeerResponse {
+            removed: true,
+            public_key: params.public_key,
+            was_connected,
+        };
+        JsonRpcResponse::success(request.id, serde_json::to_value(response).unwrap())
+    }
+
+    /// Send peer event notification to IPC clients
+    fn send_peer_event_notification(event: &PeerEvent, status_tx: &broadcast::Sender<String>) {
+        let notification = match event {
+            PeerEvent::Connected {
+                public_key,
+                endpoint,
+            } => JsonRpcNotification::new(
+                "peer_connected",
+                serde_json::json!({
+                    "public_key": BASE64.encode(public_key),
+                    "endpoint": endpoint.to_string(),
+                }),
+            ),
+            PeerEvent::Disconnected { public_key, reason } => JsonRpcNotification::new(
+                "peer_disconnected",
+                serde_json::json!({
+                    "public_key": BASE64.encode(public_key),
+                    "reason": reason,
+                }),
+            ),
+            PeerEvent::Added {
+                public_key,
+                allowed_ips,
+            } => JsonRpcNotification::new(
+                "peer_added",
+                serde_json::json!({
+                    "public_key": BASE64.encode(public_key),
+                    "allowed_ips": allowed_ips.iter().map(|ip| ip.to_string()).collect::<Vec<_>>(),
+                }),
+            ),
+            PeerEvent::Removed {
+                public_key,
+                was_connected,
+            } => JsonRpcNotification::new(
+                "peer_removed",
+                serde_json::json!({
+                    "public_key": BASE64.encode(public_key),
+                    "was_connected": was_connected,
+                }),
+            ),
+        };
+
+        if let Ok(json) = serde_json::to_string(&notification) {
+            let _ = status_tx.send(json);
+        }
+    }
+
     /// Cleanup on shutdown
     pub async fn cleanup(&self) -> Result<(), SecureGuardError> {
-        let mut s = self.state.lock().await;
+        let s = self.state.lock().await;
 
         // Send shutdown signal if VPN is running
         if let Some(ref shutdown_tx) = s.shutdown_tx {
             let _ = shutdown_tx.send(true);
-        }
-
-        // Clean up any client that wasn't moved to background task
-        if let Some(ref mut client) = s.client {
-            client.cleanup().await?;
         }
 
         drop(s);

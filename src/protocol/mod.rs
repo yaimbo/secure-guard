@@ -20,5 +20,5 @@ pub use handshake::{
 pub use messages::{
     CookieReply, HandshakeInitiation, HandshakeResponse, MessageType, TransportHeader,
 };
-pub use session::{PeerManager, PeerState, Session, SessionManager};
+pub use session::{PeerManager, PeerState, Session, SessionManager, TrafficStats};
 pub use transport::{ReplayWindow, TransportState};

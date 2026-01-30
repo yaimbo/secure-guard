@@ -136,12 +136,26 @@ The daemon runs as a background service, controlled via Unix socket IPC (JSON-RP
 
 **Socket path:** `/var/run/secureguard.sock` (default)
 
-**IPC Commands:**
-- `connect` - Start VPN with config: `{"method": "connect", "params": {"config": "<wireguard-config>"}}`
-- `disconnect` - Stop VPN: `{"method": "disconnect"}`
+**IPC Commands (Client Mode):**
+- `connect` - Start VPN client: `{"method": "connect", "params": {"config": "<wireguard-config>"}}`
+- `disconnect` - Stop VPN client: `{"method": "disconnect"}`
 - `status` - Get connection status: `{"method": "status"}`
 
-**Status notifications** are pushed to connected clients when state changes.
+**IPC Commands (Server Mode):**
+- `start` - Start VPN server: `{"method": "start", "params": {"config": "<wireguard-config>"}}`
+- `stop` - Stop VPN server: `{"method": "stop"}`
+- `list_peers` - List all configured peers: `{"method": "list_peers"}`
+- `peer_status` - Get specific peer status: `{"method": "peer_status", "params": {"public_key": "<base64>"}}`
+- `add_peer` - Add peer dynamically: `{"method": "add_peer", "params": {"public_key": "<base64>", "allowed_ips": ["10.0.0.2/32"], "preshared_key": "<base64-optional>"}}`
+- `remove_peer` - Remove peer (terminates connection): `{"method": "remove_peer", "params": {"public_key": "<base64>"}}`
+
+**Notifications:**
+- `status_changed` - Client mode state changes
+- `server_status_changed` - Server mode state changes
+- `peer_connected` - Peer completed handshake (server mode)
+- `peer_disconnected` - Peer session terminated (server mode)
+- `peer_added` - New peer added dynamically (server mode)
+- `peer_removed` - Peer removed (server mode)
 
 **Platform installers:**
 - macOS: `installer/macos/install.sh` (LaunchDaemon)

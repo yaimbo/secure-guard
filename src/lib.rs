@@ -21,7 +21,7 @@
 //! #[tokio::main]
 //! async fn main() -> anyhow::Result<()> {
 //!     let config = WireGuardConfig::from_file("client.conf")?;
-//!     let mut client = WireGuardClient::new(config).await?;
+//!     let mut client = WireGuardClient::new(config, None).await?;
 //!     client.run().await?;
 //!     Ok(())
 //! }
