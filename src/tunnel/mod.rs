@@ -5,13 +5,374 @@
 
 use std::net::Ipv4Addr;
 use std::ops::Deref;
+use std::path::PathBuf;
 use std::process::Command as StdCommand;
 
 use ipnet::Ipv4Net;
+use serde::{Deserialize, Serialize};
 use tokio::process::Command;
 use tun_rs::{AsyncDevice, DeviceBuilder};
 
 use crate::error::{SecureGuardError, TunnelError};
+
+/// Persistent state for route cleanup after crashes
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct RouteState {
+    /// Interface name (e.g., "utun5", "tun0", "SecureGuard")
+    pub interface: String,
+    /// Interface index (Windows only, for precise route deletion)
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub interface_index: Option<u32>,
+    /// VPN endpoint IP (for bypass route cleanup)
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub endpoint_bypass: Option<String>,
+    /// Default gateway (for endpoint bypass cleanup)
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub default_gateway: Option<String>,
+    /// Routes added through the tunnel (CIDR notation)
+    pub routes: Vec<String>,
+    /// Timestamp when state was saved
+    pub timestamp: String,
+}
+
+/// Get the platform-specific path for the route state file
+fn get_state_file_path() -> PathBuf {
+    #[cfg(target_os = "windows")]
+    {
+        let path = PathBuf::from(r"C:\ProgramData\SecureGuard");
+        // Create directory if needed (ignore errors, will fail on save if needed)
+        let _ = std::fs::create_dir_all(&path);
+        path.join("routes.json")
+    }
+
+    #[cfg(not(target_os = "windows"))]
+    {
+        PathBuf::from("/var/run/secureguard_routes.json")
+    }
+}
+
+/// Save the current route state to persistent storage
+fn save_route_state(state: &RouteState) -> Result<(), std::io::Error> {
+    let path = get_state_file_path();
+    let json = serde_json::to_string_pretty(state)
+        .map_err(|e| std::io::Error::new(std::io::ErrorKind::InvalidData, e))?;
+    std::fs::write(&path, json)?;
+    tracing::debug!("Saved route state to {:?}", path);
+    Ok(())
+}
+
+/// Load route state from persistent storage (if exists)
+fn load_route_state() -> Option<RouteState> {
+    let path = get_state_file_path();
+    match std::fs::read_to_string(&path) {
+        Ok(json) => {
+            match serde_json::from_str(&json) {
+                Ok(state) => {
+                    tracing::info!("Found route state file at {:?}", path);
+                    Some(state)
+                }
+                Err(e) => {
+                    tracing::warn!("Failed to parse route state file: {}", e);
+                    None
+                }
+            }
+        }
+        Err(_) => None, // File doesn't exist, that's fine
+    }
+}
+
+/// Delete the route state file (called on clean exit)
+fn delete_route_state() {
+    let path = get_state_file_path();
+    if let Err(e) = std::fs::remove_file(&path) {
+        if e.kind() != std::io::ErrorKind::NotFound {
+            tracing::warn!("Failed to delete route state file: {}", e);
+        }
+    } else {
+        tracing::debug!("Deleted route state file");
+    }
+}
+
+/// Check if an interface exists
+fn interface_exists(interface: &str) -> bool {
+    #[cfg(target_os = "macos")]
+    {
+        match StdCommand::new("ifconfig").args(["-l"]).output() {
+            Ok(output) => {
+                let list = String::from_utf8_lossy(&output.stdout);
+                list.split_whitespace().any(|s| s == interface)
+            }
+            Err(_) => false,
+        }
+    }
+
+    #[cfg(target_os = "linux")]
+    {
+        match StdCommand::new("ip").args(["link", "show", interface]).output() {
+            Ok(output) => output.status.success(),
+            Err(_) => false,
+        }
+    }
+
+    #[cfg(target_os = "windows")]
+    {
+        match StdCommand::new("powershell")
+            .args(["-Command", &format!("Get-NetAdapter -Name '{}' -ErrorAction SilentlyContinue", interface)])
+            .output()
+        {
+            Ok(output) => !String::from_utf8_lossy(&output.stdout).trim().is_empty(),
+            Err(_) => false,
+        }
+    }
+}
+
+/// Clean up routes from a previous crashed session using the state file.
+/// This is the safe replacement for the old netstat-parsing approach.
+pub fn cleanup_from_state_file() {
+    let state = match load_route_state() {
+        Some(s) => s,
+        None => {
+            tracing::debug!("No route state file found - no cleanup needed");
+            return;
+        }
+    };
+
+    tracing::info!(
+        "Found orphaned route state from {} (interface: {})",
+        state.timestamp,
+        state.interface
+    );
+
+    // Safety check: if the interface still exists, skip cleanup
+    // (another instance might be starting up)
+    if interface_exists(&state.interface) {
+        tracing::warn!(
+            "Interface {} still exists - skipping cleanup (another session may be active)",
+            state.interface
+        );
+        return;
+    }
+
+    tracing::info!("Interface {} no longer exists - cleaning up {} orphaned routes",
+        state.interface,
+        state.routes.len()
+    );
+
+    let mut cleaned = 0;
+    let mut failed = 0;
+
+    // Clean up regular routes
+    for route in &state.routes {
+        if cleanup_single_route(route, &state.interface, state.interface_index) {
+            cleaned += 1;
+        } else {
+            failed += 1;
+        }
+    }
+
+    // Clean up endpoint bypass route if present
+    if let Some(ref endpoint) = state.endpoint_bypass {
+        if let Some(ref gateway) = state.default_gateway {
+            if cleanup_endpoint_bypass(endpoint, gateway) {
+                tracing::debug!("Cleaned up endpoint bypass route for {}", endpoint);
+            }
+        }
+    }
+
+    // Delete the state file after cleanup
+    delete_route_state();
+
+    tracing::info!(
+        "Route cleanup complete: {} removed, {} failed",
+        cleaned,
+        failed
+    );
+}
+
+/// Clean up a single route (platform-specific)
+fn cleanup_single_route(route: &str, interface: &str, _interface_index: Option<u32>) -> bool {
+    #[cfg(target_os = "macos")]
+    {
+        // Use -interface to target the specific route
+        let result = StdCommand::new("route")
+            .args(["-n", "delete", "-net", route, "-interface", interface])
+            .output();
+
+        match result {
+            Ok(output) => {
+                if output.status.success() {
+                    tracing::debug!("Removed orphaned route: {} via {}", route, interface);
+                    true
+                } else {
+                    // Try without -interface as fallback (route might have been cleaned by system)
+                    let _ = StdCommand::new("route")
+                        .args(["-n", "delete", "-net", route])
+                        .output();
+                    false
+                }
+            }
+            Err(e) => {
+                tracing::trace!("Failed to remove route {}: {}", route, e);
+                false
+            }
+        }
+    }
+
+    #[cfg(target_os = "linux")]
+    {
+        let result = StdCommand::new("ip")
+            .args(["route", "del", route, "dev", interface])
+            .output();
+
+        match result {
+            Ok(output) => {
+                if output.status.success() {
+                    tracing::debug!("Removed orphaned route: {} via {}", route, interface);
+                    true
+                } else {
+                    false
+                }
+            }
+            Err(e) => {
+                tracing::trace!("Failed to remove route {}: {}", route, e);
+                false
+            }
+        }
+    }
+
+    #[cfg(target_os = "windows")]
+    {
+        // On Windows, use interface index if available for precision
+        let result = if let Some(idx) = _interface_index {
+            StdCommand::new("route")
+                .args(["delete", route, &format!("IF {}", idx)])
+                .output()
+        } else {
+            StdCommand::new("route")
+                .args(["delete", route])
+                .output()
+        };
+
+        match result {
+            Ok(output) => {
+                if output.status.success() {
+                    tracing::debug!("Removed orphaned route: {}", route);
+                    true
+                } else {
+                    // Try PowerShell as fallback
+                    let ps_result = if let Some(idx) = _interface_index {
+                        StdCommand::new("powershell")
+                            .args(["-Command", &format!(
+                                "Remove-NetRoute -DestinationPrefix '{}' -InterfaceIndex {} -Confirm:$false -ErrorAction SilentlyContinue",
+                                route, idx
+                            )])
+                            .output()
+                    } else {
+                        StdCommand::new("powershell")
+                            .args(["-Command", &format!(
+                                "Remove-NetRoute -DestinationPrefix '{}' -Confirm:$false -ErrorAction SilentlyContinue",
+                                route
+                            )])
+                            .output()
+                    };
+                    ps_result.map(|o| o.status.success()).unwrap_or(false)
+                }
+            }
+            Err(e) => {
+                tracing::trace!("Failed to remove route {}: {}", route, e);
+                false
+            }
+        }
+    }
+}
+
+/// Clean up the endpoint bypass route
+fn cleanup_endpoint_bypass(endpoint: &str, gateway: &str) -> bool {
+    #[cfg(target_os = "macos")]
+    {
+        let result = StdCommand::new("route")
+            .args(["-n", "delete", "-host", endpoint, gateway])
+            .output();
+        result.map(|o| o.status.success()).unwrap_or(false)
+    }
+
+    #[cfg(target_os = "linux")]
+    {
+        let result = StdCommand::new("ip")
+            .args(["route", "del", &format!("{}/32", endpoint), "via", gateway])
+            .output();
+        result.map(|o| o.status.success()).unwrap_or(false)
+    }
+
+    #[cfg(target_os = "windows")]
+    {
+        let result = StdCommand::new("route")
+            .args(["delete", endpoint, "mask", "255.255.255.255", gateway])
+            .output();
+        result.map(|o| o.status.success()).unwrap_or(false)
+    }
+}
+
+/// Get the current default gateway (used for state file)
+fn get_default_gateway() -> Option<String> {
+    #[cfg(target_os = "macos")]
+    {
+        let output = StdCommand::new("route")
+            .args(["-n", "get", "default"])
+            .output()
+            .ok()?;
+
+        let output_str = String::from_utf8_lossy(&output.stdout);
+        output_str
+            .lines()
+            .find(|line| line.contains("gateway:"))
+            .and_then(|line| line.split(':').nth(1))
+            .map(|s| s.trim().to_string())
+    }
+
+    #[cfg(target_os = "linux")]
+    {
+        let output = StdCommand::new("ip")
+            .args(["route", "show", "default"])
+            .output()
+            .ok()?;
+
+        let output_str = String::from_utf8_lossy(&output.stdout);
+        output_str
+            .split_whitespace()
+            .skip_while(|&s| s != "via")
+            .nth(1)
+            .map(|s| s.to_string())
+    }
+
+    #[cfg(target_os = "windows")]
+    {
+        let output = StdCommand::new("powershell")
+            .args(["-Command", "Get-NetRoute -DestinationPrefix '0.0.0.0/0' | Select-Object -First 1 -ExpandProperty NextHop"])
+            .output()
+            .ok()?;
+
+        let gateway = String::from_utf8_lossy(&output.stdout).trim().to_string();
+        if gateway.is_empty() { None } else { Some(gateway) }
+    }
+}
+
+/// Get the interface index (Windows only)
+#[cfg(target_os = "windows")]
+fn get_interface_index(interface: &str) -> Option<u32> {
+    let output = StdCommand::new("powershell")
+        .args(["-Command", &format!(
+            "(Get-NetAdapter -Name '{}' -ErrorAction SilentlyContinue).ifIndex",
+            interface
+        )])
+        .output()
+        .ok()?;
+
+    String::from_utf8_lossy(&output.stdout)
+        .trim()
+        .parse()
+        .ok()
+}
 
 /// Async TUN device wrapper
 pub struct TunDevice {
@@ -168,36 +529,59 @@ pub struct RouteManager {
     added_routes: Vec<Ipv4Net>,
     /// Endpoint bypass route (needs separate cleanup)
     endpoint_bypass: Option<Ipv4Addr>,
+    /// Default gateway (for state file)
+    default_gateway: Option<String>,
+    /// Interface index (Windows only)
+    #[cfg(target_os = "windows")]
+    interface_index: Option<u32>,
 }
 
 impl RouteManager {
     /// Create a new route manager
     pub fn new(device_name: String) -> Self {
+        // Capture default gateway at creation time
+        let default_gateway = get_default_gateway();
+
+        #[cfg(target_os = "windows")]
+        let interface_index = get_interface_index(&device_name);
+
         Self {
             device_name,
             added_routes: Vec::new(),
             endpoint_bypass: None,
+            default_gateway,
+            #[cfg(target_os = "windows")]
+            interface_index,
         }
     }
 
     /// Clean up any stale routes from previous SecureGuard sessions.
     /// This should be called on startup before adding new routes.
+    /// Uses the persistent state file approach for safe, deterministic cleanup.
     pub fn cleanup_stale_routes() {
         tracing::info!("Checking for stale routes from previous sessions...");
+        cleanup_from_state_file();
+    }
 
-        #[cfg(target_os = "macos")]
-        {
-            cleanup_stale_routes_macos();
-        }
+    /// Save current route state to persistent storage
+    fn save_state(&self) {
+        let state = RouteState {
+            interface: self.device_name.clone(),
+            #[cfg(target_os = "windows")]
+            interface_index: self.interface_index,
+            #[cfg(not(target_os = "windows"))]
+            interface_index: None,
+            endpoint_bypass: self.endpoint_bypass.map(|ip| ip.to_string()),
+            default_gateway: self.default_gateway.clone(),
+            routes: self.added_routes.iter().map(|r| r.to_string()).collect(),
+            timestamp: std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .map(|d| d.as_secs().to_string())
+                .unwrap_or_else(|_| "0".to_string()),
+        };
 
-        #[cfg(target_os = "linux")]
-        {
-            cleanup_stale_routes_linux();
-        }
-
-        #[cfg(target_os = "windows")]
-        {
-            cleanup_stale_routes_windows();
+        if let Err(e) = save_route_state(&state) {
+            tracing::warn!("Failed to save route state: {} (routes will need manual cleanup on crash)", e);
         }
     }
 
@@ -206,6 +590,7 @@ impl RouteManager {
     pub async fn add_endpoint_bypass(&mut self, endpoint: Ipv4Addr) -> Result<(), SecureGuardError> {
         add_endpoint_bypass_platform(endpoint).await?;
         self.endpoint_bypass = Some(endpoint);
+        self.save_state();
         tracing::info!("Added endpoint bypass route for {}", endpoint);
         Ok(())
     }
@@ -214,6 +599,7 @@ impl RouteManager {
     pub async fn add_route(&mut self, network: Ipv4Net) -> Result<(), SecureGuardError> {
         add_route_platform(&self.device_name, &network).await?;
         self.added_routes.push(network);
+        self.save_state();
         tracing::info!("Added route: {} via {}", network, self.device_name);
         Ok(())
     }
@@ -239,6 +625,9 @@ impl RouteManager {
                 tracing::debug!("Removed route: {}", network);
             }
         }
+
+        // Delete state file on clean exit
+        delete_route_state();
 
         if !errors.is_empty() {
             // Log but don't fail - best effort cleanup
@@ -570,389 +959,5 @@ async fn remove_endpoint_bypass_platform(endpoint: Ipv4Addr) -> Result<(), Secur
     Ok(())
 }
 
-/// Clean up stale routes on macOS
-/// ONLY removes routes pointing to utun devices that NO LONGER EXIST.
-/// CRITICAL: Also skips routes if the destination is used by ANY active interface,
-/// to avoid accidentally deleting working routes (e.g., default route through en0).
-#[cfg(target_os = "macos")]
-fn cleanup_stale_routes_macos() {
-    use std::collections::HashSet;
-
-    // Get list of active utun interfaces
-    let active_utuns: HashSet<String> = match StdCommand::new("ifconfig")
-        .args(["-l"])
-        .output()
-    {
-        Ok(output) => {
-            String::from_utf8_lossy(&output.stdout)
-                .split_whitespace()
-                .filter(|s| s.starts_with("utun"))
-                .map(|s| s.to_string())
-                .collect()
-        }
-        Err(e) => {
-            tracing::warn!("Failed to list interfaces: {}", e);
-            return;
-        }
-    };
-
-    tracing::debug!("Active utun interfaces: {:?}", active_utuns);
-
-    // Get routing table
-    let routes_output = match StdCommand::new("netstat")
-        .args(["-rn"])
-        .output()
-    {
-        Ok(output) => String::from_utf8_lossy(&output.stdout).to_string(),
-        Err(e) => {
-            tracing::warn!("Failed to get routing table: {}", e);
-            return;
-        }
-    };
-
-    // STEP 1: Collect all destinations that are used by ACTIVE interfaces
-    // This includes both active utun interfaces AND non-utun interfaces (en0, lo0, etc.)
-    // We must NOT delete any route that shares a destination with a working interface
-    let mut destinations_with_active_routes: HashSet<String> = HashSet::new();
-
-    for line in routes_output.lines() {
-        let parts: Vec<&str> = line.split_whitespace().collect();
-        if parts.len() < 4 {
-            continue;
-        }
-
-        let iface = parts.last().unwrap_or(&"");
-        let destination = parts[0].to_string();
-
-        // If this interface is active (exists), record that this destination has a working route
-        // This includes: active utuns, AND any non-utun interface (en0, lo0, bridge, etc.)
-        let is_active_utun = iface.starts_with("utun") && active_utuns.contains(*iface);
-        let is_non_utun = !iface.starts_with("utun");
-
-        if is_active_utun || is_non_utun {
-            destinations_with_active_routes.insert(destination);
-        }
-    }
-
-    // STEP 2: Find and delete orphaned routes (non-existent utun, destination not shared)
-    let mut cleaned = 0;
-    let mut skipped_shared = 0;
-    let mut orphaned_interfaces: HashSet<String> = HashSet::new();
-
-    for line in routes_output.lines() {
-        let parts: Vec<&str> = line.split_whitespace().collect();
-        if parts.len() < 4 {
-            continue;
-        }
-
-        let iface = parts.last().unwrap_or(&"");
-        if !iface.starts_with("utun") {
-            continue;
-        }
-
-        // Skip if interface still exists
-        if active_utuns.contains(*iface) {
-            continue;
-        }
-
-        let destination = parts[0];
-
-        // Skip localhost and link-local routes
-        if destination == "127.0.0.1" || destination.starts_with("fe80") || destination == "::1" {
-            continue;
-        }
-
-        // CRITICAL SAFETY CHECK: Skip if this destination has an active route through another interface
-        // This prevents deleting e.g., "default" route which would kill internet
-        if destinations_with_active_routes.contains(destination) {
-            tracing::debug!(
-                "Skipping orphaned route {} via {} - destination has active route through another interface",
-                destination, iface
-            );
-            skipped_shared += 1;
-            continue;
-        }
-
-        // Safe to delete - destination is ONLY used by the dead interface
-        orphaned_interfaces.insert(iface.to_string());
-
-        let is_host = parts.iter().any(|&f| f.contains('H'));
-        let delete_args = if is_host {
-            vec!["-n", "delete", "-host", destination]
-        } else {
-            vec!["-n", "delete", "-net", destination]
-        };
-
-        match StdCommand::new("route")
-            .args(&delete_args)
-            .output()
-        {
-            Ok(output) => {
-                if output.status.success() {
-                    cleaned += 1;
-                    tracing::debug!("Removed orphaned route: {} (was via non-existent {})", destination, iface);
-                }
-            }
-            Err(e) => {
-                tracing::trace!("Failed to remove route {}: {}", destination, e);
-            }
-        }
-    }
-
-    if cleaned > 0 || skipped_shared > 0 {
-        tracing::info!(
-            "Route cleanup: removed {} orphaned, skipped {} shared destinations, interfaces: {:?}",
-            cleaned,
-            skipped_shared,
-            orphaned_interfaces
-        );
-    } else {
-        tracing::debug!("No orphaned routes found");
-    }
-}
-
-/// Clean up stale routes on Linux
-/// ONLY removes routes pointing to tun/wg devices that NO LONGER EXIST.
-/// CRITICAL: Also skips routes if the destination is used by ANY active interface.
-#[cfg(target_os = "linux")]
-fn cleanup_stale_routes_linux() {
-    use std::collections::HashSet;
-
-    // Get list of ALL active network interfaces
-    let active_interfaces: HashSet<String> = match StdCommand::new("ip")
-        .args(["link", "show"])
-        .output()
-    {
-        Ok(output) => {
-            let out = String::from_utf8_lossy(&output.stdout);
-            out.lines()
-                .filter_map(|line| {
-                    // Parse lines like "5: tun0: <...>" or "2: eth0: <...>"
-                    if line.starts_with(char::is_numeric) || line.starts_with(' ') {
-                        line.split(':').nth(1).map(|s| s.trim().to_string())
-                    } else {
-                        None
-                    }
-                })
-                .collect()
-        }
-        Err(_) => HashSet::new(),
-    };
-
-    tracing::debug!("Active interfaces: {:?}", active_interfaces);
-
-    // Get routing table
-    let routes_output = match StdCommand::new("ip")
-        .args(["route", "show"])
-        .output()
-    {
-        Ok(output) => String::from_utf8_lossy(&output.stdout).to_string(),
-        Err(e) => {
-            tracing::warn!("Failed to get routing table: {}", e);
-            return;
-        }
-    };
-
-    // STEP 1: Collect destinations used by active interfaces
-    let mut destinations_with_active_routes: HashSet<String> = HashSet::new();
-
-    for line in routes_output.lines() {
-        let parts: Vec<&str> = line.split_whitespace().collect();
-        if parts.is_empty() {
-            continue;
-        }
-
-        let destination = parts[0].to_string();
-        let dev_idx = parts.iter().position(|&s| s == "dev");
-
-        if let Some(idx) = dev_idx {
-            if let Some(dev) = parts.get(idx + 1) {
-                // If interface is active, record this destination
-                if active_interfaces.contains(*dev) {
-                    destinations_with_active_routes.insert(destination);
-                }
-            }
-        }
-    }
-
-    // STEP 2: Delete orphaned routes (dead interface, destination not shared)
-    let mut cleaned = 0;
-    let mut skipped_shared = 0;
-    let mut orphaned_interfaces: HashSet<String> = HashSet::new();
-
-    for line in routes_output.lines() {
-        // Look for routes with "dev tunX" or "dev wg0" etc.
-        if !line.contains(" dev tun") && !line.contains(" dev wg") {
-            continue;
-        }
-
-        let parts: Vec<&str> = line.split_whitespace().collect();
-        let dev_idx = parts.iter().position(|&s| s == "dev");
-
-        if let Some(idx) = dev_idx {
-            if let Some(dev) = parts.get(idx + 1) {
-                // Skip if interface still exists
-                if active_interfaces.contains(*dev) {
-                    continue;
-                }
-
-                let destination = parts[0];
-
-                // CRITICAL: Skip if destination has an active route
-                if destinations_with_active_routes.contains(destination) {
-                    tracing::debug!(
-                        "Skipping orphaned route {} via {} - destination has active route",
-                        destination, dev
-                    );
-                    skipped_shared += 1;
-                    continue;
-                }
-
-                // Safe to delete
-                orphaned_interfaces.insert(dev.to_string());
-
-                match StdCommand::new("ip")
-                    .args(["route", "del", destination])
-                    .output()
-                {
-                    Ok(output) if output.status.success() => {
-                        cleaned += 1;
-                        tracing::debug!("Removed orphaned route: {} (was via non-existent {})", destination, dev);
-                    }
-                    _ => {}
-                }
-            }
-        }
-    }
-
-    if cleaned > 0 || skipped_shared > 0 {
-        tracing::info!(
-            "Route cleanup: removed {} orphaned, skipped {} shared destinations, interfaces: {:?}",
-            cleaned,
-            skipped_shared,
-            orphaned_interfaces
-        );
-    } else {
-        tracing::debug!("No orphaned routes found");
-    }
-}
-
-/// Clean up stale routes on Windows
-/// ONLY removes routes pointing to interfaces that NO LONGER EXIST.
-/// CRITICAL: Also skips routes if the destination is used by ANY active interface.
-/// Windows typically cleans up routes automatically, so this is mostly a safety net.
-#[cfg(target_os = "windows")]
-fn cleanup_stale_routes_windows() {
-    use std::collections::HashSet;
-
-    // Get list of active network adapters
-    let active_adapters: HashSet<String> = match StdCommand::new("powershell")
-        .args(["-Command", "Get-NetAdapter | Select-Object -ExpandProperty Name"])
-        .output()
-    {
-        Ok(output) => {
-            String::from_utf8_lossy(&output.stdout)
-                .lines()
-                .map(|s| s.trim().to_string())
-                .filter(|s| !s.is_empty())
-                .collect()
-        }
-        Err(_) => return,
-    };
-
-    tracing::debug!("Active adapters: {:?}", active_adapters);
-
-    // Get ALL routes to find destinations used by active interfaces
-    let all_routes = match StdCommand::new("powershell")
-        .args(["-Command", "Get-NetRoute | Select-Object DestinationPrefix, InterfaceAlias | ConvertTo-Csv -NoTypeInformation"])
-        .output()
-    {
-        Ok(o) => String::from_utf8_lossy(&o.stdout).to_string(),
-        Err(_) => return,
-    };
-
-    // STEP 1: Collect destinations used by active interfaces
-    let mut destinations_with_active_routes: HashSet<String> = HashSet::new();
-
-    for line in all_routes.lines().skip(1) {
-        let parts: Vec<&str> = line.split(',').collect();
-        if parts.len() < 2 {
-            continue;
-        }
-
-        let destination = parts[0].trim_matches('"').trim().to_string();
-        let interface = parts[1].trim_matches('"').trim();
-
-        if active_adapters.contains(interface) {
-            destinations_with_active_routes.insert(destination);
-        }
-    }
-
-    // Get routes through WireGuard/SecureGuard interfaces
-    let wg_routes = match StdCommand::new("powershell")
-        .args(["-Command", "Get-NetRoute | Where-Object { $_.InterfaceAlias -like 'WireGuard*' -or $_.InterfaceAlias -like 'SecureGuard*' } | Select-Object DestinationPrefix, InterfaceAlias | ConvertTo-Csv -NoTypeInformation"])
-        .output()
-    {
-        Ok(o) => String::from_utf8_lossy(&o.stdout).to_string(),
-        Err(_) => return,
-    };
-
-    // STEP 2: Delete orphaned routes (dead interface, destination not shared)
-    let mut cleaned = 0;
-    let mut skipped_shared = 0;
-    let mut orphaned_interfaces: HashSet<String> = HashSet::new();
-
-    for line in wg_routes.lines().skip(1) {
-        let parts: Vec<&str> = line.split(',').collect();
-        if parts.len() < 2 {
-            continue;
-        }
-
-        let destination = parts[0].trim_matches('"').trim();
-        let interface = parts[1].trim_matches('"').trim();
-
-        if destination.is_empty() || interface.is_empty() {
-            continue;
-        }
-
-        // Skip if interface still exists
-        if active_adapters.contains(interface) {
-            continue;
-        }
-
-        // CRITICAL: Skip if destination has an active route
-        if destinations_with_active_routes.contains(destination) {
-            tracing::debug!(
-                "Skipping orphaned route {} via {} - destination has active route",
-                destination, interface
-            );
-            skipped_shared += 1;
-            continue;
-        }
-
-        // Safe to delete
-        orphaned_interfaces.insert(interface.to_string());
-
-        match StdCommand::new("route")
-            .args(["delete", destination])
-            .output()
-        {
-            Ok(output) if output.status.success() => {
-                cleaned += 1;
-                tracing::debug!("Removed orphaned route: {} (was via non-existent {})", destination, interface);
-            }
-            _ => {}
-        }
-    }
-
-    if cleaned > 0 || skipped_shared > 0 {
-        tracing::info!(
-            "Route cleanup: removed {} orphaned, skipped {} shared destinations, interfaces: {:?}",
-            cleaned,
-            skipped_shared,
-            orphaned_interfaces
-        );
-    } else {
-        tracing::debug!("No orphaned routes found");
-    }
-}
+// Old netstat-parsing cleanup functions have been removed.
+// Route cleanup now uses the persistent state file approach via cleanup_from_state_file().
