@@ -41,6 +41,42 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
   Widget build(BuildContext context) {
     final authState = ref.watch(authStateProvider);
 
+    // Show loading screen while checking auth state (not during login attempt)
+    // We detect this by checking if loading is true but there's no user interaction yet
+    // (email controller is empty means user hasn't started typing)
+    if (authState.isLoading && _emailController.text.isEmpty) {
+      return Scaffold(
+        body: Center(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Container(
+                padding: const EdgeInsets.all(16),
+                decoration: BoxDecoration(
+                  color: Theme.of(context).colorScheme.primary,
+                  shape: BoxShape.circle,
+                ),
+                child: const Icon(
+                  Icons.shield,
+                  size: 48,
+                  color: Colors.white,
+                ),
+              ),
+              const SizedBox(height: 24),
+              const CircularProgressIndicator(),
+              const SizedBox(height: 16),
+              Text(
+                'Loading...',
+                style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                      color: Colors.grey,
+                    ),
+              ),
+            ],
+          ),
+        ),
+      );
+    }
+
     return Scaffold(
       body: Center(
         child: Container(

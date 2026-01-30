@@ -24,9 +24,10 @@ final routerProvider = Provider<GoRouter>((ref) {
       final isLoading = authState.isLoading;
       final currentPath = state.matchedLocation;
 
-      // Don't redirect while loading
-      if (isLoading) {
-        return null;
+      // While loading auth state, redirect to login (shows loading indicator)
+      // This prevents protected routes from rendering before auth is resolved
+      if (isLoading && currentPath != '/login' && currentPath != '/setup' && currentPath != '/error') {
+        return '/login';
       }
 
       // If server is unavailable, go to error page
