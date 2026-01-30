@@ -1,5 +1,5 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:flutter_secure_storage/flutter_secure_storage.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 import '../services/api_service.dart';
 
@@ -51,12 +51,15 @@ class AuthState {
 // Auth notifier
 class AuthNotifier extends StateNotifier<AuthState> {
   final ApiService _api;
-  final FlutterSecureStorage _storage;
+  SharedPreferences? _prefs;
 
-  AuthNotifier(this._api)
-      : _storage = const FlutterSecureStorage(),
-        super(const AuthState()) {
+  AuthNotifier(this._api) : super(const AuthState()) {
     _init();
+  }
+
+  Future<SharedPreferences> _getPrefs() async {
+    _prefs ??= await SharedPreferences.getInstance();
+    return _prefs!;
   }
 
   Future<void> _init() async {
@@ -70,8 +73,9 @@ class AuthNotifier extends StateNotifier<AuthState> {
         return;
       }
 
-      final accessToken = await _storage.read(key: 'access_token');
-      final refreshToken = await _storage.read(key: 'refresh_token');
+      final prefs = await _getPrefs();
+      final accessToken = prefs.getString('access_token');
+      final refreshToken = prefs.getString('refresh_token');
 
       if (accessToken != null) {
         _api.setAccessToken(accessToken);
@@ -181,15 +185,17 @@ class AuthNotifier extends StateNotifier<AuthState> {
     final accessToken = result['access_token'] as String;
     final refreshToken = result['refresh_token'] as String;
 
-    await _storage.write(key: 'access_token', value: accessToken);
-    await _storage.write(key: 'refresh_token', value: refreshToken);
+    final prefs = await _getPrefs();
+    await prefs.setString('access_token', accessToken);
+    await prefs.setString('refresh_token', refreshToken);
 
     _api.setAccessToken(accessToken);
   }
 
   Future<void> _clearTokens() async {
-    await _storage.delete(key: 'access_token');
-    await _storage.delete(key: 'refresh_token');
+    final prefs = await _getPrefs();
+    await prefs.remove('access_token');
+    await prefs.remove('refresh_token');
     _api.setAccessToken(null);
   }
 }

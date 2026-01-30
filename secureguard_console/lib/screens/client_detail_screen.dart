@@ -724,33 +724,10 @@ class _EnrollmentCodeCard extends ConsumerStatefulWidget {
 
 class _EnrollmentCodeCardState extends ConsumerState<_EnrollmentCodeCard> {
   static const _autoSendPrefKey = 'enrollment_auto_send_email';
-  bool _autoSendEmail = false;
-  bool _isLoadingPrefs = true;
 
-  @override
-  void initState() {
-    super.initState();
-    _loadAutoSendPreference();
-  }
-
-  Future<void> _loadAutoSendPreference() async {
+  Future<bool> _getAutoSendPreference() async {
     final prefs = await SharedPreferences.getInstance();
-    if (mounted) {
-      setState(() {
-        _autoSendEmail = prefs.getBool(_autoSendPrefKey) ?? false;
-        _isLoadingPrefs = false;
-      });
-    }
-  }
-
-  Future<void> _setAutoSendPreference(bool value) async {
-    final prefs = await SharedPreferences.getInstance();
-    await prefs.setBool(_autoSendPrefKey, value);
-    if (mounted) {
-      setState(() {
-        _autoSendEmail = value;
-      });
-    }
+    return prefs.getBool(_autoSendPrefKey) ?? true; // Default to ON
   }
 
   @override
@@ -793,30 +770,6 @@ class _EnrollmentCodeCardState extends ConsumerState<_EnrollmentCodeCard> {
               'Share this code with the user to allow them to easily enroll their device.',
               style: TextStyle(fontSize: 13, color: Colors.grey[400]),
             ),
-            const SizedBox(height: 12),
-            // Auto-send email toggle
-            if (!_isLoadingPrefs)
-              Row(
-                children: [
-                  Switch(
-                    value: _autoSendEmail,
-                    onChanged: _setAutoSendPreference,
-                    activeTrackColor: const Color(0xFF3B82F6).withValues(alpha: 0.5),
-                    activeThumbColor: const Color(0xFF3B82F6),
-                  ),
-                  const SizedBox(width: 8),
-                  Expanded(
-                    child: Text(
-                      'Auto-send enrollment email when code is generated',
-                      style: TextStyle(fontSize: 13, color: Colors.grey[400]),
-                    ),
-                  ),
-                  Tooltip(
-                    message: 'Requires email settings to be configured and client to have an email address',
-                    child: Icon(Icons.info_outline, size: 16, color: Colors.grey[500]),
-                  ),
-                ],
-              ),
             const SizedBox(height: 16),
             enrollmentAsync.when(
               loading: () => const Center(
@@ -859,6 +812,38 @@ class _EnrollmentCodeCardState extends ConsumerState<_EnrollmentCodeCard> {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
+                    Row(
+                      children: [
+                        Text(
+                          'Server:',
+                          style: TextStyle(
+                            fontSize: 12,
+                            color: Colors.grey[500],
+                          ),
+                        ),
+                        const SizedBox(width: 8),
+                        SelectableText(
+                          code.serverUrl,
+                          style: const TextStyle(
+                            fontSize: 14,
+                            fontFamily: 'monospace',
+                            color: Color(0xFF60A5FA),
+                          ),
+                        ),
+                        const SizedBox(width: 8),
+                        IconButton(
+                          icon: const Icon(Icons.copy, size: 16),
+                          tooltip: 'Copy server URL',
+                          onPressed: () {
+                            Clipboard.setData(ClipboardData(text: code.serverUrl));
+                            ScaffoldMessenger.of(context).showSnackBar(
+                              const SnackBar(content: Text('Server URL copied to clipboard')),
+                            );
+                          },
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 12),
                     Row(
                       children: [
                         Text(
@@ -1046,8 +1031,9 @@ class _EnrollmentCodeCardState extends ConsumerState<_EnrollmentCodeCard> {
         );
       }
 
-      // Auto-send email if enabled
-      if (_autoSendEmail && context.mounted) {
+      // Auto-send email if enabled in global settings
+      final autoSend = await _getAutoSendPreference();
+      if (autoSend && context.mounted) {
         await _sendEnrollmentEmailSilent(context);
       }
     } catch (e) {

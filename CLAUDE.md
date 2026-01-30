@@ -453,6 +453,22 @@ flutter run --dart-define=API_URL=http://localhost:8080/api/v1
 
 Default: `http://localhost:8080/api/v1`
 
+### Session Persistence
+
+Authentication tokens are stored in `SharedPreferences` (localStorage on web) to survive browser refreshes. Tokens are automatically refreshed on app initialization if valid.
+
+**Stored Keys:**
+- `access_token` - JWT access token
+- `refresh_token` - JWT refresh token
+
+### Enrollment Settings
+
+Global enrollment preferences are stored in `SharedPreferences`:
+
+- `enrollment_auto_send_email` - Auto-send enrollment email when codes are generated (default: `true`)
+
+These settings are configurable in Settings → Enrollment Settings.
+
 ### Known Limitations (TODOs)
 
 - Log export not yet implemented (shows "coming soon" message)

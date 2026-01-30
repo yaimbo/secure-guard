@@ -721,6 +721,13 @@ class EnrollmentCode {
     }
     return '${remaining.inMinutes}m';
   }
+
+  /// Extract server URL from deep link
+  /// Deep link format: secureguard://enroll?server=https://example.com&code=XXXX
+  String get serverUrl {
+    final uri = Uri.parse(deepLink);
+    return uri.queryParameters['server'] ?? '';
+  }
 }
 
 // ═══════════════════════════════════════════════════════════════════

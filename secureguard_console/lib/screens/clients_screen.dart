@@ -111,10 +111,18 @@ class _ClientsScreenState extends ConsumerState<ClientsScreen> {
                       ],
                     ),
                   ),
-                  data: (clients) => DataTable2(
+                  data: (clients) => MouseRegion(
+                    cursor: SystemMouseCursors.click,
+                    child: DataTable2(
                     columnSpacing: 12,
                     horizontalMargin: 12,
                     minWidth: 800,
+                    dataRowColor: WidgetStateProperty.resolveWith<Color?>((states) {
+                      if (states.contains(WidgetState.hovered)) {
+                        return Theme.of(context).colorScheme.primary.withValues(alpha: 0.08);
+                      }
+                      return null;
+                    }),
                     columns: const [
                       DataColumn2(label: Text('Status'), size: ColumnSize.S),
                       DataColumn2(label: Text('Name'), size: ColumnSize.L),
@@ -189,6 +197,7 @@ class _ClientsScreenState extends ConsumerState<ClientsScreen> {
                         ],
                       );
                     }).toList(),
+                  ),
                   ),
                 ),
               ),

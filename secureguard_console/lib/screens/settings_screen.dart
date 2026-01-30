@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 import '../config/theme.dart';
 import '../providers/settings_provider.dart';
@@ -44,6 +45,15 @@ class SettingsScreen extends ConsumerWidget {
               title: 'Single Sign-On (SSO)',
               icon: Icons.security,
               child: _SSOConfigSection(),
+            ),
+            const SizedBox(height: 24),
+
+            // Enrollment Settings
+            _buildSection(
+              context,
+              title: 'Enrollment Settings',
+              icon: Icons.app_registration,
+              child: _EnrollmentSettingsSection(),
             ),
             const SizedBox(height: 24),
 
@@ -1849,6 +1859,106 @@ class _ApiKeysSectionState extends ConsumerState<_ApiKeysSection> {
           ),
         ],
       ),
+    );
+  }
+}
+
+class _EnrollmentSettingsSection extends ConsumerStatefulWidget {
+  @override
+  ConsumerState<_EnrollmentSettingsSection> createState() => _EnrollmentSettingsSectionState();
+}
+
+class _EnrollmentSettingsSectionState extends ConsumerState<_EnrollmentSettingsSection> {
+  static const _autoSendPrefKey = 'enrollment_auto_send_email';
+  bool _autoSendEmail = true; // Default to ON
+  bool _isLoading = true;
+  bool _emailEnabled = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _loadSettings();
+  }
+
+  Future<void> _loadSettings() async {
+    final prefs = await SharedPreferences.getInstance();
+
+    // Check if email is enabled
+    bool emailEnabled = false;
+    try {
+      final api = ref.read(apiServiceProvider);
+      final emailSettings = await api.getEmailSettings();
+      emailEnabled = emailSettings.enabled;
+    } catch (e) {
+      // If we can't fetch email settings, assume not configured
+      emailEnabled = false;
+    }
+
+    if (mounted) {
+      setState(() {
+        // Default to true if not set
+        _autoSendEmail = prefs.getBool(_autoSendPrefKey) ?? true;
+        _emailEnabled = emailEnabled;
+        _isLoading = false;
+      });
+    }
+  }
+
+  Future<void> _setAutoSendPreference(bool value) async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setBool(_autoSendPrefKey, value);
+    if (mounted) {
+      setState(() {
+        _autoSendEmail = value;
+      });
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    if (_isLoading) {
+      return const Center(child: CircularProgressIndicator());
+    }
+
+    final isDisabled = !_emailEnabled;
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        SwitchListTile(
+          title: Text(
+            'Auto-send enrollment email',
+            style: TextStyle(
+              color: isDisabled ? Colors.grey[600] : null,
+            ),
+          ),
+          subtitle: Text(
+            'Automatically send enrollment instructions via email when a new enrollment code is generated for any client.',
+            style: TextStyle(
+              fontSize: 13,
+              color: isDisabled ? Colors.grey[700] : Colors.grey[400],
+            ),
+          ),
+          secondary: Icon(
+            Icons.mail_outline,
+            color: isDisabled ? Colors.grey[600] : null,
+          ),
+          value: _autoSendEmail,
+          onChanged: isDisabled ? null : _setAutoSendPreference,
+          activeTrackColor: AppTheme.primary.withValues(alpha: 0.5),
+          contentPadding: EdgeInsets.zero,
+        ),
+        const SizedBox(height: 8),
+        Text(
+          isDisabled
+              ? 'Configure email settings below to enable this feature.'
+              : 'Requires client to have an email address.',
+          style: TextStyle(
+            fontSize: 12,
+            color: isDisabled ? Colors.amber[700] : Colors.grey[500],
+          ),
+        ),
+      ],
     );
   }
 }
