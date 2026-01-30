@@ -1,6 +1,8 @@
 import 'dart:convert';
 import 'dart:typed_data';
 
+import 'package:postgres/postgres.dart' show UndecodedBytes;
+
 /// Server WireGuard configuration model
 class ServerConfigModel {
   final String privateKeyEnc; // Encrypted at rest
@@ -60,7 +62,10 @@ class ServerConfigModel {
   /// Convert various PostgreSQL types (CIDR, INET, UndecodedBytes) to String
   static String _toString(dynamic value) {
     if (value is String) return value;
-    // Handle UndecodedBytes from postgres driver
+    // Handle UndecodedBytes from postgres driver (CIDR, INET types)
+    if (value is UndecodedBytes) {
+      return String.fromCharCodes(value.bytes);
+    }
     if (value is List<int>) {
       return String.fromCharCodes(value);
     }

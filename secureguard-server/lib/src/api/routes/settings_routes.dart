@@ -338,7 +338,7 @@ class SettingsRoutes {
         return Response.ok(
           jsonEncode({
             'configured': false,
-            'endpoint': null,
+            'endpoint': 'localhost:51820',
             'listen_port': 51820,
             'ip_subnet': '10.0.0.0/24',
             'dns_servers': null,
