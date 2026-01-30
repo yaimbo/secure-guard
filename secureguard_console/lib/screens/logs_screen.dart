@@ -4,6 +4,7 @@ import 'package:data_table_2/data_table_2.dart';
 
 import '../config/theme.dart';
 import '../providers/logs_provider.dart';
+import '../services/api_service.dart';
 
 class LogsScreen extends ConsumerStatefulWidget {
   const LogsScreen({super.key});
@@ -17,6 +18,9 @@ class _LogsScreenState extends ConsumerState<LogsScreen> with SingleTickerProvid
   DateTime? _startDate;
   DateTime? _endDate;
   String? _selectedSeverity = 'ALERT'; // Default to ALERT only
+  String _searchQuery = ''; // For client-side filtering
+  List<AuditLog>? _allAuditLogs; // Cached full logs when "Load All" is clicked
+  bool _loadingAll = false; // Loading state for "Load All"
 
   @override
   void initState() {
@@ -78,7 +82,10 @@ class _LogsScreenState extends ConsumerState<LogsScreen> with SingleTickerProvid
                     DropdownMenuItem(value: 'INFO', child: Text('All (Info+)')),
                   ],
                   onChanged: (value) {
-                    setState(() => _selectedSeverity = value);
+                    setState(() {
+                      _selectedSeverity = value;
+                      _allAuditLogs = null; // Reset cache on filter change
+                    });
                     _refreshLogs();
                   },
                 ),
@@ -89,18 +96,31 @@ class _LogsScreenState extends ConsumerState<LogsScreen> with SingleTickerProvid
                   tooltip: 'Refresh',
                   onPressed: _refreshLogs,
                 ),
+                const SizedBox(width: 8),
+                // Load All button
+                TextButton.icon(
+                  onPressed: _loadingAll ? null : _loadAllLogs,
+                  icon: _loadingAll
+                      ? const SizedBox(
+                          width: 16,
+                          height: 16,
+                          child: CircularProgressIndicator(strokeWidth: 2),
+                        )
+                      : const Icon(Icons.download_for_offline, size: 18),
+                  label: Text(_allAuditLogs != null ? 'All Loaded' : 'Load All'),
+                ),
                 const Spacer(),
-                // Search
+                // Filter (client-side search on loaded logs)
                 SizedBox(
                   width: 300,
                   child: TextField(
                     decoration: const InputDecoration(
-                      hintText: 'Search logs...',
-                      prefixIcon: Icon(Icons.search),
+                      hintText: 'Filter logs...',
+                      prefixIcon: Icon(Icons.filter_list),
                       isDense: true,
                     ),
                     onChanged: (value) {
-                      // Search implementation
+                      setState(() => _searchQuery = value);
                     },
                   ),
                 ),
@@ -126,57 +146,82 @@ class _LogsScreenState extends ConsumerState<LogsScreen> with SingleTickerProvid
   }
 
   Widget _buildAuditLogTab() {
-    final filter = LogsFilter(
-      startDate: _startDate,
-      endDate: _endDate,
-      severity: _selectedSeverity,
-    );
-    final logsAsync = ref.watch(filteredAuditLogsProvider(filter));
+    // Use cached all logs if available, otherwise fetch from provider
+    final AsyncValue<List<AuditLog>> logsAsync;
+
+    if (_allAuditLogs != null) {
+      logsAsync = AsyncValue.data(_allAuditLogs!);
+    } else {
+      final filter = LogsFilter(
+        startDate: _startDate,
+        endDate: _endDate,
+        severity: _selectedSeverity,
+      );
+      logsAsync = ref.watch(filteredAuditLogsProvider(filter));
+    }
 
     return logsAsync.when(
       loading: () => const Center(child: CircularProgressIndicator()),
-      error: (error, stack) => _buildErrorState(error, () => ref.invalidate(filteredAuditLogsProvider(filter))),
-      data: (logs) => logs.isEmpty
-          ? _buildEmptyState('No audit logs found')
-          : DataTable2(
-              columnSpacing: 12,
-              horizontalMargin: 12,
-              minWidth: 1200,
-              columns: const [
-                DataColumn2(label: Text('Timestamp'), size: ColumnSize.M),
-                DataColumn2(label: Text('Severity'), size: ColumnSize.S),
-                DataColumn2(label: Text('Actor'), size: ColumnSize.M),
-                DataColumn2(label: Text('Event'), size: ColumnSize.M),
-                DataColumn2(label: Text('Client'), size: ColumnSize.M),
-                DataColumn2(label: Text('Hostname'), size: ColumnSize.M),
-                DataColumn2(label: Text('Details'), size: ColumnSize.L),
-                DataColumn2(label: Text('IP'), size: ColumnSize.S),
-              ],
-              rows: logs.map((log) {
-                final hostname = log.details?['hostname'] as String?;
-                final clientName = log.resourceType == 'client' ? log.resourceName : null;
-                return DataRow2(
-                  cells: [
-                    DataCell(Text(_formatTimestamp(log.timestamp))),
-                    DataCell(_buildAuditSeverityChip(log.severity)),
-                    DataCell(_buildActorCell(log)),
-                    DataCell(_buildEventChip(log.eventType)),
-                    DataCell(Text(clientName ?? '-')),
-                    DataCell(Text(hostname ?? '-')),
-                    DataCell(
-                      Tooltip(
-                        message: log.details?.toString() ?? '',
-                        child: Text(
-                          _formatDetails(log.details),
-                          overflow: TextOverflow.ellipsis,
-                        ),
-                      ),
+      error: (error, stack) {
+        final filter = LogsFilter(
+          startDate: _startDate,
+          endDate: _endDate,
+          severity: _selectedSeverity,
+        );
+        return _buildErrorState(error, () => ref.invalidate(filteredAuditLogsProvider(filter)));
+      },
+      data: (logs) {
+        // Apply client-side filtering
+        final filteredLogs = _filterLogs(logs);
+
+        if (filteredLogs.isEmpty) {
+          return _buildEmptyState(
+            _searchQuery.isNotEmpty
+                ? 'No logs match "$_searchQuery"'
+                : 'No audit logs found',
+          );
+        }
+
+        return DataTable2(
+          columnSpacing: 12,
+          horizontalMargin: 12,
+          minWidth: 1200,
+          columns: const [
+            DataColumn2(label: Text('Timestamp'), size: ColumnSize.M),
+            DataColumn2(label: Text('Severity'), size: ColumnSize.S),
+            DataColumn2(label: Text('Actor'), size: ColumnSize.M),
+            DataColumn2(label: Text('Event'), size: ColumnSize.M),
+            DataColumn2(label: Text('Client'), size: ColumnSize.M),
+            DataColumn2(label: Text('Hostname'), size: ColumnSize.M),
+            DataColumn2(label: Text('Details'), size: ColumnSize.L),
+            DataColumn2(label: Text('IP'), size: ColumnSize.S),
+          ],
+          rows: filteredLogs.map((log) {
+            final hostname = log.details?['hostname'] as String?;
+            final clientName = log.resourceType == 'client' ? log.resourceName : null;
+            return DataRow2(
+              cells: [
+                DataCell(Text(_formatTimestamp(log.timestamp))),
+                DataCell(_buildAuditSeverityChip(log.severity)),
+                DataCell(_buildActorCell(log)),
+                DataCell(_buildEventChip(log.eventType)),
+                DataCell(Text(clientName ?? '-')),
+                DataCell(Text(hostname ?? '-')),
+                DataCell(
+                  Tooltip(
+                    message: log.details?.toString() ?? '',
+                    child: Text(
+                      _formatDetails(log.details),
+                      overflow: TextOverflow.ellipsis,
                     ),
-                    DataCell(Text(log.ipAddress ?? '-')),
-                  ],
-                );
-              }).toList(),
-            ),
+                  ),
+                ),
+                DataCell(Text(log.ipAddress ?? '-')),
+              ],
+            );
+          }).toList(),
+        );
+      },
     );
   }
 
@@ -534,9 +579,75 @@ class _LogsScreenState extends ConsumerState<LogsScreen> with SingleTickerProvid
   }
 
   void _refreshLogs() {
+    setState(() => _allAuditLogs = null); // Reset cache on refresh
+    // Invalidate the filtered provider with current filter
+    final filter = LogsFilter(
+      startDate: _startDate,
+      endDate: _endDate,
+      severity: _selectedSeverity,
+    );
+    ref.invalidate(filteredAuditLogsProvider(filter));
     ref.invalidate(auditLogsProvider);
     ref.invalidate(errorLogsProvider);
     ref.invalidate(connectionLogsProvider);
+  }
+
+  Future<void> _loadAllLogs() async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Load All Logs'),
+        content: const Text(
+          'This may take a while and use significant memory for large log histories. Continue?',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: const Text('Cancel'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(context, true),
+            child: const Text('Load All'),
+          ),
+        ],
+      ),
+    );
+    if (confirmed != true) return;
+
+    setState(() => _loadingAll = true);
+    try {
+      final api = ref.read(apiServiceProvider);
+      final logs = await api.getAuditLogs(
+        startDate: _startDate,
+        endDate: _endDate,
+        severity: _selectedSeverity,
+        limit: 10000, // Large limit for "all"
+      );
+      setState(() => _allAuditLogs = logs);
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Error loading logs: $e')),
+        );
+      }
+    } finally {
+      if (mounted) setState(() => _loadingAll = false);
+    }
+  }
+
+  List<AuditLog> _filterLogs(List<AuditLog> logs) {
+    if (_searchQuery.isEmpty) return logs;
+
+    final query = _searchQuery.toLowerCase();
+    return logs.where((log) {
+      return (log.actorName?.toLowerCase().contains(query) ?? false) ||
+          (log.actorId?.toLowerCase().contains(query) ?? false) ||
+          log.eventType.toLowerCase().contains(query) ||
+          (log.resourceName?.toLowerCase().contains(query) ?? false) ||
+          (log.resourceId?.toLowerCase().contains(query) ?? false) ||
+          (log.ipAddress?.toLowerCase().contains(query) ?? false) ||
+          (log.details?['hostname']?.toString().toLowerCase().contains(query) ?? false);
+    }).toList();
   }
 
   void _exportLogs() {
