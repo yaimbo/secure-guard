@@ -128,13 +128,21 @@ This is a WireGuard-compatible VPN client/server implementing the Noise IKpsk2 h
 # Daemon mode (for Flutter UI control via IPC)
 sudo ./secureguard-poc --daemon
 sudo ./secureguard-poc --daemon --socket /custom/path.sock
+
+# Run client and server daemons simultaneously (for testing)
+sudo ./secureguard-poc --daemon                                          # Client mode (default socket)
+sudo ./secureguard-poc --daemon --socket /var/run/secureguard-server.sock  # Server mode (separate socket)
 ```
 
 ### Daemon Mode
 
 The daemon runs as a background service, controlled via Unix socket IPC (JSON-RPC 2.0 protocol).
 
-**Socket path:** `/var/run/secureguard.sock` (default)
+**Socket paths (convention for running both modes simultaneously):**
+- Client mode daemon: `/var/run/secureguard.sock` (default)
+- Server mode daemon: `/var/run/secureguard-server.sock`
+
+The Flutter desktop client connects to the client socket. The Dart REST server connects to the server socket for peer management.
 
 **IPC Commands (Client Mode):**
 - `connect` - Start VPN client: `{"method": "connect", "params": {"config": "<wireguard-config>"}}`

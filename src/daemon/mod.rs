@@ -24,13 +24,21 @@ use ipc::*;
 // Re-export TrafficStats from protocol layer for backwards compatibility
 pub use crate::protocol::session::TrafficStats;
 
-/// Default socket path for Unix systems
+/// Default socket path for Unix systems (client mode daemon)
 #[cfg(unix)]
 pub const DEFAULT_SOCKET_PATH: &str = "/var/run/secureguard.sock";
 
-/// Default pipe name for Windows
+/// Default socket path for server mode daemon (allows running both modes simultaneously)
+#[cfg(unix)]
+pub const DEFAULT_SERVER_SOCKET_PATH: &str = "/var/run/secureguard-server.sock";
+
+/// Default pipe name for Windows (client mode daemon)
 #[cfg(windows)]
 pub const DEFAULT_PIPE_NAME: &str = r"\\.\pipe\secureguard";
+
+/// Default pipe name for server mode daemon on Windows
+#[cfg(windows)]
+pub const DEFAULT_SERVER_PIPE_NAME: &str = r"\\.\pipe\secureguard-server";
 
 // ============================================================================
 // VPN Mode and State Types

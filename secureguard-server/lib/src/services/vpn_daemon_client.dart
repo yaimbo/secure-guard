@@ -7,6 +7,12 @@ import 'dart:io';
 /// This client enables the Dart REST API server to dynamically manage VPN peers
 /// by sending JSON-RPC 2.0 commands to the Rust daemon over its Unix socket.
 ///
+/// **Socket Path Convention:**
+/// - Client mode daemon: `/var/run/secureguard.sock`
+/// - Server mode daemon: `/var/run/secureguard-server.sock` (default for this client)
+///
+/// This allows running both client and server daemons simultaneously for testing.
+///
 /// Example usage:
 /// ```dart
 /// final client = VpnDaemonClient();
@@ -18,8 +24,9 @@ import 'dart:io';
 /// await client.disconnect();
 /// ```
 class VpnDaemonClient {
-  /// Default socket path on Unix systems
-  static const String defaultSocketPath = '/var/run/secureguard.sock';
+  /// Default socket path for server mode daemon
+  /// Use `/var/run/secureguard.sock` if connecting to client mode daemon
+  static const String defaultSocketPath = '/var/run/secureguard-server.sock';
 
   final String socketPath;
   Socket? _socket;
