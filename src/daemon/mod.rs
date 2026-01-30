@@ -396,55 +396,12 @@ impl DaemonService {
                 let _ = Self::send_status_notification(state, status_tx).await;
 
                 // Start the client run loop in background
-                let state_clone = Arc::clone(state);
-                let status_tx_clone = status_tx.clone();
-                tokio::spawn(async move {
-                    let mut client = client;
-
-                    // Run client with shutdown monitoring
-                    let mut shutdown_rx = shutdown_rx;
-                    let result = tokio::select! {
-                        result = client.run() => result,
-                        _ = async {
-                            loop {
-                                shutdown_rx.changed().await.ok();
-                                if *shutdown_rx.borrow() {
-                                    break;
-                                }
-                            }
-                        } => {
-                            tracing::info!("Shutdown signal received");
-                            Ok(())
-                        }
-                    };
-
-                    // Update state based on result
-                    {
-                        let mut s = state_clone.lock().await;
-                        match result {
-                            Ok(_) => {
-                                tracing::info!("VPN client disconnected");
-                                s.connection_state = ConnectionState::Disconnected;
-                            }
-                            Err(e) => {
-                                tracing::error!("VPN client error: {}", e);
-                                s.connection_state = ConnectionState::Error;
-                                s.error_message = Some(format!("{}", e));
-                            }
-                        }
-                        s.mode = None;
-                        s.started_at = None;
-                        s.shutdown_tx = None;
-                    }
-
-                    // Send status notification
-                    let _ = Self::send_status_notification(&state_clone, &status_tx_clone).await;
-
-                    // Cleanup
-                    if let Err(e) = client.cleanup().await {
-                        tracing::error!("Cleanup error: {}", e);
-                    }
-                });
+                Self::spawn_client_task(
+                    client,
+                    shutdown_rx,
+                    Arc::clone(state),
+                    status_tx.clone(),
+                );
 
                 JsonRpcResponse::success(request.id, serde_json::json!({"connected": true}))
             }
@@ -625,6 +582,72 @@ impl DaemonService {
         Ok(())
     }
 
+    /// Spawn a VPN client background task
+    ///
+    /// This helper spawns a task that runs the client event loop and handles:
+    /// - Shutdown signal monitoring
+    /// - State updates on completion/error
+    /// - Status notifications
+    /// - Cleanup
+    ///
+    /// The caller is responsible for:
+    /// - Creating the client
+    /// - Creating the shutdown channel and storing shutdown_tx in state
+    /// - Setting up mode, connection_state, started_at before calling this
+    fn spawn_client_task(
+        client: WireGuardClient,
+        shutdown_rx: watch::Receiver<bool>,
+        state: Arc<Mutex<DaemonState>>,
+        status_tx: broadcast::Sender<String>,
+    ) {
+        tokio::spawn(async move {
+            let mut client = client;
+            let mut shutdown_rx = shutdown_rx;
+
+            let result = tokio::select! {
+                result = client.run() => result,
+                _ = async {
+                    loop {
+                        shutdown_rx.changed().await.ok();
+                        if *shutdown_rx.borrow() {
+                            break;
+                        }
+                    }
+                } => {
+                    tracing::info!("Shutdown signal received");
+                    Ok(())
+                }
+            };
+
+            // Update state based on result
+            {
+                let mut s = state.lock().await;
+                match result {
+                    Ok(_) => {
+                        tracing::info!("VPN client disconnected");
+                        s.connection_state = ConnectionState::Disconnected;
+                    }
+                    Err(e) => {
+                        tracing::error!("VPN client error: {}", e);
+                        s.connection_state = ConnectionState::Error;
+                        s.error_message = Some(format!("{}", e));
+                    }
+                }
+                s.mode = None;
+                s.started_at = None;
+                s.shutdown_tx = None;
+            }
+
+            // Send status notification
+            let _ = Self::send_status_notification(&state, &status_tx).await;
+
+            // Cleanup
+            if let Err(e) = client.cleanup().await {
+                tracing::error!("Cleanup error: {}", e);
+            }
+        });
+    }
+
     // ========================================================================
     // Client Config Update Handler
     // ========================================================================
@@ -777,55 +800,12 @@ impl DaemonService {
                 }
 
                 // Start the client run loop in background
-                let state_clone = Arc::clone(state);
-                let status_tx_clone = status_tx.clone();
-                tokio::spawn(async move {
-                    let mut client = client;
-
-                    // Run client with shutdown monitoring
-                    let mut shutdown_rx = shutdown_rx;
-                    let result = tokio::select! {
-                        result = client.run() => result,
-                        _ = async {
-                            loop {
-                                shutdown_rx.changed().await.ok();
-                                if *shutdown_rx.borrow() {
-                                    break;
-                                }
-                            }
-                        } => {
-                            tracing::info!("Shutdown signal received");
-                            Ok(())
-                        }
-                    };
-
-                    // Update state based on result
-                    {
-                        let mut s = state_clone.lock().await;
-                        match result {
-                            Ok(_) => {
-                                tracing::info!("VPN client disconnected");
-                                s.connection_state = ConnectionState::Disconnected;
-                            }
-                            Err(e) => {
-                                tracing::error!("VPN client error: {}", e);
-                                s.connection_state = ConnectionState::Error;
-                                s.error_message = Some(format!("{}", e));
-                            }
-                        }
-                        s.mode = None;
-                        s.started_at = None;
-                        s.shutdown_tx = None;
-                    }
-
-                    // Send status notification
-                    let _ = Self::send_status_notification(&state_clone, &status_tx_clone).await;
-
-                    // Cleanup
-                    if let Err(e) = client.cleanup().await {
-                        tracing::error!("Cleanup error: {}", e);
-                    }
-                });
+                Self::spawn_client_task(
+                    client,
+                    shutdown_rx,
+                    Arc::clone(state),
+                    status_tx.clone(),
+                );
 
                 let response = UpdateConfigResponse {
                     updated: true,
@@ -897,56 +877,12 @@ impl DaemonService {
                             }
 
                             // Spawn background task for rollback session
-                            let state_clone = Arc::clone(state);
-                            let status_tx_clone = status_tx.clone();
-                            tokio::spawn(async move {
-                                let mut client = rollback_client;
-                                let mut shutdown_rx = rollback_shutdown_rx;
-
-                                let result = tokio::select! {
-                                    result = client.run() => result,
-                                    _ = async {
-                                        loop {
-                                            shutdown_rx.changed().await.ok();
-                                            if *shutdown_rx.borrow() {
-                                                break;
-                                            }
-                                        }
-                                    } => {
-                                        tracing::info!("Shutdown signal received");
-                                        Ok(())
-                                    }
-                                };
-
-                                // Update state based on result
-                                {
-                                    let mut s = state_clone.lock().await;
-                                    match result {
-                                        Ok(_) => {
-                                            tracing::info!("VPN client disconnected");
-                                            s.connection_state = ConnectionState::Disconnected;
-                                        }
-                                        Err(err) => {
-                                            tracing::error!("VPN client error: {}", err);
-                                            s.connection_state = ConnectionState::Error;
-                                            s.error_message = Some(format!("{}", err));
-                                        }
-                                    }
-                                    s.mode = None;
-                                    s.started_at = None;
-                                    s.shutdown_tx = None;
-                                }
-
-                                let _ = Self::send_status_notification(
-                                    &state_clone,
-                                    &status_tx_clone,
-                                )
-                                .await;
-
-                                if let Err(err) = client.cleanup().await {
-                                    tracing::error!("Cleanup error: {}", err);
-                                }
-                            });
+                            Self::spawn_client_task(
+                                rollback_client,
+                                rollback_shutdown_rx,
+                                Arc::clone(state),
+                                status_tx.clone(),
+                            );
 
                             return JsonRpcResponse::error(
                                 request.id,
