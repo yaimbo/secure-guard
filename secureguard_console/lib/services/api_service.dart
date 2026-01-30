@@ -874,10 +874,10 @@ class VpnSettings {
 
   VpnSettings({
     this.configured = false,
-    this.endpoint,
+    this.endpoint = 'localhost:51820',
     this.listenPort = 51820,
     this.ipSubnet = '10.0.0.0/24',
-    this.dnsServers,
+    this.dnsServers = const ['8.8.8.8', '8.8.4.4'],
     this.mtu = 1420,
     this.publicKey,
     this.regenerateKeys = false,
@@ -886,10 +886,10 @@ class VpnSettings {
   factory VpnSettings.fromJson(Map<String, dynamic> json) {
     return VpnSettings(
       configured: json['configured'] as bool? ?? false,
-      endpoint: json['endpoint'] as String?,
+      endpoint: json['endpoint'] as String? ?? 'localhost:51820',
       listenPort: json['listen_port'] as int? ?? 51820,
       ipSubnet: json['ip_subnet'] as String? ?? '10.0.0.0/24',
-      dnsServers: (json['dns_servers'] as List<dynamic>?)?.cast<String>(),
+      dnsServers: (json['dns_servers'] as List<dynamic>?)?.cast<String>() ?? const ['8.8.8.8', '8.8.4.4'],
       mtu: json['mtu'] as int? ?? 1420,
       publicKey: json['public_key'] as String?,
     );

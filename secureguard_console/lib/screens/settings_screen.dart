@@ -212,9 +212,9 @@ class _ServerConfigSectionState extends ConsumerState<_ServerConfigSection> {
             Container(
               padding: const EdgeInsets.all(12),
               decoration: BoxDecoration(
-                color: Colors.green.withOpacity(0.1),
+                color: Colors.green.withValues(alpha: 0.1),
                 borderRadius: BorderRadius.circular(8),
-                border: Border.all(color: Colors.green.withOpacity(0.3)),
+                border: Border.all(color: Colors.green.withValues(alpha: 0.3)),
               ),
               child: Row(
                 children: [
@@ -240,9 +240,9 @@ class _ServerConfigSectionState extends ConsumerState<_ServerConfigSection> {
             Container(
               padding: const EdgeInsets.all(12),
               decoration: BoxDecoration(
-                color: Colors.amber.withOpacity(0.1),
+                color: Colors.amber.withValues(alpha: 0.1),
                 borderRadius: BorderRadius.circular(8),
-                border: Border.all(color: Colors.amber.withOpacity(0.3)),
+                border: Border.all(color: Colors.amber.withValues(alpha: 0.3)),
               ),
               child: const Row(
                 children: [
@@ -257,16 +257,16 @@ class _ServerConfigSectionState extends ConsumerState<_ServerConfigSection> {
             const SizedBox(height: 16),
           ],
 
+          // Network Settings Grid
           Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               Expanded(
-                flex: 2,
                 child: TextFormField(
                   controller: _endpointController,
                   decoration: const InputDecoration(
                     labelText: 'Endpoint',
                     hintText: 'vpn.example.com:51820',
-                    helperText: 'Public hostname:port for VPN server',
                   ),
                   validator: (value) {
                     if (value == null || value.isEmpty) {
@@ -277,7 +277,8 @@ class _ServerConfigSectionState extends ConsumerState<_ServerConfigSection> {
                 ),
               ),
               const SizedBox(width: 16),
-              Expanded(
+              SizedBox(
+                width: 120,
                 child: TextFormField(
                   controller: _portController,
                   decoration: const InputDecoration(
@@ -300,16 +301,16 @@ class _ServerConfigSectionState extends ConsumerState<_ServerConfigSection> {
               ),
             ],
           ),
-          const SizedBox(height: 16),
+          const SizedBox(height: 20),
           Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               Expanded(
                 child: TextFormField(
                   controller: _subnetController,
                   decoration: const InputDecoration(
-                    labelText: 'IP Subnet',
+                    labelText: 'IP Subnet (CIDR)',
                     hintText: '10.0.0.0/24',
-                    helperText: 'CIDR notation for VPN network',
                   ),
                   validator: (value) {
                     if (value == null || value.isEmpty) {
@@ -323,7 +324,8 @@ class _ServerConfigSectionState extends ConsumerState<_ServerConfigSection> {
                 ),
               ),
               const SizedBox(width: 16),
-              Expanded(
+              SizedBox(
+                width: 120,
                 child: TextFormField(
                   controller: _mtuController,
                   decoration: const InputDecoration(
@@ -336,16 +338,15 @@ class _ServerConfigSectionState extends ConsumerState<_ServerConfigSection> {
               ),
             ],
           ),
-          const SizedBox(height: 16),
+          const SizedBox(height: 20),
           TextFormField(
             controller: _dnsController,
             decoration: const InputDecoration(
               labelText: 'DNS Servers',
-              hintText: '1.1.1.1, 8.8.8.8',
-              helperText: 'Comma-separated list of DNS servers',
+              hintText: '8.8.8.8, 8.8.4.4',
             ),
           ),
-          const SizedBox(height: 24),
+          const SizedBox(height: 28),
           Row(
             mainAxisAlignment: MainAxisAlignment.end,
             children: [

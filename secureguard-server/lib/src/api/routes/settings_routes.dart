@@ -1,6 +1,7 @@
 import 'dart:convert';
 
 import 'package:bcrypt/bcrypt.dart';
+import 'package:logging/logging.dart';
 import 'package:shelf/shelf.dart';
 import 'package:shelf_router/shelf_router.dart';
 
@@ -23,6 +24,7 @@ class SettingsRoutes {
   final EmailQueueService emailQueueService;
   final KeyService keyService;
   final LogRepository logRepo;
+  final _log = Logger('SettingsRoutes');
 
   SettingsRoutes({
     required this.adminRepo,
@@ -78,7 +80,7 @@ class SettingsRoutes {
         }),
         headers: {'content-type': 'application/json'},
       );
-    } catch (e) {
+    } catch (e, stackTrace) {
       return Response.internalServerError(
         body: jsonEncode({'error': 'Failed to list API keys: $e'}),
         headers: {'content-type': 'application/json'},
@@ -135,7 +137,7 @@ class SettingsRoutes {
         }),
         headers: {'content-type': 'application/json'},
       );
-    } catch (e) {
+    } catch (e, stackTrace) {
       return Response.internalServerError(
         body: jsonEncode({'error': 'Failed to create API key: $e'}),
         headers: {'content-type': 'application/json'},
@@ -171,7 +173,7 @@ class SettingsRoutes {
       );
 
       return Response(204);
-    } catch (e) {
+    } catch (e, stackTrace) {
       return Response.internalServerError(
         body: jsonEncode({'error': 'Failed to revoke API key: $e'}),
         headers: {'content-type': 'application/json'},
@@ -202,7 +204,7 @@ class SettingsRoutes {
         }),
         headers: {'content-type': 'application/json'},
       );
-    } catch (e) {
+    } catch (e, stackTrace) {
       return Response.internalServerError(
         body: jsonEncode({'error': 'Failed to list admins: $e'}),
         headers: {'content-type': 'application/json'},
@@ -274,7 +276,7 @@ class SettingsRoutes {
         }),
         headers: {'content-type': 'application/json'},
       );
-    } catch (e) {
+    } catch (e, stackTrace) {
       return Response.internalServerError(
         body: jsonEncode({'error': 'Failed to create admin: $e'}),
         headers: {'content-type': 'application/json'},
@@ -317,7 +319,7 @@ class SettingsRoutes {
       );
 
       return Response(204);
-    } catch (e) {
+    } catch (e, stackTrace) {
       return Response.internalServerError(
         body: jsonEncode({'error': 'Failed to delete admin: $e'}),
         headers: {'content-type': 'application/json'},
@@ -341,7 +343,7 @@ class SettingsRoutes {
             'endpoint': 'localhost:51820',
             'listen_port': 51820,
             'ip_subnet': '10.0.0.0/24',
-            'dns_servers': null,
+            'dns_servers': ['8.8.8.8', '8.8.4.4'],
             'mtu': 1420,
             'public_key': null,
           }),
@@ -356,7 +358,8 @@ class SettingsRoutes {
         }),
         headers: {'content-type': 'application/json'},
       );
-    } catch (e) {
+    } catch (e, stackTrace) {
+      _log.severe('Failed to get VPN settings', e, stackTrace);
       return Response.internalServerError(
         body: jsonEncode({'error': 'Failed to get VPN settings: $e'}),
         headers: {'content-type': 'application/json'},
@@ -432,7 +435,8 @@ class SettingsRoutes {
         }),
         headers: {'content-type': 'application/json'},
       );
-    } catch (e) {
+    } catch (e, stackTrace) {
+      _log.severe('Failed to update VPN settings', e, stackTrace);
       return Response.internalServerError(
         body: jsonEncode({'error': 'Failed to update VPN settings: $e'}),
         headers: {'content-type': 'application/json'},
@@ -473,7 +477,7 @@ class SettingsRoutes {
         jsonEncode(settings.toJson()),
         headers: {'content-type': 'application/json'},
       );
-    } catch (e) {
+    } catch (e, stackTrace) {
       return Response.internalServerError(
         body: jsonEncode({'error': 'Failed to get email settings: $e'}),
         headers: {'content-type': 'application/json'},
@@ -528,7 +532,7 @@ class SettingsRoutes {
         jsonEncode(settings.toJson()),
         headers: {'content-type': 'application/json'},
       );
-    } catch (e) {
+    } catch (e, stackTrace) {
       return Response.internalServerError(
         body: jsonEncode({'error': 'Failed to update email settings: $e'}),
         headers: {'content-type': 'application/json'},
@@ -596,7 +600,7 @@ class SettingsRoutes {
               'message': 'Email service is not configured',
             }),
             headers: {'content-type': 'application/json'});
-      } catch (e) {
+      } catch (e, stackTrace) {
         await emailSettingsRepo.updateTestResult(false);
 
         // Audit log
@@ -618,7 +622,7 @@ class SettingsRoutes {
             }),
             headers: {'content-type': 'application/json'});
       }
-    } catch (e) {
+    } catch (e, stackTrace) {
       return Response.internalServerError(
         body: jsonEncode({'error': 'Failed to test email settings: $e'}),
         headers: {'content-type': 'application/json'},
@@ -635,7 +639,7 @@ class SettingsRoutes {
         jsonEncode(stats),
         headers: {'content-type': 'application/json'},
       );
-    } catch (e) {
+    } catch (e, stackTrace) {
       return Response.internalServerError(
         body: jsonEncode({'error': 'Failed to get queue stats: $e'}),
         headers: {'content-type': 'application/json'},

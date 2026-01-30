@@ -1,6 +1,7 @@
 import 'dart:typed_data';
 
 import '../database/database.dart';
+import '../database/postgres_utils.dart';
 import '../services/email_service.dart';
 
 /// Email settings model for database storage
@@ -39,7 +40,7 @@ class EmailSettingsModel {
       smtpHost: row['smtp_host'] as String?,
       smtpPort: row['smtp_port'] as int? ?? 587,
       smtpUsername: row['smtp_username'] as String?,
-      smtpPasswordEnc: row['smtp_password_enc'] as Uint8List?,
+      smtpPasswordEnc: bytesToUint8List(row['smtp_password_enc']),
       useSsl: row['use_ssl'] as bool? ?? false,
       useStarttls: row['use_starttls'] as bool? ?? true,
       fromEmail: row['from_email'] as String?,
@@ -165,6 +166,6 @@ class EmailSettingsRepository {
       'SELECT smtp_password_enc FROM email_settings WHERE id = 1',
     );
     if (result.isEmpty) return null;
-    return result.first[0] as Uint8List?;
+    return bytesToUint8List(result.first[0]);
   }
 }

@@ -288,6 +288,31 @@ The server requires Redis for pub/sub event streaming and real-time metrics.
 - `email:failed` - Failed email jobs after max retries (List)
 - `email:sent:count` - Total emails sent counter (Integer)
 
+### PostgreSQL Type Handling
+
+The postgres v3 Dart driver returns BYTEA, CIDR, INET, and INET[] columns as `UndecodedBytes` objects instead of `Uint8List` or `String`. Use the shared utilities in `lib/src/database/postgres_utils.dart`:
+
+```dart
+import '../database/postgres_utils.dart';
+
+// BYTEA → base64 string (for JSON responses)
+publicKey: bytesToBase64(row['public_key']),
+
+// BYTEA → Uint8List (for internal use)
+passwordEnc: bytesToUint8List(row['password_enc']),
+
+// CIDR/INET → String
+ipSubnet: pgToString(row['ip_subnet']),
+
+// INET[] → List<String>
+allowedIps: parseInetArray(row['allowed_ips']),
+
+// INET[] with CIDR suffix stripped (for DNS servers)
+dnsServers: parseInetArray(row['dns_servers'], stripCidr: true),
+```
+
+**Important**: Never cast PostgreSQL column values directly to `Uint8List` or assume they are `String`. Always use these utilities to handle `UndecodedBytes`.
+
 ## Flutter Web Management Console
 
 Located in `secureguard_console/`. A Flutter web admin interface for managing VPN clients.

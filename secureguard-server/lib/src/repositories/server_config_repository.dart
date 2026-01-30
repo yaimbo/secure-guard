@@ -11,7 +11,13 @@ class ServerConfigRepository {
 
   /// Get the server config (singleton)
   Future<ServerConfigModel?> get() async {
-    final result = await db.execute('SELECT * FROM server_config WHERE id = 1');
+    final result = await db.execute('''
+      SELECT
+        id, private_key_enc, public_key, endpoint, listen_port,
+        ip_subnet::text AS ip_subnet, dns_servers::text[] AS dns_servers,
+        mtu, updated_at
+      FROM server_config WHERE id = 1
+    ''');
     if (result.isEmpty) return null;
     return ServerConfigModel.fromRow(result.first.toColumnMap());
   }
@@ -46,7 +52,9 @@ class ServerConfigRepository {
         dns_servers = EXCLUDED.dns_servers,
         mtu = EXCLUDED.mtu,
         updated_at = NOW()
-      RETURNING *
+      RETURNING id, private_key_enc, public_key, endpoint, listen_port,
+        ip_subnet::text AS ip_subnet, dns_servers::text[] AS dns_servers,
+        mtu, updated_at
     ''', {
       'private_key_enc': privKeyBytes,
       'public_key': pubKeyBytes,
@@ -66,7 +74,9 @@ class ServerConfigRepository {
       UPDATE server_config
       SET endpoint = @endpoint, updated_at = NOW()
       WHERE id = 1
-      RETURNING *
+      RETURNING id, private_key_enc, public_key, endpoint, listen_port,
+        ip_subnet::text AS ip_subnet, dns_servers::text[] AS dns_servers,
+        mtu, updated_at
     ''', {'endpoint': endpoint});
 
     if (result.isEmpty) return null;

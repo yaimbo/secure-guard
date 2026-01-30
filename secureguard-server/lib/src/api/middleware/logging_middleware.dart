@@ -3,7 +3,7 @@ import 'package:shelf/shelf.dart';
 
 final _log = Logger('HTTP');
 
-/// Middleware that logs all HTTP requests
+/// Middleware that logs all HTTP requests with full error details
 Middleware requestLogger() {
   return (Handler innerHandler) {
     return (Request request) async {
@@ -12,10 +12,12 @@ Middleware requestLogger() {
       Response response;
       try {
         response = await innerHandler(request);
-      } catch (e) {
+      } catch (e, stackTrace) {
         stopwatch.stop();
-        _log.warning(
-          '${request.method} ${request.requestedUri.path} - ERROR (${stopwatch.elapsedMilliseconds}ms)',
+        _log.severe(
+          '${request.method} ${request.requestedUri.path} - EXCEPTION (${stopwatch.elapsedMilliseconds}ms)',
+          e,
+          stackTrace,
         );
         rethrow;
       }

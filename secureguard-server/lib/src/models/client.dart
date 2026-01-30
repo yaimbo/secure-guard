@@ -1,5 +1,4 @@
-import 'dart:convert';
-import 'dart:typed_data';
+import '../database/postgres_utils.dart';
 
 /// VPN client model
 class Client {
@@ -69,13 +68,13 @@ class Client {
       userName: row['user_name'] as String?,
       ssoProvider: row['sso_provider'] as String?,
       ssoSubject: row['sso_subject'] as String?,
-      publicKey: _bytesToBase64(row['public_key']),
-      privateKeyEnc: _bytesToBase64(row['private_key_enc']),
+      publicKey: bytesToBase64(row['public_key']),
+      privateKeyEnc: bytesToBase64(row['private_key_enc']),
       presharedKey: row['preshared_key'] != null
-          ? _bytesToBase64(row['preshared_key'])
+          ? bytesToBase64(row['preshared_key'])
           : null,
       assignedIp: row['assigned_ip'] as String,
-      allowedIps: _parseInetArray(row['allowed_ips']),
+      allowedIps: parseInetArray(row['allowed_ips']),
       platform: row['platform'] as String?,
       platformVersion: row['platform_version'] as String?,
       clientVersion: row['client_version'] as String?,
@@ -120,20 +119,4 @@ class Client {
     return json;
   }
 
-  static String _bytesToBase64(dynamic bytes) {
-    if (bytes is Uint8List) {
-      return base64Encode(bytes);
-    } else if (bytes is List<int>) {
-      return base64Encode(Uint8List.fromList(bytes));
-    }
-    return bytes.toString();
-  }
-
-  static List<String> _parseInetArray(dynamic value) {
-    if (value == null) return ['10.0.0.0/24'];
-    if (value is List) {
-      return value.map((e) => e.toString()).toList();
-    }
-    return ['10.0.0.0/24'];
-  }
 }
