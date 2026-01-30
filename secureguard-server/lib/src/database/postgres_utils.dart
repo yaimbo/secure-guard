@@ -28,11 +28,50 @@ Uint8List? bytesToUint8List(dynamic value) {
 }
 
 /// Convert CIDR/INET column to String
+/// PostgreSQL INET binary format:
+/// - byte 0: address family (2=IPv4, 3=IPv6)
+/// - byte 1: prefix length (CIDR bits)
+/// - byte 2: is_cidr flag
+/// - byte 3: address length (4 for IPv4, 16 for IPv6)
+/// - bytes 4+: the address bytes
 String pgToString(dynamic value) {
   if (value is String) return value;
-  if (value is UndecodedBytes) return String.fromCharCodes(value.bytes);
-  if (value is List<int>) return String.fromCharCodes(value);
-  return value.toString();
+
+  List<int> bytes;
+  if (value is UndecodedBytes) {
+    bytes = value.bytes;
+  } else if (value is List<int>) {
+    bytes = value;
+  } else {
+    return value.toString();
+  }
+
+  // Check if this looks like INET binary format
+  if (bytes.length >= 8 && (bytes[0] == 2 || bytes[0] == 3)) {
+    final family = bytes[0];
+    final prefixLen = bytes[1];
+    final addrLen = bytes[3];
+
+    if (family == 2 && addrLen == 4 && bytes.length >= 8) {
+      // IPv4
+      final ip = '${bytes[4]}.${bytes[5]}.${bytes[6]}.${bytes[7]}';
+      // Only append prefix if it's not /32 (single host)
+      return prefixLen == 32 ? ip : '$ip/$prefixLen';
+    } else if (family == 3 && addrLen == 16 && bytes.length >= 20) {
+      // IPv6 - format as hex groups
+      final parts = <String>[];
+      for (var i = 0; i < 16; i += 2) {
+        final high = bytes[4 + i];
+        final low = bytes[4 + i + 1];
+        parts.add(((high << 8) | low).toRadixString(16));
+      }
+      final ip = parts.join(':');
+      return prefixLen == 128 ? ip : '$ip/$prefixLen';
+    }
+  }
+
+  // Fallback: try as character codes (for text columns)
+  return String.fromCharCodes(bytes);
 }
 
 /// Parse INET[] array, optionally stripping CIDR suffix
@@ -41,8 +80,7 @@ List<String> parseInetArray(dynamic value, {bool stripCidr = false}) {
   if (value is! List) return [];
 
   return value.map((e) {
-    final str =
-        e is UndecodedBytes ? String.fromCharCodes(e.bytes) : e.toString();
+    final str = pgToString(e);
     if (stripCidr) {
       final slashIndex = str.indexOf('/');
       return slashIndex > 0 ? str.substring(0, slashIndex) : str;
