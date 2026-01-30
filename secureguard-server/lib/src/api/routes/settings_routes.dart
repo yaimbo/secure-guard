@@ -419,7 +419,7 @@ class SettingsRoutes {
         actorId: adminId,
         eventType: 'VPN_SETTINGS_UPDATED',
         resourceType: 'settings',
-        resourceId: 'vpn',
+        resourceName: 'vpn',
         details: {
           'endpoint': endpoint,
           'ip_subnet': ipSubnet,
@@ -520,7 +520,7 @@ class SettingsRoutes {
         actorId: adminId,
         eventType: 'EMAIL_SETTINGS_UPDATED',
         resourceType: 'settings',
-        resourceId: 'email',
+        resourceName: 'email',
         details: {
           'enabled': settings.enabled,
           'smtp_host': settings.smtpHost,
@@ -579,7 +579,7 @@ class SettingsRoutes {
           actorId: adminId,
           eventType: 'EMAIL_TEST_SUCCESS',
           resourceType: 'settings',
-          resourceId: 'email',
+          resourceName: 'email',
           details: {'test_recipient': testRecipient},
           ipAddress: request.headers['x-forwarded-for'] ?? request.headers['x-real-ip'],
         );
@@ -609,7 +609,7 @@ class SettingsRoutes {
           actorId: adminId,
           eventType: 'EMAIL_TEST_FAILED',
           resourceType: 'settings',
-          resourceId: 'email',
+          resourceName: 'email',
           details: {'test_recipient': testRecipient, 'error': e.toString()},
           ipAddress: request.headers['x-forwarded-for'] ?? request.headers['x-real-ip'],
         );
