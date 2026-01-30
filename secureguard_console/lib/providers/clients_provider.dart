@@ -6,10 +6,10 @@ import '../models/client.dart';
 import '../models/logs.dart';
 import '../services/api_service.dart';
 
-// Re-export Client, EnrollmentCode, SecurityAlerts, and AuditLog for convenience
+// Re-export Client, EnrollmentCode, SecurityAlerts, AuditLog, and ActiveClient for convenience
 export '../models/client.dart';
 export '../models/logs.dart' show AuditLog;
-export '../services/api_service.dart' show EnrollmentCode, SecurityAlerts;
+export '../services/api_service.dart' show EnrollmentCode, SecurityAlerts, ActiveClient;
 
 // Clients list provider
 final clientsProvider = StateNotifierProvider<ClientsNotifier, AsyncValue<List<Client>>>((ref) {
@@ -138,4 +138,22 @@ final clientActivityProvider = FutureProvider.family<List<AuditLog>, String>((re
     resourceId: clientId,
     limit: 10,
   );
+});
+
+// Client metrics provider (fetches from active clients and filters by ID)
+final clientMetricsProvider = FutureProvider.family<ActiveClient?, String>((ref, clientId) async {
+  final api = ref.read(apiServiceProvider);
+  final activeClients = await api.getActiveClients(limit: 100);
+  // Find the client in active clients list
+  try {
+    return activeClients.firstWhere((c) => c.id == clientId);
+  } catch (_) {
+    return null; // Client not in active list (offline)
+  }
+});
+
+// Active clients provider (fetches all currently online clients)
+final activeClientsProvider = FutureProvider<List<ActiveClient>>((ref) async {
+  final api = ref.read(apiServiceProvider);
+  return api.getActiveClients(limit: 100);
 });

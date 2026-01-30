@@ -224,6 +224,10 @@ class ClientDetailScreen extends ConsumerWidget {
               ),
               const SizedBox(height: 24),
 
+              // Connection metrics card
+              _ClientMetricsCard(clientId: clientId),
+              const SizedBox(height: 24),
+
               // Enrollment code card
               _EnrollmentCodeCard(clientId: clientId),
               const SizedBox(height: 24),
@@ -1152,6 +1156,210 @@ Need help? Contact your IT administrator.
         );
       }
     }
+  }
+}
+
+/// Connection metrics card showing real-time status and traffic
+class _ClientMetricsCard extends ConsumerWidget {
+  final String clientId;
+
+  const _ClientMetricsCard({required this.clientId});
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final metricsAsync = ref.watch(clientMetricsProvider(clientId));
+
+    return Card(
+      child: Padding(
+        padding: const EdgeInsets.all(20),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              'Connection Metrics',
+              style: Theme.of(context).textTheme.titleMedium,
+            ),
+            const SizedBox(height: 16),
+            metricsAsync.when(
+              loading: () => const Center(
+                child: Padding(
+                  padding: EdgeInsets.all(16),
+                  child: CircularProgressIndicator(),
+                ),
+              ),
+              error: (error, _) => Center(
+                child: Padding(
+                  padding: const EdgeInsets.all(16),
+                  child: Text(
+                    'Error loading metrics',
+                    style: TextStyle(color: Colors.grey[500]),
+                  ),
+                ),
+              ),
+              data: (metrics) => _buildMetricsContent(context, metrics),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildMetricsContent(BuildContext context, ActiveClient? metrics) {
+    final isOnline = metrics?.isOnline ?? false;
+    final lastSeen = metrics?.lastSeen;
+    final bytesSent = metrics?.bytesSent ?? 0;
+    final bytesReceived = metrics?.bytesReceived ?? 0;
+
+    return Row(
+      children: [
+        // Connection status
+        Expanded(
+          child: _buildMetricItem(
+            context,
+            icon: Icons.circle,
+            iconColor: isOnline ? AppTheme.connected : AppTheme.disconnected,
+            value: isOnline ? 'Connected' : 'Offline',
+            label: isOnline && lastSeen != null
+                ? 'Last heartbeat ${_formatRelativeTime(lastSeen)}'
+                : 'Not connected',
+            animated: isOnline,
+          ),
+        ),
+        // Upload
+        Expanded(
+          child: _buildMetricItem(
+            context,
+            icon: Icons.arrow_upward,
+            iconColor: AppTheme.primary,
+            value: _formatBytes(bytesSent),
+            label: 'Upload',
+          ),
+        ),
+        // Download
+        Expanded(
+          child: _buildMetricItem(
+            context,
+            icon: Icons.arrow_downward,
+            iconColor: AppTheme.connected,
+            value: _formatBytes(bytesReceived),
+            label: 'Download',
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildMetricItem(
+    BuildContext context, {
+    required IconData icon,
+    required Color iconColor,
+    required String value,
+    required String label,
+    bool animated = false,
+  }) {
+    return Column(
+      children: [
+        Row(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            if (animated)
+              _PulsingDot(color: iconColor)
+            else
+              Icon(icon, color: iconColor, size: 16),
+            const SizedBox(width: 8),
+            Text(
+              value,
+              style: Theme.of(context).textTheme.titleLarge?.copyWith(
+                    fontWeight: FontWeight.bold,
+                  ),
+            ),
+          ],
+        ),
+        const SizedBox(height: 4),
+        Text(
+          label,
+          style: TextStyle(color: Colors.grey[500], fontSize: 12),
+          textAlign: TextAlign.center,
+        ),
+      ],
+    );
+  }
+
+  String _formatBytes(int bytes) {
+    if (bytes < 1024) return '$bytes B';
+    if (bytes < 1024 * 1024) return '${(bytes / 1024).toStringAsFixed(1)} KB';
+    if (bytes < 1024 * 1024 * 1024) {
+      return '${(bytes / (1024 * 1024)).toStringAsFixed(1)} MB';
+    }
+    return '${(bytes / (1024 * 1024 * 1024)).toStringAsFixed(1)} GB';
+  }
+
+  String _formatRelativeTime(DateTime timestamp) {
+    final now = DateTime.now();
+    final diff = now.difference(timestamp);
+
+    if (diff.inSeconds < 60) return '${diff.inSeconds}s ago';
+    if (diff.inMinutes < 60) return '${diff.inMinutes}m ago';
+    if (diff.inHours < 24) return '${diff.inHours}h ago';
+    return '${diff.inDays}d ago';
+  }
+}
+
+/// Pulsing dot animation for connected status
+class _PulsingDot extends StatefulWidget {
+  final Color color;
+
+  const _PulsingDot({required this.color});
+
+  @override
+  State<_PulsingDot> createState() => _PulsingDotState();
+}
+
+class _PulsingDotState extends State<_PulsingDot>
+    with SingleTickerProviderStateMixin {
+  late AnimationController _controller;
+  late Animation<double> _animation;
+
+  @override
+  void initState() {
+    super.initState();
+    _controller = AnimationController(
+      duration: const Duration(milliseconds: 1500),
+      vsync: this,
+    )..repeat(reverse: true);
+    _animation = Tween<double>(begin: 0.4, end: 1.0).animate(
+      CurvedAnimation(parent: _controller, curve: Curves.easeInOut),
+    );
+  }
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return AnimatedBuilder(
+      animation: _animation,
+      builder: (context, child) {
+        return Container(
+          width: 12,
+          height: 12,
+          decoration: BoxDecoration(
+            shape: BoxShape.circle,
+            color: widget.color.withValues(alpha: _animation.value),
+            boxShadow: [
+              BoxShadow(
+                color: widget.color.withValues(alpha: _animation.value * 0.5),
+                blurRadius: 8,
+                spreadRadius: 2,
+              ),
+            ],
+          ),
+        );
+      },
+    );
   }
 }
 

@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:data_table_2/data_table_2.dart';
 
 import '../config/theme.dart';
+import '../providers/clients_provider.dart';
 import '../providers/logs_provider.dart';
 import '../services/api_service.dart';
 
@@ -267,6 +268,13 @@ class _LogsScreenState extends ConsumerState<LogsScreen> with SingleTickerProvid
 
   Widget _buildConnectionLogTab() {
     final logsAsync = ref.watch(connectionLogsProvider);
+    final activeClientsAsync = ref.watch(activeClientsProvider);
+
+    // Build a map of active clients for quick lookup
+    final activeClientsMap = activeClientsAsync.maybeWhen(
+      data: (clients) => {for (var c in clients) c.id: c},
+      orElse: () => <String, ActiveClient>{},
+    );
 
     return logsAsync.when(
       loading: () => const Center(child: CircularProgressIndicator()),
@@ -276,8 +284,9 @@ class _LogsScreenState extends ConsumerState<LogsScreen> with SingleTickerProvid
           : DataTable2(
               columnSpacing: 12,
               horizontalMargin: 12,
-              minWidth: 900,
+              minWidth: 1000,
               columns: const [
+                DataColumn2(label: Text('Status'), size: ColumnSize.S),
                 DataColumn2(label: Text('Client'), size: ColumnSize.M),
                 DataColumn2(label: Text('Connected'), size: ColumnSize.M),
                 DataColumn2(label: Text('Disconnected'), size: ColumnSize.M),
@@ -287,8 +296,13 @@ class _LogsScreenState extends ConsumerState<LogsScreen> with SingleTickerProvid
                 DataColumn2(label: Text('Reason'), size: ColumnSize.M),
               ],
               rows: logs.map((log) {
+                final activeClient = activeClientsMap[log.clientId];
+                final isOnline = activeClient?.isOnline ?? false;
+                final lastSeen = activeClient?.lastSeen;
+
                 return DataRow2(
                   cells: [
+                    DataCell(_buildConnectionStatusCell(isOnline, lastSeen, log.disconnectedAt == null)),
                     DataCell(Text(log.clientName ?? log.clientId)),
                     DataCell(Text(_formatTimestamp(log.connectedAt))),
                     DataCell(Text(log.disconnectedAt != null ? _formatTimestamp(log.disconnectedAt!) : '-')),
@@ -301,6 +315,44 @@ class _LogsScreenState extends ConsumerState<LogsScreen> with SingleTickerProvid
               }).toList(),
             ),
     );
+  }
+
+  Widget _buildConnectionStatusCell(bool isOnline, DateTime? lastSeen, bool isActiveConnection) {
+    // Only show as online if the connection log shows no disconnect AND client is online
+    final showOnline = isActiveConnection && isOnline;
+
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        if (showOnline)
+          _ConnectionPulsingDot(color: AppTheme.connected)
+        else
+          Container(
+            width: 10,
+            height: 10,
+            decoration: BoxDecoration(
+              shape: BoxShape.circle,
+              color: AppTheme.disconnected,
+            ),
+          ),
+        if (showOnline && lastSeen != null) ...[
+          const SizedBox(width: 6),
+          Text(
+            _formatLastActivity(lastSeen),
+            style: TextStyle(fontSize: 11, color: Colors.grey[500]),
+          ),
+        ],
+      ],
+    );
+  }
+
+  String _formatLastActivity(DateTime timestamp) {
+    final now = DateTime.now();
+    final diff = now.difference(timestamp);
+
+    if (diff.inSeconds < 60) return '${diff.inSeconds}s';
+    if (diff.inMinutes < 60) return '${diff.inMinutes}m';
+    return '${diff.inHours}h';
   }
 
   Widget _buildEventChip(String eventType) {
@@ -572,7 +624,13 @@ class _LogsScreenState extends ConsumerState<LogsScreen> with SingleTickerProvid
     if (picked != null) {
       setState(() {
         _startDate = picked.start;
-        _endDate = picked.end;
+        // Adjust endDate to end of day (23:59:59.999) to include full day
+        _endDate = DateTime(
+          picked.end.year,
+          picked.end.month,
+          picked.end.day,
+          23, 59, 59, 999,
+        );
       });
       _refreshLogs();
     }
@@ -654,6 +712,64 @@ class _LogsScreenState extends ConsumerState<LogsScreen> with SingleTickerProvid
     // TODO: Implement export
     ScaffoldMessenger.of(context).showSnackBar(
       const SnackBar(content: Text('Export functionality coming soon')),
+    );
+  }
+}
+
+/// Pulsing dot animation for connected status in connections tab
+class _ConnectionPulsingDot extends StatefulWidget {
+  final Color color;
+
+  const _ConnectionPulsingDot({required this.color});
+
+  @override
+  State<_ConnectionPulsingDot> createState() => _ConnectionPulsingDotState();
+}
+
+class _ConnectionPulsingDotState extends State<_ConnectionPulsingDot>
+    with SingleTickerProviderStateMixin {
+  late AnimationController _controller;
+  late Animation<double> _animation;
+
+  @override
+  void initState() {
+    super.initState();
+    _controller = AnimationController(
+      duration: const Duration(milliseconds: 1500),
+      vsync: this,
+    )..repeat(reverse: true);
+    _animation = Tween<double>(begin: 0.4, end: 1.0).animate(
+      CurvedAnimation(parent: _controller, curve: Curves.easeInOut),
+    );
+  }
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return AnimatedBuilder(
+      animation: _animation,
+      builder: (context, child) {
+        return Container(
+          width: 10,
+          height: 10,
+          decoration: BoxDecoration(
+            shape: BoxShape.circle,
+            color: widget.color.withValues(alpha: _animation.value),
+            boxShadow: [
+              BoxShadow(
+                color: widget.color.withValues(alpha: _animation.value * 0.5),
+                blurRadius: 6,
+                spreadRadius: 1,
+              ),
+            ],
+          ),
+        );
+      },
     );
   }
 }
