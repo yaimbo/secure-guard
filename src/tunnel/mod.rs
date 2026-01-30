@@ -961,3 +961,123 @@ async fn remove_endpoint_bypass_platform(endpoint: Ipv4Addr) -> Result<(), Secur
 
 // Old netstat-parsing cleanup functions have been removed.
 // Route cleanup now uses the persistent state file approach via cleanup_from_state_file().
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::io::Write;
+    use tempfile::NamedTempFile;
+
+    #[test]
+    fn test_route_state_serialization() {
+        let state = RouteState {
+            interface: "utun5".to_string(),
+            interface_index: None,
+            endpoint_bypass: Some("203.0.113.1".to_string()),
+            default_gateway: Some("192.168.1.1".to_string()),
+            routes: vec![
+                "10.13.13.0/24".to_string(),
+                "10.10.10.0/24".to_string(),
+                "8.8.8.8/32".to_string(),
+            ],
+            timestamp: "1234567890".to_string(),
+        };
+
+        // Serialize
+        let json = serde_json::to_string_pretty(&state).unwrap();
+        assert!(json.contains("utun5"));
+        assert!(json.contains("10.13.13.0/24"));
+        assert!(json.contains("203.0.113.1"));
+
+        // Deserialize
+        let parsed: RouteState = serde_json::from_str(&json).unwrap();
+        assert_eq!(parsed.interface, "utun5");
+        assert_eq!(parsed.routes.len(), 3);
+        assert_eq!(parsed.endpoint_bypass, Some("203.0.113.1".to_string()));
+    }
+
+    #[test]
+    fn test_route_state_without_optional_fields() {
+        let state = RouteState {
+            interface: "tun0".to_string(),
+            interface_index: None,
+            endpoint_bypass: None,
+            default_gateway: None,
+            routes: vec!["10.0.0.0/8".to_string()],
+            timestamp: "0".to_string(),
+        };
+
+        let json = serde_json::to_string(&state).unwrap();
+        // Optional None fields should not appear in JSON
+        assert!(!json.contains("endpoint_bypass"));
+        assert!(!json.contains("default_gateway"));
+        assert!(!json.contains("interface_index"));
+
+        // Should still deserialize correctly
+        let parsed: RouteState = serde_json::from_str(&json).unwrap();
+        assert_eq!(parsed.endpoint_bypass, None);
+    }
+
+    #[test]
+    fn test_route_state_with_windows_fields() {
+        let state = RouteState {
+            interface: "SecureGuard".to_string(),
+            interface_index: Some(12),
+            endpoint_bypass: Some("10.0.0.1".to_string()),
+            default_gateway: Some("192.168.0.1".to_string()),
+            routes: vec!["0.0.0.0/0".to_string()],
+            timestamp: "9999999999".to_string(),
+        };
+
+        let json = serde_json::to_string_pretty(&state).unwrap();
+        assert!(json.contains("\"interface_index\": 12"));
+
+        let parsed: RouteState = serde_json::from_str(&json).unwrap();
+        assert_eq!(parsed.interface_index, Some(12));
+    }
+
+    #[test]
+    fn test_state_file_roundtrip() {
+        // Create a temp file to simulate state file
+        let mut temp_file = NamedTempFile::new().unwrap();
+
+        let state = RouteState {
+            interface: "utun99".to_string(),
+            interface_index: None,
+            endpoint_bypass: Some("1.2.3.4".to_string()),
+            default_gateway: Some("192.168.1.1".to_string()),
+            routes: vec!["10.0.0.0/8".to_string(), "172.16.0.0/12".to_string()],
+            timestamp: "1706600000".to_string(),
+        };
+
+        // Write state to temp file
+        let json = serde_json::to_string_pretty(&state).unwrap();
+        temp_file.write_all(json.as_bytes()).unwrap();
+        temp_file.flush().unwrap();
+
+        // Read it back
+        let contents = std::fs::read_to_string(temp_file.path()).unwrap();
+        let loaded: RouteState = serde_json::from_str(&contents).unwrap();
+
+        assert_eq!(loaded.interface, "utun99");
+        assert_eq!(loaded.routes.len(), 2);
+        assert_eq!(loaded.endpoint_bypass, Some("1.2.3.4".to_string()));
+    }
+
+    #[test]
+    fn test_interface_exists_nonexistent() {
+        // A clearly nonexistent interface should return false
+        assert!(!interface_exists("utun99999"));
+        assert!(!interface_exists("nonexistent_interface_xyz"));
+    }
+
+    #[test]
+    fn test_interface_exists_loopback() {
+        // lo0 (macOS) or lo (Linux) should exist
+        #[cfg(target_os = "macos")]
+        assert!(interface_exists("lo0"));
+
+        #[cfg(target_os = "linux")]
+        assert!(interface_exists("lo"));
+    }
+}
