@@ -141,53 +141,35 @@ class _LogsScreenState extends ConsumerState<LogsScreen> with SingleTickerProvid
           : DataTable2(
               columnSpacing: 12,
               horizontalMargin: 12,
-              minWidth: 1100,
+              minWidth: 1200,
               columns: const [
                 DataColumn2(label: Text('Timestamp'), size: ColumnSize.M),
                 DataColumn2(label: Text('Severity'), size: ColumnSize.S),
                 DataColumn2(label: Text('Actor'), size: ColumnSize.M),
                 DataColumn2(label: Text('Event'), size: ColumnSize.M),
-                DataColumn2(label: Text('Resource'), size: ColumnSize.M),
+                DataColumn2(label: Text('Client'), size: ColumnSize.M),
+                DataColumn2(label: Text('Hostname'), size: ColumnSize.M),
                 DataColumn2(label: Text('Details'), size: ColumnSize.L),
                 DataColumn2(label: Text('IP'), size: ColumnSize.S),
               ],
               rows: logs.map((log) {
+                final hostname = log.details?['hostname'] as String?;
+                final clientName = log.resourceType == 'client' ? log.resourceName : null;
                 return DataRow2(
                   cells: [
                     DataCell(Text(_formatTimestamp(log.timestamp))),
                     DataCell(_buildAuditSeverityChip(log.severity)),
-                    DataCell(
-                      Column(
-                        mainAxisAlignment: MainAxisAlignment.center,
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Text(log.actorName ?? log.actorId ?? '-'),
-                          Text(
-                            log.actorType,
-                            style: TextStyle(fontSize: 11, color: Colors.grey[500]),
-                          ),
-                        ],
-                      ),
-                    ),
+                    DataCell(_buildActorCell(log)),
                     DataCell(_buildEventChip(log.eventType)),
+                    DataCell(Text(clientName ?? '-')),
+                    DataCell(Text(hostname ?? '-')),
                     DataCell(
-                      Column(
-                        mainAxisAlignment: MainAxisAlignment.center,
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Text(log.resourceName ?? log.resourceId ?? '-'),
-                          if (log.resourceType != null)
-                            Text(
-                              log.resourceType!,
-                              style: TextStyle(fontSize: 11, color: Colors.grey[500]),
-                            ),
-                        ],
-                      ),
-                    ),
-                    DataCell(
-                      Text(
-                        log.details?.toString() ?? '-',
-                        overflow: TextOverflow.ellipsis,
+                      Tooltip(
+                        message: log.details?.toString() ?? '',
+                        child: Text(
+                          _formatDetails(log.details),
+                          overflow: TextOverflow.ellipsis,
+                        ),
                       ),
                     ),
                     DataCell(Text(log.ipAddress ?? '-')),
@@ -326,6 +308,60 @@ class _LogsScreenState extends ConsumerState<LogsScreen> with SingleTickerProvid
         style: TextStyle(color: color, fontSize: 12, fontWeight: FontWeight.bold),
       ),
     );
+  }
+
+  Widget _buildActorCell(AuditLog log) {
+    final displayName = log.actorName;
+    final actorId = log.actorId;
+
+    // If we have a name, show it; otherwise show truncated ID
+    String mainText;
+    String? tooltipText;
+
+    if (displayName != null && displayName.isNotEmpty) {
+      mainText = displayName;
+      tooltipText = actorId; // Show full ID on hover if available
+    } else if (actorId != null && actorId.isNotEmpty) {
+      // Truncate UUID to first 8 characters
+      mainText = actorId.length > 8 ? '${actorId.substring(0, 8)}...' : actorId;
+      tooltipText = actorId;
+    } else {
+      mainText = '-';
+      tooltipText = null;
+    }
+
+    final content = Column(
+      mainAxisAlignment: MainAxisAlignment.center,
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(mainText),
+        Text(
+          log.actorType,
+          style: TextStyle(fontSize: 11, color: Colors.grey[500]),
+        ),
+      ],
+    );
+
+    if (tooltipText != null && tooltipText != mainText) {
+      return Tooltip(
+        message: tooltipText,
+        child: content,
+      );
+    }
+    return content;
+  }
+
+  String _formatDetails(Map<String, dynamic>? details) {
+    if (details == null || details.isEmpty) return '-';
+
+    // Remove hostname from details display since it has its own column
+    final filtered = Map<String, dynamic>.from(details)..remove('hostname');
+    if (filtered.isEmpty) return '-';
+
+    // Format as key: value pairs
+    return filtered.entries
+        .map((e) => '${e.key}: ${e.value}')
+        .join(', ');
   }
 
   Widget _buildSeverityChip(String severity) {
