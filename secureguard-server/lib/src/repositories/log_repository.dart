@@ -20,6 +20,7 @@ class LogRepository {
     String? actorId,
     String? actorName,
     required String eventType,
+    String severity = 'INFO',
     String? resourceType,
     String? resourceId,
     String? resourceName,
@@ -29,11 +30,11 @@ class LogRepository {
   }) async {
     await db.execute('''
       INSERT INTO audit_log (
-        actor_type, actor_id, actor_name, event_type,
+        actor_type, actor_id, actor_name, event_type, severity,
         resource_type, resource_id, resource_name,
         details, ip_address, user_agent
       ) VALUES (
-        @actor_type, @actor_id::uuid, @actor_name, @event_type,
+        @actor_type, @actor_id::uuid, @actor_name, @event_type, @severity,
         @resource_type, @resource_id::uuid, @resource_name,
         @details::jsonb, @ip_address::inet, @user_agent
       )
@@ -42,6 +43,7 @@ class LogRepository {
       'actor_id': actorId,
       'actor_name': actorName,
       'event_type': eventType,
+      'severity': severity,
       'resource_type': resourceType,
       'resource_id': resourceId,
       'resource_name': resourceName,
@@ -56,6 +58,7 @@ class LogRepository {
     DateTime? startDate,
     DateTime? endDate,
     String? eventType,
+    String? severity,
     String? actorType,
     String? actorId,
     String? resourceType,
@@ -81,6 +84,19 @@ class LogRepository {
     if (eventType != null) {
       whereClauses.add('event_type = @event_type');
       whereParams['event_type'] = eventType;
+    }
+
+    if (severity != null) {
+      // Severity filtering with hierarchy: ALERT > WARNING > INFO
+      // - ALERT: show only ALERT
+      // - WARNING: show WARNING and ALERT
+      // - INFO: show all (INFO, WARNING, ALERT)
+      if (severity == 'ALERT') {
+        whereClauses.add("severity = 'ALERT'");
+      } else if (severity == 'WARNING') {
+        whereClauses.add("severity IN ('WARNING', 'ALERT')");
+      }
+      // severity == 'INFO' means show all, so no filter needed
     }
 
     if (actorType != null) {

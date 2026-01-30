@@ -117,6 +117,7 @@ class AuthRoutes {
       await logRepo.auditLog(
         actorType: 'system',
         eventType: 'INITIAL_SETUP',
+        severity: 'INFO',
         resourceType: 'admin',
         resourceId: admin.id,
         resourceName: email,
@@ -167,6 +168,7 @@ class AuthRoutes {
         await logRepo.auditLog(
           actorType: 'system',
           eventType: 'LOGIN_FAILED',
+          severity: 'WARNING',
           details: {'email': email, 'reason': 'User not found'},
           ipAddress: request.headers['x-forwarded-for'] ?? request.headers['x-real-ip'],
         );
@@ -180,6 +182,7 @@ class AuthRoutes {
         await logRepo.auditLog(
           actorType: 'system',
           eventType: 'LOGIN_FAILED',
+          severity: 'WARNING',
           details: {'email': email, 'reason': 'Invalid password'},
           ipAddress: request.headers['x-forwarded-for'] ?? request.headers['x-real-ip'],
         );
@@ -207,6 +210,7 @@ class AuthRoutes {
         actorId: admin.id,
         actorName: admin.email,
         eventType: 'LOGIN_SUCCESS',
+        severity: 'INFO',
         ipAddress: request.headers['x-forwarded-for'] ?? request.headers['x-real-ip'],
         userAgent: request.headers['user-agent'],
       );

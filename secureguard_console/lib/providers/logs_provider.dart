@@ -31,6 +31,7 @@ final filteredAuditLogsProvider = FutureProvider.family<List<AuditLog>, LogsFilt
     startDate: filter.startDate,
     endDate: filter.endDate,
     eventType: filter.eventType,
+    severity: filter.severity,
     search: filter.search,
   );
 });

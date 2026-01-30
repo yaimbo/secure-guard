@@ -8,6 +8,7 @@ class AuditEvent {
   final String? actorId;
   final String? actorName;
   final String eventType;
+  final String severity; // INFO, WARNING, ALERT
   final String? resourceType;
   final String? resourceId;
   final String? resourceName;
@@ -22,6 +23,7 @@ class AuditEvent {
     this.actorId,
     this.actorName,
     required this.eventType,
+    required this.severity,
     this.resourceType,
     this.resourceId,
     this.resourceName,
@@ -38,6 +40,7 @@ class AuditEvent {
       actorId: row['actor_id'] as String?,
       actorName: row['actor_name'] as String?,
       eventType: row['event_type'] as String,
+      severity: row['severity'] as String? ?? 'INFO',
       resourceType: row['resource_type'] as String?,
       resourceId: row['resource_id'] as String?,
       resourceName: row['resource_name'] as String?,
@@ -55,6 +58,7 @@ class AuditEvent {
       'actor_id': actorId,
       'actor_name': actorName,
       'event_type': eventType,
+      'severity': severity,
       'resource_type': resourceType,
       'resource_id': resourceId,
       'resource_name': resourceName,

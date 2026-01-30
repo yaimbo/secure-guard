@@ -146,151 +146,90 @@ class ClientDetailScreen extends ConsumerWidget {
               ),
               const SizedBox(height: 24),
 
-              // Info sections
-              Row(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  // Client info
-                  Expanded(
-                    child: Card(
-                      child: Padding(
-                        padding: const EdgeInsets.all(20),
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Text(
-                              'Client Information',
-                              style: Theme.of(context).textTheme.titleMedium,
-                            ),
-                            const SizedBox(height: 16),
-                            _buildInfoRow(context, 'ID', client.id, copyable: true),
-                            _buildInfoRow(context, 'Name', client.name),
-                            _buildInfoRow(context, 'Description', client.description ?? '-'),
-                            _buildInfoRow(context, 'Status', client.status),
-                            _buildInfoRow(context, 'Created', _formatDateTime(client.createdAt)),
-                            _buildInfoRow(context, 'Updated', _formatDateTime(client.updatedAt)),
-                          ],
-                        ),
-                      ),
-                    ),
-                  ),
-                  const SizedBox(width: 16),
-
-                  // User info
-                  Expanded(
-                    child: Card(
-                      child: Padding(
-                        padding: const EdgeInsets.all(20),
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Text(
-                              'User Information',
-                              style: Theme.of(context).textTheme.titleMedium,
-                            ),
-                            const SizedBox(height: 16),
-                            _buildInfoRow(context, 'Email', client.userEmail ?? '-'),
-                            _buildInfoRow(context, 'Name', client.userName ?? '-'),
-                          ],
-                        ),
-                      ),
-                    ),
-                  ),
-                  const SizedBox(width: 16),
-
-                  // Network info
-                  Expanded(
-                    child: Card(
-                      child: Padding(
-                        padding: const EdgeInsets.all(20),
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Text(
-                              'Network Information',
-                              style: Theme.of(context).textTheme.titleMedium,
-                            ),
-                            const SizedBox(height: 16),
-                            _buildInfoRow(context, 'Assigned IP', client.assignedIp, copyable: true),
-                            _buildInfoRow(context, 'Hostname', client.hostname ?? 'Not connected yet'),
-                            _buildInfoRow(context, 'Last Seen', _formatLastSeen(client.lastSeenAt)),
-                            _buildInfoRow(context, 'Last Config Fetch', _formatLastSeen(client.lastConfigFetch)),
-                          ],
-                        ),
-                      ),
-                    ),
-                  ),
-                ],
-              ),
-              const SizedBox(height: 24),
-
-              // Device info
-              Row(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Expanded(
-                    child: Card(
-                      child: Padding(
-                        padding: const EdgeInsets.all(20),
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Text(
-                              'Device Information',
-                              style: Theme.of(context).textTheme.titleMedium,
-                            ),
-                            const SizedBox(height: 16),
-                            _buildInfoRow(context, 'Platform', client.platform ?? '-'),
-                            _buildInfoRow(context, 'Client Version', client.clientVersion ?? '-'),
-                          ],
-                        ),
-                      ),
-                    ),
-                  ),
-                  const SizedBox(width: 16),
-                  Expanded(
-                    flex: 2,
-                    child: Card(
-                      child: Padding(
-                        padding: const EdgeInsets.all(20),
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Row(
-                              mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                              children: [
-                                Text(
-                                  'Recent Activity',
-                                  style: Theme.of(context).textTheme.titleMedium,
-                                ),
-                                TextButton(
-                                  onPressed: () => context.go('/logs?client=$clientId'),
-                                  child: const Text('View All'),
-                                ),
-                              ],
-                            ),
-                            const SizedBox(height: 16),
-                            // Placeholder for recent activity
-                            Center(
-                              child: Padding(
-                                padding: const EdgeInsets.all(32),
-                                child: Text(
-                                  'No recent activity',
-                                  style: TextStyle(color: Colors.grey[500]),
+              // Info sections - combined into two cards (same height)
+              IntrinsicHeight(
+                child: Row(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    // Client & User info (combined)
+                    Expanded(
+                      child: Card(
+                        child: Padding(
+                          padding: const EdgeInsets.all(20),
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text(
+                                'Client Information',
+                                style: Theme.of(context).textTheme.titleMedium,
+                              ),
+                              const SizedBox(height: 16),
+                              _buildInfoRow(context, 'ID', client.id, copyable: true),
+                              _buildInfoRow(context, 'Name', client.name),
+                              _buildInfoRow(context, 'Description', client.description ?? '-'),
+                              _buildInfoRow(context, 'Status', client.status),
+                              _buildInfoRow(context, 'Created', _formatDateTime(client.createdAt)),
+                              _buildInfoRow(context, 'Updated', _formatDateTime(client.updatedAt)),
+                              const Divider(height: 32),
+                              Text(
+                                'User',
+                                style: Theme.of(context).textTheme.titleSmall?.copyWith(
+                                  color: Colors.grey[400],
                                 ),
                               ),
-                            ),
-                          ],
+                              const SizedBox(height: 12),
+                              _buildInfoRow(context, 'Email', client.userEmail ?? '-'),
+                              _buildInfoRow(context, 'Name', client.userName ?? '-'),
+                            ],
+                          ),
                         ),
                       ),
                     ),
-                  ),
-                ],
+                    const SizedBox(width: 16),
+
+                    // Network & Device info (combined)
+                    Expanded(
+                      child: Card(
+                        child: Padding(
+                          padding: const EdgeInsets.all(20),
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text(
+                                'Network Information',
+                                style: Theme.of(context).textTheme.titleMedium,
+                              ),
+                              const SizedBox(height: 16),
+                              _buildInfoRow(context, 'Assigned IP', client.assignedIp, copyable: true),
+                              _buildInfoRow(context, 'Hostname', client.hostname ?? 'Not connected yet'),
+                              _buildInfoRow(context, 'Last Seen', _formatLastSeen(client.lastSeenAt)),
+                              _buildInfoRow(context, 'Last Config Fetch', _formatLastSeen(client.lastConfigFetch)),
+                              const Divider(height: 32),
+                              Text(
+                                'Device',
+                                style: Theme.of(context).textTheme.titleSmall?.copyWith(
+                                  color: Colors.grey[400],
+                                ),
+                              ),
+                              const SizedBox(height: 12),
+                              _buildInfoRow(context, 'Platform', client.platform ?? '-'),
+                              _buildInfoRow(context, 'Client Version', client.clientVersion ?? '-'),
+                            ],
+                          ),
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
               ),
               const SizedBox(height: 24),
 
               // Enrollment code card
               _EnrollmentCodeCard(clientId: clientId),
+              const SizedBox(height: 24),
+
+              // Recent Activity card
+              _ClientActivityCard(clientId: clientId),
               const SizedBox(height: 24),
 
               // Danger zone
@@ -1213,5 +1152,211 @@ Need help? Contact your IT administrator.
         );
       }
     }
+  }
+}
+
+/// Recent activity card showing client-specific audit logs
+class _ClientActivityCard extends ConsumerWidget {
+  final String clientId;
+
+  const _ClientActivityCard({required this.clientId});
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final activityAsync = ref.watch(clientActivityProvider(clientId));
+
+    return Card(
+      child: Padding(
+        padding: const EdgeInsets.all(20),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                Text(
+                  'Recent Activity',
+                  style: Theme.of(context).textTheme.titleMedium,
+                ),
+                TextButton(
+                  onPressed: () => context.go('/logs'),
+                  child: const Text('View All'),
+                ),
+              ],
+            ),
+            const SizedBox(height: 16),
+            activityAsync.when(
+              loading: () => const Center(
+                child: Padding(
+                  padding: EdgeInsets.all(24),
+                  child: CircularProgressIndicator(),
+                ),
+              ),
+              error: (error, _) => Center(
+                child: Padding(
+                  padding: const EdgeInsets.all(24),
+                  child: Column(
+                    children: [
+                      Icon(Icons.error_outline, size: 32, color: AppTheme.error),
+                      const SizedBox(height: 8),
+                      Text(
+                        'Error loading activity',
+                        style: TextStyle(color: Colors.grey[500]),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+              data: (logs) => logs.isEmpty
+                  ? Center(
+                      child: Padding(
+                        padding: const EdgeInsets.all(24),
+                        child: Column(
+                          children: [
+                            Icon(Icons.history, size: 32, color: Colors.grey[700]),
+                            const SizedBox(height: 8),
+                            Text(
+                              'No recent activity',
+                              style: TextStyle(color: Colors.grey[500]),
+                            ),
+                          ],
+                        ),
+                      ),
+                    )
+                  : Column(
+                      children: logs.take(5).map((log) => _buildActivityItem(context, log)).toList(),
+                    ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildActivityItem(BuildContext context, AuditLog log) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 8),
+      child: Row(
+        children: [
+          // Severity indicator dot
+          Container(
+            width: 8,
+            height: 8,
+            decoration: BoxDecoration(
+              shape: BoxShape.circle,
+              color: _getSeverityColor(log.severity),
+            ),
+          ),
+          const SizedBox(width: 8),
+          Icon(
+            _getEventIcon(log.eventType),
+            size: 16,
+            color: _getEventColor(log.eventType),
+          ),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  _formatEventType(log.eventType),
+                  style: const TextStyle(fontWeight: FontWeight.w500),
+                ),
+                if (log.actorName != null)
+                  Text(
+                    'by ${log.actorName}',
+                    style: TextStyle(fontSize: 12, color: Colors.grey[500]),
+                  ),
+              ],
+            ),
+          ),
+          Text(
+            _formatRelativeTime(log.timestamp),
+            style: TextStyle(
+              color: Colors.grey[500],
+              fontSize: 12,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Color _getSeverityColor(String severity) {
+    switch (severity.toUpperCase()) {
+      case 'ALERT':
+        return AppTheme.error;
+      case 'WARNING':
+        return AppTheme.warning;
+      case 'INFO':
+      default:
+        return AppTheme.primary;
+    }
+  }
+
+  IconData _getEventIcon(String eventType) {
+    switch (eventType) {
+      case 'CLIENT_CREATED':
+        return Icons.add_circle_outline;
+      case 'CLIENT_UPDATED':
+        return Icons.edit;
+      case 'CLIENT_ENABLED':
+        return Icons.check_circle_outline;
+      case 'CLIENT_DISABLED':
+        return Icons.block;
+      case 'CLIENT_DELETED':
+        return Icons.delete_outline;
+      case 'CONFIG_FETCHED':
+        return Icons.download;
+      case 'ENROLLMENT_CODE_GENERATED':
+        return Icons.vpn_key;
+      case 'ENROLLMENT_CODE_REDEEMED':
+        return Icons.verified;
+      case 'ENROLLMENT_EMAIL_SENT':
+        return Icons.email;
+      case 'HEARTBEAT':
+        return Icons.favorite;
+      case 'HOSTNAME_MISMATCH':
+        return Icons.warning;
+      default:
+        return Icons.info_outline;
+    }
+  }
+
+  Color _getEventColor(String eventType) {
+    switch (eventType) {
+      case 'CLIENT_CREATED':
+      case 'CLIENT_ENABLED':
+      case 'ENROLLMENT_CODE_REDEEMED':
+        return AppTheme.connected;
+      case 'CLIENT_DISABLED':
+      case 'CLIENT_DELETED':
+        return AppTheme.error;
+      case 'HOSTNAME_MISMATCH':
+        return AppTheme.warning;
+      default:
+        return AppTheme.primary;
+    }
+  }
+
+  String _formatEventType(String eventType) {
+    return eventType
+        .replaceAll('_', ' ')
+        .toLowerCase()
+        .split(' ')
+        .map((word) => word.isNotEmpty ? '${word[0].toUpperCase()}${word.substring(1)}' : '')
+        .join(' ');
+  }
+
+  String _formatRelativeTime(DateTime timestamp) {
+    final now = DateTime.now();
+    final diff = now.difference(timestamp);
+
+    if (diff.inMinutes < 1) return 'Just now';
+    if (diff.inMinutes < 60) return '${diff.inMinutes}m ago';
+    if (diff.inHours < 24) return '${diff.inHours}h ago';
+    if (diff.inDays < 7) return '${diff.inDays}d ago';
+
+    return '${timestamp.month}/${timestamp.day}/${timestamp.year}';
   }
 }

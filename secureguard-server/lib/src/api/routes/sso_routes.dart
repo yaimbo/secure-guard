@@ -288,6 +288,7 @@ class SSORoutes {
       await logRepo.auditLog(
         actorType: 'system',
         eventType: 'SSO_USER_CREATED',
+        severity: 'INFO',
         resourceType: 'admin',
         resourceId: admin.id,
         resourceName: email,
@@ -317,6 +318,7 @@ class SSORoutes {
       actorId: admin.id,
       actorName: admin.email,
       eventType: 'SSO_LOGIN_SUCCESS',
+      severity: 'INFO',
       details: {'provider': result.providerId},
       ipAddress:
           request.headers['x-forwarded-for'] ?? request.headers['x-real-ip'],
@@ -374,6 +376,7 @@ class SSORoutes {
         actorType: 'admin',
         actorId: request.context['adminId'] as String?,
         eventType: 'SSO_CONFIG_SAVED',
+        severity: 'ALERT',
         resourceType: 'sso_config',
         resourceName: config.providerId,
         ipAddress:
@@ -401,6 +404,7 @@ class SSORoutes {
         actorType: 'admin',
         actorId: request.context['adminId'] as String?,
         eventType: 'SSO_CONFIG_DELETED',
+        severity: 'ALERT',
         resourceType: 'sso_config',
         resourceName: provider,
         ipAddress:

@@ -16,6 +16,7 @@ class _LogsScreenState extends ConsumerState<LogsScreen> with SingleTickerProvid
   late TabController _tabController;
   DateTime? _startDate;
   DateTime? _endDate;
+  String? _selectedSeverity = 'ALERT'; // Default to ALERT only
 
   @override
   void initState() {
@@ -65,6 +66,23 @@ class _LogsScreenState extends ConsumerState<LogsScreen> with SingleTickerProvid
                   label: Text(_formatDateRange()),
                 ),
                 const SizedBox(width: 16),
+                // Severity filter (for Audit tab)
+                DropdownButton<String?>(
+                  value: _selectedSeverity,
+                  hint: const Text('Severity'),
+                  underline: const SizedBox(),
+                  items: const [
+                    DropdownMenuItem(value: null, child: Text('All Severities')),
+                    DropdownMenuItem(value: 'ALERT', child: Text('Alerts Only')),
+                    DropdownMenuItem(value: 'WARNING', child: Text('Warning & Above')),
+                    DropdownMenuItem(value: 'INFO', child: Text('All (Info+)')),
+                  ],
+                  onChanged: (value) {
+                    setState(() => _selectedSeverity = value);
+                    _refreshLogs();
+                  },
+                ),
+                const SizedBox(width: 16),
                 // Refresh
                 IconButton(
                   icon: const Icon(Icons.refresh),
@@ -108,19 +126,25 @@ class _LogsScreenState extends ConsumerState<LogsScreen> with SingleTickerProvid
   }
 
   Widget _buildAuditLogTab() {
-    final logsAsync = ref.watch(auditLogsProvider);
+    final filter = LogsFilter(
+      startDate: _startDate,
+      endDate: _endDate,
+      severity: _selectedSeverity,
+    );
+    final logsAsync = ref.watch(filteredAuditLogsProvider(filter));
 
     return logsAsync.when(
       loading: () => const Center(child: CircularProgressIndicator()),
-      error: (error, stack) => _buildErrorState(error, () => ref.refresh(auditLogsProvider)),
+      error: (error, stack) => _buildErrorState(error, () => ref.invalidate(filteredAuditLogsProvider(filter))),
       data: (logs) => logs.isEmpty
           ? _buildEmptyState('No audit logs found')
           : DataTable2(
               columnSpacing: 12,
               horizontalMargin: 12,
-              minWidth: 1000,
+              minWidth: 1100,
               columns: const [
                 DataColumn2(label: Text('Timestamp'), size: ColumnSize.M),
+                DataColumn2(label: Text('Severity'), size: ColumnSize.S),
                 DataColumn2(label: Text('Actor'), size: ColumnSize.M),
                 DataColumn2(label: Text('Event'), size: ColumnSize.M),
                 DataColumn2(label: Text('Resource'), size: ColumnSize.M),
@@ -131,6 +155,7 @@ class _LogsScreenState extends ConsumerState<LogsScreen> with SingleTickerProvid
                 return DataRow2(
                   cells: [
                     DataCell(Text(_formatTimestamp(log.timestamp))),
+                    DataCell(_buildAuditSeverityChip(log.severity)),
                     DataCell(
                       Column(
                         mainAxisAlignment: MainAxisAlignment.center,
@@ -272,6 +297,33 @@ class _LogsScreenState extends ConsumerState<LogsScreen> with SingleTickerProvid
       child: Text(
         eventType,
         style: TextStyle(color: color, fontSize: 12),
+      ),
+    );
+  }
+
+  Widget _buildAuditSeverityChip(String severity) {
+    Color color;
+    switch (severity.toUpperCase()) {
+      case 'ALERT':
+        color = AppTheme.error;
+        break;
+      case 'WARNING':
+        color = AppTheme.warning;
+        break;
+      case 'INFO':
+      default:
+        color = AppTheme.primary;
+    }
+
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+      decoration: BoxDecoration(
+        color: color.withValues(alpha: 0.1),
+        borderRadius: BorderRadius.circular(4),
+      ),
+      child: Text(
+        severity.toUpperCase(),
+        style: TextStyle(color: color, fontSize: 12, fontWeight: FontWeight.bold),
       ),
     );
   }

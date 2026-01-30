@@ -225,17 +225,24 @@ class ApiService {
     DateTime? startDate,
     DateTime? endDate,
     String? eventType,
+    String? severity,
+    String? resourceType,
+    String? resourceId,
     String? search,
+    int limit = 100,
   }) async {
     final response = await _dio.get('/logs/audit', queryParameters: {
       'page': 1,
-      'limit': 100,
+      'limit': limit,
       if (startDate != null) 'start_date': startDate.toIso8601String(),
       if (endDate != null) 'end_date': endDate.toIso8601String(),
       if (eventType != null) 'event_type': eventType,
+      if (severity != null) 'severity': severity,
+      if (resourceType != null) 'resource_type': resourceType,
+      if (resourceId != null) 'resource_id': resourceId,
       if (search != null && search.isNotEmpty) 'search': search,
     });
-    final items = response.data['data'] as List? ?? [];
+    final items = response.data['events'] as List? ?? response.data['data'] as List? ?? [];
     return items.map((json) => AuditLog.fromJson(json)).toList();
   }
 

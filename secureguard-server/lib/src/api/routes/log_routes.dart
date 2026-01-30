@@ -39,6 +39,7 @@ class LogRoutes {
             ? DateTime.parse(params['end_date']!)
             : null,
         eventType: params['event_type'],
+        severity: params['severity'],
         actorType: params['actor_type'],
         actorId: params['actor_id'],
         resourceType: params['resource_type'],

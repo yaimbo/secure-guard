@@ -6,6 +6,7 @@ class AuditLog {
   final String? actorId;
   final String? actorName;
   final String eventType;
+  final String severity; // INFO, WARNING, ALERT
   final String? resourceType;
   final String? resourceId;
   final String? resourceName;
@@ -20,6 +21,7 @@ class AuditLog {
     this.actorId,
     this.actorName,
     required this.eventType,
+    required this.severity,
     this.resourceType,
     this.resourceId,
     this.resourceName,
@@ -36,6 +38,7 @@ class AuditLog {
       actorId: json['actor_id'] as String?,
       actorName: json['actor_name'] as String?,
       eventType: json['event_type'] as String,
+      severity: json['severity'] as String? ?? 'INFO',
       resourceType: json['resource_type'] as String?,
       resourceId: json['resource_id'] as String?,
       resourceName: json['resource_name'] as String?,

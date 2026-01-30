@@ -326,4 +326,23 @@ const _migrations = <_Migration>[
     -- Index for hostname lookups
     CREATE INDEX IF NOT EXISTS idx_clients_hostname ON clients(hostname);
   '''),
+
+  _Migration('008_audit_log_severity', '''
+    -- Add severity column to audit_log for event classification
+    ALTER TABLE audit_log ADD COLUMN IF NOT EXISTS severity VARCHAR(20) NOT NULL DEFAULT 'INFO';
+
+    -- Backfill existing events based on event_type
+    UPDATE audit_log SET severity = CASE
+      WHEN event_type IN ('HOSTNAME_MISMATCH', 'ENROLLMENT_RATE_LIMITED', 'CLIENT_DELETED',
+                          'ADMIN_DELETED', 'API_KEY_REVOKED', 'VPN_SETTINGS_UPDATED',
+                          'SSO_CONFIG_SAVED', 'SSO_CONFIG_DELETED') THEN 'ALERT'
+      WHEN event_type IN ('LOGIN_FAILED', 'EMAIL_TEST_FAILED', 'CLIENT_DISABLED',
+                          'CLIENT_KEYS_REGENERATED', 'ENROLLMENT_CODE_REVOKED') THEN 'WARNING'
+      ELSE 'INFO'
+    END WHERE severity = 'INFO';
+
+    -- Add index for severity filtering
+    CREATE INDEX IF NOT EXISTS idx_audit_log_severity ON audit_log(severity);
+    CREATE INDEX IF NOT EXISTS idx_audit_log_severity_timestamp ON audit_log(severity, timestamp DESC);
+  '''),
 ];

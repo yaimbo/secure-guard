@@ -3,10 +3,12 @@ import 'dart:typed_data';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../models/client.dart';
+import '../models/logs.dart';
 import '../services/api_service.dart';
 
-// Re-export Client, EnrollmentCode, and SecurityAlerts for convenience
+// Re-export Client, EnrollmentCode, SecurityAlerts, and AuditLog for convenience
 export '../models/client.dart';
+export '../models/logs.dart' show AuditLog;
 export '../services/api_service.dart' show EnrollmentCode, SecurityAlerts;
 
 // Clients list provider
@@ -126,4 +128,14 @@ final enrollmentCodeProvider = FutureProvider.family<EnrollmentCode?, String>((r
 final clientSecurityAlertsProvider = FutureProvider.family<SecurityAlerts, String>((ref, clientId) async {
   final api = ref.read(apiServiceProvider);
   return api.getSecurityAlerts(clientId);
+});
+
+// Client activity logs provider
+final clientActivityProvider = FutureProvider.family<List<AuditLog>, String>((ref, clientId) async {
+  final api = ref.read(apiServiceProvider);
+  return api.getAuditLogs(
+    resourceType: 'client',
+    resourceId: clientId,
+    limit: 10,
+  );
 });

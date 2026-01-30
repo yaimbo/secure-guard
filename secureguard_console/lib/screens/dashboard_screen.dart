@@ -162,7 +162,7 @@ class DashboardScreen extends ConsumerWidget {
       children: [
         // Connections chart
         Expanded(
-          flex: 2,
+          flex: 3,
           child: Card(
             child: Padding(
               padding: const EdgeInsets.all(20),
@@ -173,9 +173,9 @@ class DashboardScreen extends ConsumerWidget {
                     'Connections (24h)',
                     style: Theme.of(context).textTheme.titleMedium,
                   ),
-                  const SizedBox(height: 20),
+                  const SizedBox(height: 16),
                   SizedBox(
-                    height: 200,
+                    height: 160,
                     child: _buildConnectionChart(state.connectionHistory),
                   ),
                 ],
@@ -187,24 +187,52 @@ class DashboardScreen extends ConsumerWidget {
 
         // Active clients list
         Expanded(
+          flex: 2,
           child: Card(
             child: Padding(
               padding: const EdgeInsets.all(20),
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Text(
-                    'Active Clients',
-                    style: Theme.of(context).textTheme.titleMedium,
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    children: [
+                      Text(
+                        'Active Clients',
+                        style: Theme.of(context).textTheme.titleMedium,
+                      ),
+                      if (state.activeClients.isNotEmpty)
+                        Container(
+                          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                          decoration: BoxDecoration(
+                            color: AppTheme.connected.withValues(alpha: 0.2),
+                            borderRadius: BorderRadius.circular(12),
+                          ),
+                          child: Text(
+                            '${state.activeClients.length}',
+                            style: TextStyle(
+                              color: AppTheme.connected,
+                              fontWeight: FontWeight.bold,
+                              fontSize: 12,
+                            ),
+                          ),
+                        ),
+                    ],
                   ),
                   const SizedBox(height: 16),
                   if (state.activeClients.isEmpty)
-                    const Padding(
-                      padding: EdgeInsets.symmetric(vertical: 20),
+                    Padding(
+                      padding: const EdgeInsets.symmetric(vertical: 32),
                       child: Center(
-                        child: Text(
-                          'No active clients',
-                          style: TextStyle(color: Colors.grey),
+                        child: Column(
+                          children: [
+                            Icon(Icons.devices, size: 32, color: Colors.grey[700]),
+                            const SizedBox(height: 8),
+                            Text(
+                              'No active clients',
+                              style: TextStyle(color: Colors.grey[500]),
+                            ),
+                          ],
                         ),
                       ),
                     )
@@ -212,7 +240,7 @@ class DashboardScreen extends ConsumerWidget {
                     ...state.activeClients.take(5).map((client) =>
                         _buildClientItem(
                             context, client.name, client.assignedIp, client.isOnline)),
-                  const SizedBox(height: 8),
+                  if (state.activeClients.isNotEmpty) const SizedBox(height: 8),
                   TextButton(
                     onPressed: () => context.go('/clients'),
                     child: const Text('View all clients...'),
@@ -394,6 +422,7 @@ class DashboardScreen extends ConsumerWidget {
       children: [
         // Recent activity
         Expanded(
+          flex: 3,
           child: Card(
             child: Padding(
               padding: const EdgeInsets.all(20),
@@ -406,12 +435,18 @@ class DashboardScreen extends ConsumerWidget {
                   ),
                   const SizedBox(height: 16),
                   if (state.recentActivity.isEmpty)
-                    const Padding(
-                      padding: EdgeInsets.symmetric(vertical: 20),
+                    Padding(
+                      padding: const EdgeInsets.symmetric(vertical: 24),
                       child: Center(
-                        child: Text(
-                          'No recent activity',
-                          style: TextStyle(color: Colors.grey),
+                        child: Column(
+                          children: [
+                            Icon(Icons.history, size: 32, color: Colors.grey[700]),
+                            const SizedBox(height: 8),
+                            Text(
+                              'No recent activity',
+                              style: TextStyle(color: Colors.grey[500]),
+                            ),
+                          ],
                         ),
                       ),
                     )
@@ -424,7 +459,7 @@ class DashboardScreen extends ConsumerWidget {
                           event.title,
                           event.relativeTime,
                         )),
-                  const SizedBox(height: 8),
+                  if (state.recentActivity.isNotEmpty) const SizedBox(height: 8),
                   TextButton(
                     onPressed: () => context.go('/logs'),
                     child: const Text('View all activity...'),
@@ -438,24 +473,52 @@ class DashboardScreen extends ConsumerWidget {
 
         // Errors
         Expanded(
+          flex: 2,
           child: Card(
             child: Padding(
               padding: const EdgeInsets.all(20),
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Text(
-                    'Errors (last 24h)',
-                    style: Theme.of(context).textTheme.titleMedium,
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    children: [
+                      Text(
+                        'Errors (last 24h)',
+                        style: Theme.of(context).textTheme.titleMedium,
+                      ),
+                      if (state.errorSummary.isNotEmpty)
+                        Container(
+                          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                          decoration: BoxDecoration(
+                            color: AppTheme.error.withValues(alpha: 0.2),
+                            borderRadius: BorderRadius.circular(12),
+                          ),
+                          child: Text(
+                            '${state.errorSummary.values.fold(0, (a, b) => a + b)}',
+                            style: TextStyle(
+                              color: AppTheme.error,
+                              fontWeight: FontWeight.bold,
+                              fontSize: 12,
+                            ),
+                          ),
+                        ),
+                    ],
                   ),
                   const SizedBox(height: 16),
                   if (state.errorSummary.isEmpty)
-                    const Padding(
-                      padding: EdgeInsets.symmetric(vertical: 20),
+                    Padding(
+                      padding: const EdgeInsets.symmetric(vertical: 24),
                       child: Center(
-                        child: Text(
-                          'No errors',
-                          style: TextStyle(color: Colors.grey),
+                        child: Column(
+                          children: [
+                            Icon(Icons.check_circle_outline, size: 32, color: AppTheme.connected),
+                            const SizedBox(height: 8),
+                            Text(
+                              'No errors',
+                              style: TextStyle(color: Colors.grey[500]),
+                            ),
+                          ],
                         ),
                       ),
                     )
@@ -465,7 +528,7 @@ class DashboardScreen extends ConsumerWidget {
                           child:
                               _buildErrorBar(context, e.key, e.value, _getMaxErrors(state.errorSummary)),
                         )),
-                  const SizedBox(height: 8),
+                  if (state.errorSummary.isNotEmpty) const SizedBox(height: 8),
                   TextButton(
                     onPressed: () => context.go('/logs'),
                     child: const Text('View all errors...'),
