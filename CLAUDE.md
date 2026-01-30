@@ -156,6 +156,10 @@ The daemon runs as a background service, controlled via Unix socket IPC (JSON-RP
 
 3. **Session Rekey**: Sessions automatically rekey after 120 seconds. Old session remains valid during rekey.
 
+4. **Stale Route Cleanup**: On startup, the client/server cleans up orphaned routes from crashed previous sessions. Only routes pointing to utun/tun interfaces that **no longer exist** are removed—active interfaces are never touched to avoid breaking other VPN applications.
+
+5. **Graceful Shutdown**: Handles both Ctrl+C (SIGINT) and SIGTERM signals. On shutdown, all routes added during the session are removed to prevent orphaned routes.
+
 ### Debug Binaries
 
 Various verification tools in `src/bin/` for testing crypto primitives against known test vectors.

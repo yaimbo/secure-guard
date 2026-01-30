@@ -48,6 +48,9 @@ pub struct WireGuardServer {
 impl WireGuardServer {
     /// Create a new WireGuard server
     pub async fn new(config: WireGuardConfig) -> Result<Self, SecureGuardError> {
+        // Clean up any stale routes from crashed previous sessions
+        RouteManager::cleanup_stale_routes();
+
         // Get ListenPort (required for server mode)
         let listen_port = config.interface.listen_port.ok_or_else(|| {
             SecureGuardError::Config(ConfigError::MissingField {

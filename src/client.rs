@@ -80,6 +80,9 @@ impl WireGuardClient {
         config: WireGuardConfig,
         traffic_stats: Option<Arc<TrafficStats>>,
     ) -> Result<Self, SecureGuardError> {
+        // Clean up any stale routes from crashed previous sessions
+        RouteManager::cleanup_stale_routes();
+
         // Parse our interface address
         let our_address = config.interface.address
             .first()

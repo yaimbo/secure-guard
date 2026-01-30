@@ -162,9 +162,20 @@ fn determine_mode(args: &Args, config: &WireGuardConfig) -> Result<Mode, SecureG
     }
 }
 
-/// Run the client with graceful shutdown on Ctrl+C
+/// Run the client with graceful shutdown on Ctrl+C or SIGTERM
 async fn run_with_cleanup_client(client: &mut WireGuardClient) -> Result<(), SecureGuardError> {
     let ctrl_c = tokio::signal::ctrl_c();
+
+    #[cfg(unix)]
+    let terminate = async {
+        tokio::signal::unix::signal(tokio::signal::unix::SignalKind::terminate())
+            .expect("Failed to install SIGTERM handler")
+            .recv()
+            .await
+    };
+
+    #[cfg(not(unix))]
+    let terminate = std::future::pending::<Option<()>>();
 
     tokio::select! {
         result = client.run() => {
@@ -175,12 +186,28 @@ async fn run_with_cleanup_client(client: &mut WireGuardClient) -> Result<(), Sec
             client.cleanup().await?;
             Ok(())
         }
+        _ = terminate => {
+            tracing::info!("\nReceived SIGTERM, shutting down...");
+            client.cleanup().await?;
+            Ok(())
+        }
     }
 }
 
-/// Run the server with graceful shutdown on Ctrl+C
+/// Run the server with graceful shutdown on Ctrl+C or SIGTERM
 async fn run_with_cleanup_server(server: &mut WireGuardServer) -> Result<(), SecureGuardError> {
     let ctrl_c = tokio::signal::ctrl_c();
+
+    #[cfg(unix)]
+    let terminate = async {
+        tokio::signal::unix::signal(tokio::signal::unix::SignalKind::terminate())
+            .expect("Failed to install SIGTERM handler")
+            .recv()
+            .await
+    };
+
+    #[cfg(not(unix))]
+    let terminate = std::future::pending::<Option<()>>();
 
     tokio::select! {
         result = server.run() => {
@@ -188,6 +215,11 @@ async fn run_with_cleanup_server(server: &mut WireGuardServer) -> Result<(), Sec
         }
         _ = ctrl_c => {
             tracing::info!("\nReceived Ctrl+C, shutting down...");
+            server.cleanup().await?;
+            Ok(())
+        }
+        _ = terminate => {
+            tracing::info!("\nReceived SIGTERM, shutting down...");
             server.cleanup().await?;
             Ok(())
         }
