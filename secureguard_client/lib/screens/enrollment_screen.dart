@@ -5,7 +5,9 @@ import 'package:window_manager/window_manager.dart';
 
 import '../providers/vpn_provider.dart';
 import '../services/enrollment_service.dart';
+import '../widgets/animated_shield_logo.dart';
 import 'home_screen.dart';
+import 'manual_config_screen.dart';
 
 /// Screen for device enrollment via enrollment code
 ///
@@ -128,11 +130,10 @@ class _EnrollmentScreenState extends ConsumerState<EnrollmentScreen> {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.stretch,
                   children: [
-                    // Header
-                    const Icon(
-                      Icons.vpn_key,
-                      size: 64,
+                    // Header with animated shield
+                    const AnimatedShieldLogo(
                       color: Color(0xFF3B82F6),
+                      size: 100,
                     ),
                     const SizedBox(height: 16),
                     Text(
@@ -257,8 +258,10 @@ class _EnrollmentScreenState extends ConsumerState<EnrollmentScreen> {
                       onPressed: _isLoading
                           ? null
                           : () {
-                              Navigator.of(context).pushReplacement(
-                                MaterialPageRoute(builder: (_) => const HomeScreen()),
+                              Navigator.of(context).push(
+                                MaterialPageRoute(
+                                  builder: (_) => const ManualConfigScreen(),
+                                ),
                               );
                             },
                       child: Text(
@@ -284,37 +287,15 @@ class _EnrollmentScreenState extends ConsumerState<EnrollmentScreen> {
       child: Container(
         height: 48,
         color: isDark ? const Color(0xFF1E1E1E) : Colors.white,
-        child: Row(
-          children: [
-            const SizedBox(width: 16),
-            Icon(
-              Icons.shield,
-              size: 20,
-              color: isDark ? Colors.white70 : Colors.black54,
+        child: Center(
+          child: Text(
+            'SecureGuard VPN',
+            style: TextStyle(
+              fontSize: 14,
+              fontWeight: FontWeight.w500,
+              color: isDark ? Colors.white : Colors.black87,
             ),
-            const SizedBox(width: 8),
-            Text(
-              'SecureGuard VPN',
-              style: TextStyle(
-                fontSize: 14,
-                fontWeight: FontWeight.w500,
-                color: isDark ? Colors.white : Colors.black87,
-              ),
-            ),
-            const Spacer(),
-            // Window controls
-            IconButton(
-              icon: const Icon(Icons.remove, size: 18),
-              onPressed: () => windowManager.minimize(),
-              tooltip: 'Minimize',
-            ),
-            IconButton(
-              icon: const Icon(Icons.close, size: 18),
-              onPressed: () => windowManager.hide(),
-              tooltip: 'Close',
-            ),
-            const SizedBox(width: 8),
-          ],
+          ),
         ),
       ),
     );

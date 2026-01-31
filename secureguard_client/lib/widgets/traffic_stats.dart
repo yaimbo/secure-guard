@@ -1,14 +1,14 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 
-import '../services/ipc_client.dart';
+import '../providers/bandwidth_provider.dart';
 
-class TrafficStats extends StatelessWidget {
-  final VpnStatus status;
-
-  const TrafficStats({super.key, required this.status});
+class TrafficStats extends ConsumerWidget {
+  const TrafficStats({super.key});
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
+    final bandwidthState = ref.watch(bandwidthProvider);
     final isDark = Theme.of(context).brightness == Brightness.dark;
 
     return Card(
@@ -20,24 +20,26 @@ class TrafficStats extends StatelessWidget {
               child: _buildStat(
                 context,
                 icon: Icons.arrow_upward,
-                label: 'Sent',
-                value: _formatBytes(status.bytesSent),
-                color: const Color(0xFF3B82F6),
+                label: 'Upload',
+                totalBytes: bandwidthState.totalBytesSent,
+                speed: bandwidthState.currentUploadSpeed,
+                color: const Color(0xFF6366F1),
                 isDark: isDark,
               ),
             ),
             Container(
               width: 1,
-              height: 40,
+              height: 56,
               color: isDark ? Colors.white12 : Colors.black12,
             ),
             Expanded(
               child: _buildStat(
                 context,
                 icon: Icons.arrow_downward,
-                label: 'Received',
-                value: _formatBytes(status.bytesReceived),
-                color: const Color(0xFF22C55E),
+                label: 'Download',
+                totalBytes: bandwidthState.totalBytesReceived,
+                speed: bandwidthState.currentDownloadSpeed,
+                color: const Color(0xFF10B981),
                 isDark: isDark,
               ),
             ),
@@ -51,7 +53,8 @@ class TrafficStats extends StatelessWidget {
     BuildContext context, {
     required IconData icon,
     required String label,
-    required String value,
+    required int totalBytes,
+    required double speed,
     required Color color,
     required bool isDark,
   }) {
@@ -60,24 +63,45 @@ class TrafficStats extends StatelessWidget {
         Row(
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
-            Icon(icon, size: 16, color: color),
-            const SizedBox(width: 4),
+            Container(
+              padding: const EdgeInsets.all(4),
+              decoration: BoxDecoration(
+                color: color.withValues(alpha: 0.1),
+                borderRadius: BorderRadius.circular(4),
+              ),
+              child: Icon(icon, size: 14, color: color),
+            ),
+            const SizedBox(width: 6),
             Text(
               label,
               style: TextStyle(
                 fontSize: 12,
-                color: isDark ? Colors.white54 : Colors.black45,
+                fontWeight: FontWeight.w500,
+                color: isDark ? Colors.white54 : Colors.black54,
               ),
             ),
           ],
         ),
-        const SizedBox(height: 4),
+        const SizedBox(height: 8),
         Text(
-          value,
+          _formatBytes(totalBytes),
           style: TextStyle(
-            fontSize: 16,
+            fontSize: 18,
             fontWeight: FontWeight.w600,
             color: isDark ? Colors.white : Colors.black87,
+          ),
+        ),
+        const SizedBox(height: 2),
+        AnimatedSwitcher(
+          duration: const Duration(milliseconds: 200),
+          child: Text(
+            _formatSpeed(speed),
+            key: ValueKey(speed.toInt()),
+            style: TextStyle(
+              fontSize: 12,
+              fontWeight: FontWeight.w500,
+              color: color,
+            ),
           ),
         ),
       ],
@@ -91,5 +115,15 @@ class TrafficStats extends StatelessWidget {
       return '${(bytes / (1024 * 1024)).toStringAsFixed(1)} MB';
     }
     return '${(bytes / (1024 * 1024 * 1024)).toStringAsFixed(2)} GB';
+  }
+
+  String _formatSpeed(double bytesPerSecond) {
+    if (bytesPerSecond < 1024) {
+      return '${bytesPerSecond.toInt()} B/s';
+    } else if (bytesPerSecond < 1024 * 1024) {
+      return '${(bytesPerSecond / 1024).toStringAsFixed(1)} KB/s';
+    } else {
+      return '${(bytesPerSecond / (1024 * 1024)).toStringAsFixed(1)} MB/s';
+    }
   }
 }

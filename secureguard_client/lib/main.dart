@@ -72,8 +72,8 @@ void main() async {
   await windowManager.ensureInitialized();
 
   const windowOptions = WindowOptions(
-    size: Size(400, 500),
-    minimumSize: Size(350, 400),
+    size: Size(400, 780),
+    minimumSize: Size(350, 650),
     center: true,
     backgroundColor: Colors.transparent,
     skipTaskbar: false,
@@ -84,6 +84,8 @@ void main() async {
   await windowManager.waitUntilReadyToShow(windowOptions, () async {
     await windowManager.show();
     await windowManager.focus();
+    // Intercept close to minimize to tray instead of quitting
+    await windowManager.setPreventClose(true);
   });
 
   // Initialize deep link handling
@@ -121,10 +123,33 @@ void main() async {
   ));
 }
 
-class SecureGuardApp extends StatelessWidget {
+class SecureGuardApp extends StatefulWidget {
   final EnrollmentData? initialEnrollment;
 
   const SecureGuardApp({super.key, this.initialEnrollment});
+
+  @override
+  State<SecureGuardApp> createState() => _SecureGuardAppState();
+}
+
+class _SecureGuardAppState extends State<SecureGuardApp> with WindowListener {
+  @override
+  void initState() {
+    super.initState();
+    windowManager.addListener(this);
+  }
+
+  @override
+  void dispose() {
+    windowManager.removeListener(this);
+    super.dispose();
+  }
+
+  @override
+  void onWindowClose() async {
+    // Hide to tray instead of quitting
+    await windowManager.hide();
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -135,10 +160,10 @@ class SecureGuardApp extends StatelessWidget {
       theme: _buildTheme(Brightness.light),
       darkTheme: _buildTheme(Brightness.dark),
       themeMode: ThemeMode.system,
-      home: initialEnrollment != null
+      home: widget.initialEnrollment != null
           ? EnrollmentScreen(
-              initialServerUrl: initialEnrollment!.serverUrl,
-              initialCode: initialEnrollment!.code,
+              initialServerUrl: widget.initialEnrollment!.serverUrl,
+              initialCode: widget.initialEnrollment!.code,
             )
           : const HomeScreen(),
     );

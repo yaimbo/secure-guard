@@ -5,10 +5,14 @@ import 'package:window_manager/window_manager.dart';
 import '../providers/vpn_provider.dart';
 import '../services/ipc_client.dart';
 import '../services/tray_service.dart';
-import '../widgets/config_dialog.dart';
+import '../widgets/animated_shield_logo.dart';
+import '../widgets/bandwidth_graph.dart';
 import '../widgets/connection_button.dart';
+import '../widgets/disconnected_hero.dart';
 import '../widgets/status_card.dart';
 import '../widgets/traffic_stats.dart';
+import '../widgets/welcome_hero.dart';
+import 'enrollment_screen.dart';
 
 class HomeScreen extends ConsumerStatefulWidget {
   const HomeScreen({super.key});
@@ -17,50 +21,49 @@ class HomeScreen extends ConsumerStatefulWidget {
   ConsumerState<HomeScreen> createState() => _HomeScreenState();
 }
 
-class _HomeScreenState extends ConsumerState<HomeScreen> with WindowListener {
+class _HomeScreenState extends ConsumerState<HomeScreen> {
   @override
   void initState() {
     super.initState();
-    windowManager.addListener(this);
     _setupTrayCallbacks();
-  }
-
-  @override
-  void dispose() {
-    windowManager.removeListener(this);
-    super.dispose();
   }
 
   void _setupTrayCallbacks() {
     // Wire up tray connect/disconnect callbacks
     TrayService.instance.onConnectRequested = () {
-      _showConfigDialog(context);
+      final savedConfig = ref.read(vpnProvider).savedConfig;
+      if (savedConfig != null && savedConfig.isNotEmpty) {
+        ref.read(vpnProvider.notifier).connect(savedConfig);
+      }
+      // If no config, do nothing - tray button should be disabled
     };
     TrayService.instance.onDisconnectRequested = () {
       ref.read(vpnProvider.notifier).disconnect();
     };
   }
 
-  void _updateTrayStatus(VpnStatus status) {
-    TrayService.instance.updateStatus(status);
-  }
-
-  @override
-  void onWindowClose() async {
-    // Minimize to tray instead of closing (optional behavior)
-    await windowManager.hide();
+  void _updateTrayStatus(VpnStatus status, String? savedConfig) {
+    final hasConfig = savedConfig != null && savedConfig.isNotEmpty;
+    TrayService.instance.updateStatus(status, hasConfig: hasConfig);
   }
 
   @override
   Widget build(BuildContext context) {
     // Listen to VPN state changes and update tray
     ref.listen<VpnState>(vpnProvider, (previous, next) {
-      _updateTrayStatus(next.status);
+      _updateTrayStatus(next.status, next.savedConfig);
     });
 
     final vpnState = ref.watch(vpnProvider);
     final theme = Theme.of(context);
     final isDark = theme.brightness == Brightness.dark;
+
+    final hasConfig =
+        vpnState.savedConfig != null && vpnState.savedConfig!.isNotEmpty;
+    final isDisconnectedNoConfig =
+        vpnState.status.isDisconnected && !hasConfig && vpnState.isDaemonConnected;
+    final isDisconnectedWithConfig =
+        vpnState.status.isDisconnected && hasConfig && !vpnState.isLoading;
 
     return Scaffold(
       backgroundColor: isDark ? const Color(0xFF121212) : const Color(0xFFF5F5F5),
@@ -69,42 +72,96 @@ class _HomeScreenState extends ConsumerState<HomeScreen> with WindowListener {
           // Custom title bar
           _buildTitleBar(context, isDark),
 
-          // Main content
-          Expanded(
-            child: SingleChildScrollView(
-              padding: const EdgeInsets.all(24),
+          // Show welcome hero for first-time users (no config)
+          if (isDisconnectedNoConfig)
+            Expanded(
+              child: WelcomeHero(
+                onEnroll: () => _showEnrollmentScreen(context),
+              ),
+            )
+          // Show disconnected hero when has config but not connected
+          else if (isDisconnectedWithConfig)
+            Expanded(
               child: Column(
                 children: [
-                  // Connection status indicator
-                  _buildStatusIcon(vpnState),
-                  const SizedBox(height: 24),
-
-                  // Status card
-                  StatusCard(status: vpnState.status),
-                  const SizedBox(height: 16),
-
-                  // Traffic stats (when connected)
-                  if (vpnState.status.isConnected)
-                    TrafficStats(status: vpnState.status),
-
-                  if (vpnState.status.isConnected) const SizedBox(height: 16),
-
-                  // Error message
-                  if (vpnState.error != null) ...[
-                    _buildErrorCard(vpnState.error!, theme),
-                    const SizedBox(height: 16),
-                  ],
-
-                  // Daemon connection warning
+                  const Expanded(child: DisconnectedHero()),
+                  // Error message if any
+                  if (vpnState.error != null)
+                    Padding(
+                      padding: const EdgeInsets.symmetric(horizontal: 24),
+                      child: _buildErrorCard(vpnState.error!, theme),
+                    ),
+                  // Daemon warning if needed
                   if (!vpnState.isDaemonConnected)
-                    _buildDaemonWarning(theme),
+                    Padding(
+                      padding: const EdgeInsets.symmetric(horizontal: 24),
+                      child: _buildDaemonWarning(theme),
+                    ),
                 ],
               ),
-            ),
-          ),
+            )
+          else ...[
+            // Main content (connected or transitioning states)
+            Expanded(
+              child: SingleChildScrollView(
+                padding: const EdgeInsets.all(24),
+                child: Column(
+                  children: [
+                    // Connection status indicator with animated shield (compact)
+                    if (vpnState.status.isConnected) ...[
+                      const AnimatedShieldLogo(
+                        color: Color(0xFF22C55E), // Green
+                        size: 80,
+                      ),
+                      const SizedBox(height: 4),
+                      const Text(
+                        'Protected',
+                        style: TextStyle(
+                          fontSize: 16,
+                          fontWeight: FontWeight.w600,
+                          color: Color(0xFF22C55E),
+                        ),
+                      ),
+                      const SizedBox(height: 12),
+                    ] else ...[
+                      _buildStatusIcon(vpnState),
+                      const SizedBox(height: 24),
+                    ],
 
-          // Bottom action area
-          _buildBottomArea(context, vpnState),
+                    // Status card (only when connected)
+                    if (vpnState.status.isConnected) ...[
+                      StatusCard(status: vpnState.status),
+                      const SizedBox(height: 16),
+                    ],
+
+                    // Traffic stats (when connected)
+                    if (vpnState.status.isConnected) ...[
+                      const TrafficStats(),
+                      const SizedBox(height: 16),
+                    ],
+
+                    // Bandwidth graph (when connected)
+                    if (vpnState.status.isConnected) ...[
+                      const BandwidthGraph(),
+                      const SizedBox(height: 16),
+                    ],
+
+                    // Error message
+                    if (vpnState.error != null) ...[
+                      _buildErrorCard(vpnState.error!, theme),
+                      const SizedBox(height: 16),
+                    ],
+
+                    // Daemon connection warning
+                    if (!vpnState.isDaemonConnected) _buildDaemonWarning(theme),
+                  ],
+                ),
+              ),
+            ),
+          ],
+
+          // Bottom action area (not shown for welcome hero)
+          if (!isDisconnectedNoConfig) _buildBottomArea(context, vpnState),
         ],
       ),
     );
@@ -116,37 +173,15 @@ class _HomeScreenState extends ConsumerState<HomeScreen> with WindowListener {
       child: Container(
         height: 48,
         color: isDark ? const Color(0xFF1E1E1E) : Colors.white,
-        child: Row(
-          children: [
-            const SizedBox(width: 16),
-            Icon(
-              Icons.shield,
-              size: 20,
-              color: isDark ? Colors.white70 : Colors.black54,
+        child: Center(
+          child: Text(
+            'SecureGuard VPN',
+            style: TextStyle(
+              fontSize: 14,
+              fontWeight: FontWeight.w500,
+              color: isDark ? Colors.white : Colors.black87,
             ),
-            const SizedBox(width: 8),
-            Text(
-              'SecureGuard VPN',
-              style: TextStyle(
-                fontSize: 14,
-                fontWeight: FontWeight.w500,
-                color: isDark ? Colors.white : Colors.black87,
-              ),
-            ),
-            const Spacer(),
-            // Window controls
-            IconButton(
-              icon: const Icon(Icons.remove, size: 18),
-              onPressed: () => windowManager.minimize(),
-              tooltip: 'Minimize',
-            ),
-            IconButton(
-              icon: const Icon(Icons.close, size: 18),
-              onPressed: () => windowManager.hide(),
-              tooltip: 'Close',
-            ),
-            const SizedBox(width: 8),
-          ],
+          ),
         ),
       ),
     );
@@ -154,68 +189,48 @@ class _HomeScreenState extends ConsumerState<HomeScreen> with WindowListener {
 
   Widget _buildStatusIcon(VpnState vpnState) {
     final status = vpnState.status;
-    final isLoading = vpnState.isLoading || status.isTransitioning;
 
     Color iconColor;
-    IconData iconData;
     String statusText;
 
     switch (status.state) {
       case VpnConnectionState.connected:
         iconColor = const Color(0xFF22C55E); // Green
-        iconData = Icons.shield;
         statusText = 'Protected';
       case VpnConnectionState.connecting:
         iconColor = const Color(0xFFF59E0B); // Amber
-        iconData = Icons.shield_outlined;
         statusText = 'Connecting...';
       case VpnConnectionState.disconnecting:
         iconColor = const Color(0xFFF59E0B); // Amber
-        iconData = Icons.shield_outlined;
         statusText = 'Disconnecting...';
       case VpnConnectionState.error:
         iconColor = const Color(0xFFEF4444); // Red
-        iconData = Icons.shield_outlined;
         statusText = 'Error';
       case VpnConnectionState.disconnected:
-        iconColor = const Color(0xFF6B7280); // Gray
-        iconData = Icons.shield_outlined;
+        iconColor = const Color(0xFF3B82F6); // Blue
         statusText = 'Not Protected';
     }
 
     return Column(
       children: [
-        Stack(
-          alignment: Alignment.center,
-          children: [
-            if (isLoading)
-              SizedBox(
-                width: 100,
-                height: 100,
-                child: CircularProgressIndicator(
-                  strokeWidth: 3,
-                  valueColor: AlwaysStoppedAnimation<Color>(iconColor),
-                ),
-              ),
-            Icon(
-              iconData,
-              size: 80,
-              color: iconColor,
-            ),
-          ],
+        AnimatedShieldLogo(
+          color: iconColor,
+          size: 160,
         ),
         const SizedBox(height: 12),
-        Text(
-          statusText,
+        AnimatedDefaultTextStyle(
+          duration: const Duration(milliseconds: 300),
           style: TextStyle(
             fontSize: 18,
             fontWeight: FontWeight.w600,
             color: iconColor,
           ),
+          child: Text(statusText),
         ),
       ],
     );
   }
+
 
   Widget _buildErrorCard(String error, ThemeData theme) {
     return Card(
@@ -272,6 +287,11 @@ class _HomeScreenState extends ConsumerState<HomeScreen> with WindowListener {
 
   Widget _buildBottomArea(BuildContext context, VpnState vpnState) {
     final isDark = Theme.of(context).brightness == Brightness.dark;
+    final hasConfig =
+        vpnState.savedConfig != null && vpnState.savedConfig!.isNotEmpty;
+    final isDisconnected = vpnState.status.isDisconnected && !vpnState.isLoading;
+    final isTransitioning =
+        vpnState.isLoading || vpnState.status.isTransitioning;
 
     return Container(
       padding: const EdgeInsets.all(24),
@@ -283,25 +303,43 @@ class _HomeScreenState extends ConsumerState<HomeScreen> with WindowListener {
           ),
         ),
       ),
-      child: ConnectionButton(
-        status: vpnState.status,
-        isLoading: vpnState.isLoading,
-        isDaemonConnected: vpnState.isDaemonConnected,
-        onConnect: () => _showConfigDialog(context),
-        onDisconnect: () => ref.read(vpnProvider.notifier).disconnect(),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          ConnectionButton(
+            status: vpnState.status,
+            isLoading: vpnState.isLoading,
+            isDaemonConnected: vpnState.isDaemonConnected,
+            hasConfig: hasConfig,
+            onConnect: () {
+              if (hasConfig) {
+                ref.read(vpnProvider.notifier).connect(vpnState.savedConfig!);
+              }
+            },
+            onDisconnect: () => ref.read(vpnProvider.notifier).disconnect(),
+          ),
+          // Enroll / Change Config button (only when disconnected)
+          if (isDisconnected && vpnState.isDaemonConnected) ...[
+            const SizedBox(height: 12),
+            TextButton.icon(
+              onPressed: isTransitioning
+                  ? null
+                  : () => _showEnrollmentScreen(context),
+              icon: Icon(
+                hasConfig ? Icons.settings : Icons.vpn_key,
+                size: 18,
+              ),
+              label: Text(hasConfig ? 'Change Config' : 'Enroll'),
+            ),
+          ],
+        ],
       ),
     );
   }
 
-  void _showConfigDialog(BuildContext context) {
-    showDialog(
-      context: context,
-      builder: (context) => ConfigDialog(
-        initialConfig: ref.read(vpnProvider).savedConfig,
-        onConnect: (config) {
-          ref.read(vpnProvider.notifier).connect(config);
-        },
-      ),
+  void _showEnrollmentScreen(BuildContext context) {
+    Navigator.of(context).push(
+      MaterialPageRoute(builder: (_) => const EnrollmentScreen()),
     );
   }
 }

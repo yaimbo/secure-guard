@@ -7,6 +7,25 @@ class StatusCard extends StatelessWidget {
 
   const StatusCard({super.key, required this.status});
 
+  String _formatConnectedTime(String? connectedAt) {
+    if (connectedAt == null) return 'N/A';
+
+    // Try parsing as Unix timestamp (seconds)
+    final timestamp = int.tryParse(connectedAt);
+    if (timestamp != null) {
+      final dateTime = DateTime.fromMillisecondsSinceEpoch(timestamp * 1000);
+      return '${dateTime.hour.toString().padLeft(2, '0')}:${dateTime.minute.toString().padLeft(2, '0')}:${dateTime.second.toString().padLeft(2, '0')}';
+    }
+
+    // Try parsing as ISO string
+    try {
+      final dateTime = DateTime.parse(connectedAt);
+      return '${dateTime.hour.toString().padLeft(2, '0')}:${dateTime.minute.toString().padLeft(2, '0')}:${dateTime.second.toString().padLeft(2, '0')}';
+    } catch (_) {
+      return connectedAt;
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     final isDark = Theme.of(context).brightness == Brightness.dark;
@@ -42,7 +61,7 @@ class StatusCard extends StatelessWidget {
                 context,
                 icon: Icons.access_time,
                 label: 'Connected',
-                value: status.connectedAt!,
+                value: _formatConnectedTime(status.connectedAt),
                 isDark: isDark,
               ),
             ],

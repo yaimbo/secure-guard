@@ -40,6 +40,12 @@ dependencies:
   # Icons
   cupertino_icons: ^1.0.8
 
+  # Charts for bandwidth graph
+  fl_chart: ^0.69.0
+
+  # File picker for loading config files
+  file_picker: ^8.0.0
+
 dev_dependencies:
   flutter_test:
     sdk: flutter

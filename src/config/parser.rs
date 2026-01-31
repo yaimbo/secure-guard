@@ -2,7 +2,7 @@
 //!
 //! Parses standard WireGuard `.conf` files with [Interface] and [Peer] sections.
 
-use std::net::{IpAddr, SocketAddr};
+use std::net::{IpAddr, SocketAddr, ToSocketAddrs};
 use std::path::Path;
 
 use base64::{engine::general_purpose::STANDARD as BASE64, Engine};
@@ -321,18 +321,25 @@ fn parse_key(value: &str, field_name: &str) -> Result<[u8; 32], ConfigError> {
     Ok(key)
 }
 
-/// Parse an endpoint (host:port)
+/// Parse an endpoint (host:port) - supports both IP addresses and hostnames
 fn parse_endpoint(value: &str) -> Result<SocketAddr, ConfigError> {
     // Try to parse as IP:port first
     if let Ok(addr) = value.parse::<SocketAddr>() {
         return Ok(addr);
     }
 
-    // If that fails, it might be hostname:port
-    // For simplicity, we require IP addresses in the PoC
-    Err(ConfigError::InvalidAddress {
-        value: value.to_string(),
-    })
+    // If that fails, try DNS resolution for hostname:port
+    match value.to_socket_addrs() {
+        Ok(mut addrs) => {
+            // Use the first resolved address
+            addrs.next().ok_or_else(|| ConfigError::InvalidAddress {
+                value: value.to_string(),
+            })
+        }
+        Err(_) => Err(ConfigError::InvalidAddress {
+            value: value.to_string(),
+        }),
+    }
 }
 
 #[cfg(test)]

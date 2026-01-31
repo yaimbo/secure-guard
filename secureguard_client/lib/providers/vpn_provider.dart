@@ -1,6 +1,7 @@
 import 'dart:async';
 
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 import '../services/ipc_client.dart';
 import '../services/update_service.dart';
@@ -89,6 +90,8 @@ class _DefaultVpnStatus implements VpnStatus {
 
 /// Notifier for VPN state management
 class VpnNotifier extends StateNotifier<VpnState> {
+  static const _configKey = 'vpn_saved_config';
+
   final IpcClient _client;
   final EnrollmentService? _enrollment;
   StreamSubscription<bool>? _connectionSub;
@@ -104,6 +107,13 @@ class VpnNotifier extends StateNotifier<VpnState> {
   }
 
   Future<void> _init() async {
+    // Load saved config from SharedPreferences
+    final prefs = await SharedPreferences.getInstance();
+    final savedConfig = prefs.getString(_configKey);
+    if (savedConfig != null && savedConfig.isNotEmpty) {
+      state = state.copyWith(savedConfig: savedConfig);
+    }
+
     // Listen to daemon connection state
     _connectionSub = _client.connectionStream.listen((connected) {
       state = state.copyWith(isDaemonConnected: connected);
@@ -206,6 +216,9 @@ class VpnNotifier extends StateNotifier<VpnState> {
 
   /// Handle config update from server
   void _onConfigUpdated(String newConfig) {
+    // Persist the new config
+    _persistConfig(newConfig);
+
     // If currently connected, reconnect with new config
     if (state.status.isConnected && state.isDaemonConnected) {
       // Store the new config and reconnect
@@ -215,6 +228,12 @@ class VpnNotifier extends StateNotifier<VpnState> {
       // Just save the new config for next connection
       state = state.copyWith(savedConfig: newConfig);
     }
+  }
+
+  /// Persist config to SharedPreferences
+  Future<void> _persistConfig(String config) async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setString(_configKey, config);
   }
 
   /// Reconnect with new config (for seamless config updates)
@@ -278,6 +297,9 @@ class VpnNotifier extends StateNotifier<VpnState> {
       return;
     }
 
+    // Persist config first
+    await _persistConfig(config);
+
     state = state.copyWith(
       isLoading: true,
       savedConfig: config,
@@ -330,6 +352,12 @@ class VpnNotifier extends StateNotifier<VpnState> {
   /// Clear error message
   void clearError() {
     state = state.copyWith(clearError: true);
+  }
+
+  /// Save config without connecting (persists to SharedPreferences)
+  Future<void> saveConfig(String config) async {
+    await _persistConfig(config);
+    state = state.copyWith(savedConfig: config);
   }
 
   @override

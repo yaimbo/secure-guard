@@ -6,6 +6,7 @@ class ConnectionButton extends StatelessWidget {
   final VpnStatus status;
   final bool isLoading;
   final bool isDaemonConnected;
+  final bool hasConfig;
   final VoidCallback onConnect;
   final VoidCallback onDisconnect;
 
@@ -14,6 +15,7 @@ class ConnectionButton extends StatelessWidget {
     required this.status,
     required this.isLoading,
     required this.isDaemonConnected,
+    required this.hasConfig,
     required this.onConnect,
     required this.onDisconnect,
   });
@@ -22,47 +24,67 @@ class ConnectionButton extends StatelessWidget {
   Widget build(BuildContext context) {
     final isConnected = status.isConnected;
     final isTransitioning = status.isTransitioning || isLoading;
-    final canInteract = isDaemonConnected && !isTransitioning;
+
+    // Can connect only if: daemon connected, not transitioning, AND has config
+    // Can disconnect if: daemon connected and not transitioning
+    final canConnect = isDaemonConnected && !isTransitioning && hasConfig;
+    final canDisconnect = isDaemonConnected && !isTransitioning;
+    final canInteract = isConnected ? canDisconnect : canConnect;
+
+    // Visual states
+    final isDisabled = !canInteract;
+    final showNoConfig = !isConnected && !hasConfig && isDaemonConnected;
 
     return SizedBox(
       width: double.infinity,
       height: 56,
-      child: ElevatedButton(
-        onPressed: canInteract ? (isConnected ? onDisconnect : onConnect) : null,
-        style: ElevatedButton.styleFrom(
-          backgroundColor: isConnected
-              ? const Color(0xFFEF4444) // Red for disconnect
-              : const Color(0xFF3B82F6), // Blue for connect
-          foregroundColor: Colors.white,
-          disabledBackgroundColor: Colors.grey.shade400,
-          disabledForegroundColor: Colors.white70,
-        ),
-        child: isTransitioning
-            ? const SizedBox(
-                width: 24,
-                height: 24,
-                child: CircularProgressIndicator(
-                  strokeWidth: 2,
-                  valueColor: AlwaysStoppedAnimation<Color>(Colors.white),
-                ),
-              )
-            : Row(
-                mainAxisAlignment: MainAxisAlignment.center,
-                children: [
-                  Icon(
-                    isConnected ? Icons.power_settings_new : Icons.power,
-                    size: 22,
+      child: AnimatedContainer(
+        duration: const Duration(milliseconds: 200),
+        child: ElevatedButton(
+          onPressed: canInteract ? (isConnected ? onDisconnect : onConnect) : null,
+          style: ElevatedButton.styleFrom(
+            backgroundColor: isConnected
+                ? const Color(0xFFEF4444) // Red for disconnect
+                : (isDisabled ? Colors.grey.shade600 : const Color(0xFF3B82F6)),
+            foregroundColor: Colors.white,
+            disabledBackgroundColor: Colors.grey.shade600,
+            disabledForegroundColor: Colors.white60,
+            elevation: isDisabled ? 0 : 2,
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(12),
+            ),
+          ),
+          child: isTransitioning
+              ? const SizedBox(
+                  width: 24,
+                  height: 24,
+                  child: CircularProgressIndicator(
+                    strokeWidth: 2,
+                    valueColor: AlwaysStoppedAnimation<Color>(Colors.white),
                   ),
-                  const SizedBox(width: 8),
-                  Text(
-                    isConnected ? 'Disconnect' : 'Connect',
-                    style: const TextStyle(
-                      fontSize: 16,
-                      fontWeight: FontWeight.w600,
+                )
+              : Row(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    Icon(
+                      isConnected
+                          ? Icons.power_settings_new
+                          : (showNoConfig ? Icons.block : Icons.power),
+                      size: 22,
                     ),
-                  ),
-                ],
-              ),
+                    const SizedBox(width: 8),
+                    Text(
+                      isConnected
+                          ? 'Disconnect'
+                          : (showNoConfig ? 'No Config' : 'Connect'),
+                      style: const TextStyle(
+                        fontSize: 16,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                  ],
+                ),
+        ),
       ),
     );
   }

@@ -267,12 +267,15 @@ class EnrollmentService {
       throw EnrollmentException('Server response missing required fields');
     }
 
-    // Store the device token and config
-    await _credentials.setDeviceToken(deviceToken);
-    await _credentials.setVpnConfig(config, DateTime.now().toIso8601String());
-
-    // Store the server URL for future API calls
-    await _credentials.setSecure('server_url', serverUrl);
+    // Store the device token and config (best-effort, may fail without code signing)
+    try {
+      await _credentials.setDeviceToken(deviceToken);
+      await _credentials.setVpnConfig(config, DateTime.now().toIso8601String());
+      await _credentials.setSecure('server_url', serverUrl);
+    } catch (e) {
+      // Keychain access may fail in debug builds without code signing
+      debugPrint('Warning: Could not store credentials: $e');
+    }
 
     return EnrollmentCodeResult(
       deviceToken: deviceToken,
@@ -286,9 +289,14 @@ class EnrollmentService {
     // Remove trailing slashes
     var normalized = url.trim().replaceAll(RegExp(r'/+$'), '');
 
-    // Add https:// if no protocol specified
+    // Add protocol if not specified
     if (!normalized.startsWith('http://') && !normalized.startsWith('https://')) {
-      normalized = 'https://$normalized';
+      // Use HTTP for localhost, HTTPS for everything else
+      if (normalized.startsWith('localhost') || normalized.startsWith('127.0.0.1')) {
+        normalized = 'http://$normalized';
+      } else {
+        normalized = 'https://$normalized';
+      }
     }
 
     // Add /api/v1 if not present

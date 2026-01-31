@@ -71,13 +71,15 @@ pub fn write_token_file(token: &str, path: Option<PathBuf>) -> Result<PathBuf, s
     Ok(token_path)
 }
 
-/// Set Unix file permissions (0o640 - owner rw, group r)
+/// Set Unix file permissions (0o644 - owner rw, world r for testing)
+/// TODO: Change back to 0o640 for production with proper group setup
 #[cfg(unix)]
 fn set_unix_permissions(path: &PathBuf) -> Result<(), std::io::Error> {
     use std::os::unix::fs::PermissionsExt;
 
-    // Set file permissions to 0o640 (owner read/write, group read)
-    let permissions = std::fs::Permissions::from_mode(0o640);
+    // Set file permissions to 0o644 (owner read/write, world read) for testing
+    // In production, use 0o640 with secureguard group
+    let permissions = std::fs::Permissions::from_mode(0o644);
     std::fs::set_permissions(path, permissions)?;
 
     // Try to set group to 'secureguard' if it exists

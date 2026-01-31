@@ -33,16 +33,11 @@ class CredentialStorage {
             accessibility: KeychainAccessibility.first_unlock_this_device,
           ),
           mOptions: MacOsOptions(
-            accessibility: KeychainAccessibility.first_unlock_this_device,
-            // Use the app's keychain group
-            groupId: 'com.secureguard.vpn',
+            // Use default keychain without group for development
+            // For production, set groupId and add matching entitlement
           ),
-          lOptions: LinuxOptions(
-            // Use a specific collection name for better organization
-          ),
-          wOptions: WindowsOptions(
-            // Use DPAPI for encryption on Windows
-          ),
+          lOptions: LinuxOptions(),
+          wOptions: WindowsOptions(),
         );
 
   // ═══════════════════════════════════════════════════════════════════

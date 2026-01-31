@@ -14,6 +14,7 @@ class TrayService with TrayListener {
   TrayService._();
 
   VpnConnectionState _currentState = VpnConnectionState.disconnected;
+  bool _hasConfig = false;
   VoidCallback? onConnectRequested;
   VoidCallback? onDisconnectRequested;
   VoidCallback? onQuitRequested;
@@ -28,10 +29,17 @@ class TrayService with TrayListener {
   }
 
   /// Update tray based on VPN status
-  Future<void> updateStatus(VpnStatus status) async {
-    if (_currentState != status.state) {
-      _currentState = status.state;
+  Future<void> updateStatus(VpnStatus status, {bool hasConfig = false}) async {
+    final stateChanged = _currentState != status.state;
+    final configChanged = _hasConfig != hasConfig;
+
+    _currentState = status.state;
+    _hasConfig = hasConfig;
+
+    if (stateChanged) {
       await _updateTrayIcon(status.state);
+    }
+    if (stateChanged || configChanged) {
       await _updateTrayMenu();
     }
   }
@@ -86,6 +94,9 @@ class TrayService with TrayListener {
     final isTransitioning = _currentState == VpnConnectionState.connecting ||
         _currentState == VpnConnectionState.disconnecting;
 
+    // Can only connect if has config and not transitioning
+    final canConnect = _hasConfig && !isTransitioning;
+
     final menu = Menu(
       items: [
         MenuItem(
@@ -112,8 +123,8 @@ class TrayService with TrayListener {
         else
           MenuItem(
             key: 'connect',
-            label: 'Connect',
-            disabled: isTransitioning,
+            label: _hasConfig ? 'Connect' : 'Connect (No Config)',
+            disabled: !canConnect,
           ),
         MenuItem.separator(),
         MenuItem(
