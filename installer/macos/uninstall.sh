@@ -11,7 +11,8 @@ LAUNCH_DAEMONS_DIR="/Library/LaunchDaemons"
 APPLICATION_SUPPORT_DIR="/Library/Application Support/SecureGuard"
 LOG_DIR="/var/log"
 DATA_DIR="/var/lib/secureguard"
-SOCKET_PATH="/var/run/secureguard.sock"
+TOKEN_DIR="/var/run/secureguard"
+APP_PATH="/Applications/SecureGuard.app"
 
 # Colors for output
 RED='\033[0;31m'
@@ -41,12 +42,14 @@ fi
 # Parse arguments
 REMOVE_DATA=false
 REMOVE_LOGS=false
+REMOVE_APP=false
 
 while [[ $# -gt 0 ]]; do
     case $1 in
         --all)
             REMOVE_DATA=true
             REMOVE_LOGS=true
+            REMOVE_APP=true
             shift
             ;;
         --data)
@@ -57,11 +60,16 @@ while [[ $# -gt 0 ]]; do
             REMOVE_LOGS=true
             shift
             ;;
+        --app)
+            REMOVE_APP=true
+            shift
+            ;;
         -h|--help)
             echo "Usage: sudo $0 [OPTIONS]"
             echo ""
             echo "Options:"
-            echo "  --all     Remove everything including data and logs"
+            echo "  --all     Remove everything including app, data, and logs"
+            echo "  --app     Remove SecureGuard.app from /Applications"
             echo "  --data    Remove data directory (/var/lib/secureguard)"
             echo "  --logs    Remove log files (/var/log/secureguard*.log)"
             echo "  -h, --help  Show this help message"
@@ -103,11 +111,19 @@ remove_binary() {
     fi
 }
 
-# Remove socket
-remove_socket() {
-    if [ -S "$SOCKET_PATH" ]; then
-        log_info "Removing socket..."
-        rm -f "$SOCKET_PATH"
+# Remove token directory
+remove_token_dir() {
+    if [ -d "$TOKEN_DIR" ]; then
+        log_info "Removing token directory..."
+        rm -rf "$TOKEN_DIR"
+    fi
+}
+
+# Remove app (optional)
+remove_app() {
+    if [ "$REMOVE_APP" = true ] && [ -d "$APP_PATH" ]; then
+        log_info "Removing SecureGuard.app from Applications..."
+        rm -rf "$APP_PATH"
     fi
 }
 
@@ -143,7 +159,13 @@ print_completion() {
     echo "╚═══════════════════════════════════════════════════════════╝"
     echo ""
 
-    if [ "$REMOVE_DATA" = false ]; then
+    if [ "$REMOVE_APP" = false ] && [ -d "$APP_PATH" ]; then
+        echo "Note: SecureGuard.app preserved at $APP_PATH"
+        echo "      To remove: sudo rm -rf '$APP_PATH'"
+        echo ""
+    fi
+
+    if [ "$REMOVE_DATA" = false ] && [ -d "$DATA_DIR" ]; then
         echo "Note: Data directory preserved at $DATA_DIR"
         echo "      To remove: sudo rm -rf $DATA_DIR"
         echo ""
@@ -165,8 +187,9 @@ main() {
     stop_service
     remove_plist
     remove_binary
-    remove_socket
+    remove_token_dir
     remove_app_support
+    remove_app
     remove_data
     remove_logs
     print_completion

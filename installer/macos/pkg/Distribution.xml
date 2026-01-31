@@ -1,0 +1,34 @@
+<?xml version="1.0" encoding="utf-8"?>
+<installer-gui-script minSpecVersion="2">
+    <title>SecureGuard VPN Service</title>
+    <organization>com.secureguard</organization>
+    <domains enable_anywhere="false" enable_localSystem="true"/>
+    <options customize="never" require-scripts="true" hostArchitectures="x86_64,arm64"/>
+
+    <!-- Require macOS 10.15 or higher -->
+    <volume-check>
+        <allowed-os-versions>
+            <os-version min="10.15"/>
+        </allowed-os-versions>
+    </volume-check>
+
+    <!-- Welcome, license, and conclusion pages -->
+    <welcome file="welcome.html"/>
+    <conclusion file="conclusion.html"/>
+
+    <!-- Package choices -->
+    <choices-outline>
+        <line choice="default">
+            <line choice="com.secureguard.vpn-service"/>
+        </line>
+    </choices-outline>
+
+    <choice id="default"/>
+    <choice id="com.secureguard.vpn-service" visible="false">
+        <pkg-ref id="com.secureguard.vpn-service"/>
+    </choice>
+
+    <pkg-ref id="com.secureguard.vpn-service" version="VERSION" onConclusion="none">
+        secureguard-service.pkg
+    </pkg-ref>
+</installer-gui-script>

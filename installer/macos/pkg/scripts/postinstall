@@ -1,0 +1,174 @@
+#!/bin/bash
+# SecureGuard VPN Service - Postinstall Script
+# Installs and starts the VPN daemon service
+
+set -e
+
+# Configuration
+SERVICE_NAME="com.secureguard.vpn-service"
+HELPER_TOOLS_DIR="/Library/PrivilegedHelperTools"
+LAUNCH_DAEMONS_DIR="/Library/LaunchDaemons"
+APPLICATION_SUPPORT_DIR="/Library/Application Support/SecureGuard"
+LOG_DIR="/var/log"
+DATA_DIR="/var/lib/secureguard"
+TOKEN_DIR="/var/run/secureguard"
+SECUREGUARD_GROUP="secureguard"
+SECUREGUARD_GID=1100
+HTTP_PORT=51820
+
+# Log to installer log
+log() {
+    echo "[SecureGuard Postinstall] $1"
+}
+
+# Create secureguard group for token access
+create_secureguard_group() {
+    log "Setting up secureguard group..."
+
+    # Check if group exists
+    if ! dscl . -read /Groups/$SECUREGUARD_GROUP &>/dev/null; then
+        log "Creating group: $SECUREGUARD_GROUP"
+        dscl . -create /Groups/$SECUREGUARD_GROUP
+        dscl . -create /Groups/$SECUREGUARD_GROUP PrimaryGroupID $SECUREGUARD_GID
+        dscl . -create /Groups/$SECUREGUARD_GROUP RealName "SecureGuard VPN Users"
+    else
+        log "Group $SECUREGUARD_GROUP already exists"
+    fi
+
+    # Add the console user to the group
+    local console_user
+    console_user=$(stat -f '%Su' /dev/console 2>/dev/null || echo "")
+    if [ -n "$console_user" ] && [ "$console_user" != "root" ]; then
+        if ! dscl . -read /Groups/$SECUREGUARD_GROUP GroupMembership 2>/dev/null | grep -q "$console_user"; then
+            log "Adding user $console_user to $SECUREGUARD_GROUP group"
+            dscl . -append /Groups/$SECUREGUARD_GROUP GroupMembership "$console_user"
+        else
+            log "User $console_user already in $SECUREGUARD_GROUP group"
+        fi
+    fi
+}
+
+# Create required directories
+create_directories() {
+    log "Creating directories..."
+
+    mkdir -p "$HELPER_TOOLS_DIR"
+    mkdir -p "$APPLICATION_SUPPORT_DIR"
+    mkdir -p "$DATA_DIR"
+    mkdir -p "$TOKEN_DIR"
+
+    # Set permissions on data directory (owner only)
+    chmod 700 "$DATA_DIR"
+
+    # Set permissions on token directory (root:secureguard, 750)
+    chown root:$SECUREGUARD_GROUP "$TOKEN_DIR"
+    chmod 750 "$TOKEN_DIR"
+}
+
+# Set binary permissions
+setup_binary() {
+    local binary_path="$HELPER_TOOLS_DIR/secureguard-service"
+
+    log "Setting up binary permissions..."
+
+    if [ ! -f "$binary_path" ]; then
+        log "ERROR: Binary not found at $binary_path"
+        exit 1
+    fi
+
+    chown root:wheel "$binary_path"
+    chmod 755 "$binary_path"
+
+    log "Binary permissions set"
+}
+
+# Set plist permissions
+setup_plist() {
+    local plist_path="$LAUNCH_DAEMONS_DIR/$SERVICE_NAME.plist"
+
+    log "Setting up LaunchDaemon plist..."
+
+    if [ ! -f "$plist_path" ]; then
+        log "ERROR: Plist not found at $plist_path"
+        exit 1
+    fi
+
+    chown root:wheel "$plist_path"
+    chmod 644 "$plist_path"
+
+    log "Plist permissions set"
+}
+
+# Set up logging
+setup_logging() {
+    log "Setting up logging..."
+
+    touch "$LOG_DIR/secureguard.log"
+    touch "$LOG_DIR/secureguard.error.log"
+
+    chmod 640 "$LOG_DIR/secureguard.log" "$LOG_DIR/secureguard.error.log"
+    chown root:wheel "$LOG_DIR/secureguard.log" "$LOG_DIR/secureguard.error.log"
+}
+
+# Start the service
+start_service() {
+    log "Starting SecureGuard service..."
+
+    # Use bootstrap for modern macOS
+    if launchctl bootstrap system "$LAUNCH_DAEMONS_DIR/$SERVICE_NAME.plist" 2>/dev/null; then
+        log "Service bootstrapped successfully"
+    else
+        # Fallback to legacy load
+        log "Trying legacy load method..."
+        launchctl load "$LAUNCH_DAEMONS_DIR/$SERVICE_NAME.plist"
+    fi
+
+    # Wait for service to start
+    sleep 2
+}
+
+# Verify service is running
+verify_service() {
+    log "Verifying service..."
+
+    # Check if service is registered
+    if ! launchctl list 2>/dev/null | grep -q "$SERVICE_NAME"; then
+        log "WARNING: Service not found in launchctl list"
+        return 1
+    fi
+
+    # Check if HTTP port is listening (with retries)
+    local retries=5
+    while [ $retries -gt 0 ]; do
+        if lsof -i :$HTTP_PORT -sTCP:LISTEN &>/dev/null; then
+            log "HTTP server listening on port $HTTP_PORT"
+            return 0
+        fi
+        sleep 1
+        ((retries--))
+    done
+
+    log "Service registered but HTTP server not yet responding"
+    return 0
+}
+
+# Main installation flow
+main() {
+    log "Starting postinstall..."
+
+    create_secureguard_group
+    create_directories
+    setup_binary
+    setup_plist
+    setup_logging
+    start_service
+
+    if verify_service; then
+        log "Installation completed successfully!"
+    else
+        log "Installation completed with warnings"
+    fi
+}
+
+main
+exit 0

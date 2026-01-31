@@ -1,3 +1,5 @@
+import 'dart:io';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:window_manager/window_manager.dart';
@@ -26,6 +28,62 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
   void initState() {
     super.initState();
     _setupTrayCallbacks();
+    _checkDaemonInstallation();
+  }
+
+  /// Check if daemon is installed on first launch
+  Future<void> _checkDaemonInstallation() async {
+    // Only check on macOS for now (PKG installer is macOS-specific)
+    if (!Platform.isMacOS) return;
+
+    final ipcClient = IpcClient();
+    final status = await ipcClient.checkDaemonStatus();
+
+    if (status == DaemonStatus.notInstalled && mounted) {
+      // Show installation prompt dialog
+      showDialog(
+        context: context,
+        barrierDismissible: false,
+        builder: (context) => AlertDialog(
+          title: const Row(
+            children: [
+              Icon(Icons.security, color: Color(0xFF3B82F6)),
+              SizedBox(width: 12),
+              Text('Install VPN Service'),
+            ],
+          ),
+          content: const Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                'SecureGuard requires a background service to manage VPN connections.',
+              ),
+              SizedBox(height: 16),
+              Text(
+                'Please run "Install SecureGuard Service.pkg" from the disk image to install the service.',
+                style: TextStyle(fontWeight: FontWeight.w500),
+              ),
+              SizedBox(height: 12),
+              Text(
+                'After installation, click "Retry" to connect.',
+                style: TextStyle(fontSize: 13, color: Colors.grey),
+              ),
+            ],
+          ),
+          actions: [
+            TextButton(
+              onPressed: () {
+                Navigator.pop(context);
+                // Try to reconnect to daemon
+                ref.read(vpnProvider.notifier).connectToDaemon();
+              },
+              child: const Text('Retry'),
+            ),
+          ],
+        ),
+      );
+    }
   }
 
   void _setupTrayCallbacks() {

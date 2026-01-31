@@ -11,8 +11,8 @@
     <array>
         <string>/Library/PrivilegedHelperTools/secureguard-service</string>
         <string>--daemon</string>
-        <string>--socket</string>
-        <string>/var/run/secureguard.sock</string>
+        <string>--port</string>
+        <string>51820</string>
     </array>
 
     <!-- Run at system boot -->
@@ -33,19 +33,6 @@
     <!-- Throttle restarts (don't restart more than once per 10 seconds) -->
     <key>ThrottleInterval</key>
     <integer>10</integer>
-
-    <!-- Socket for IPC communication (launchd manages the socket) -->
-    <key>Sockets</key>
-    <dict>
-        <key>SecureGuardSocket</key>
-        <dict>
-            <key>SockPathName</key>
-            <string>/var/run/secureguard.sock</string>
-            <!-- 0660 - owner/group read-write only -->
-            <key>SockPathMode</key>
-            <integer>432</integer>
-        </dict>
-    </dict>
 
     <!-- Standard output/error logging -->
     <key>StandardOutPath</key>

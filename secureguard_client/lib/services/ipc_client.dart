@@ -4,6 +4,18 @@ import 'dart:io';
 
 import 'package:http/http.dart' as http;
 
+/// Daemon installation/running status
+enum DaemonStatus {
+  /// Daemon is running and responding
+  running,
+
+  /// Daemon appears to be installed but not responding
+  notRunning,
+
+  /// Daemon is not installed (token file missing)
+  notInstalled,
+}
+
 /// Connection state enum matching Rust daemon
 enum VpnConnectionState {
   disconnected,
@@ -139,6 +151,53 @@ class IpcClient {
       _authToken = null;
       _connectionController.add(false);
       return false;
+    }
+  }
+
+  /// Check if daemon is installed and running
+  ///
+  /// Returns:
+  /// - [DaemonStatus.running] if daemon responds to API requests
+  /// - [DaemonStatus.notRunning] if token exists but daemon not responding
+  /// - [DaemonStatus.notInstalled] if token file doesn't exist
+  Future<DaemonStatus> checkDaemonStatus() async {
+    try {
+      // Check if token file exists
+      final tokenFile = File(tokenFilePath);
+      if (!await tokenFile.exists()) {
+        return DaemonStatus.notInstalled;
+      }
+
+      // Load token
+      final token = await tokenFile.readAsString();
+      if (token.trim().isEmpty) {
+        return DaemonStatus.notInstalled;
+      }
+
+      // Try to connect to daemon
+      final client = http.Client();
+      try {
+        final response = await client
+            .get(
+              Uri.parse('http://$host:$port/api/v1/status'),
+              headers: {'Authorization': 'Bearer ${token.trim()}'},
+            )
+            .timeout(const Duration(seconds: 3));
+
+        if (response.statusCode == 200 || response.statusCode == 401) {
+          // 200 = success, 401 = wrong token but daemon is responding
+          return DaemonStatus.running;
+        }
+        return DaemonStatus.notRunning;
+      } catch (e) {
+        // Connection failed - daemon not responding
+        return DaemonStatus.notRunning;
+      } finally {
+        client.close();
+      }
+    } catch (e) {
+      // Error reading token file
+      return DaemonStatus.notInstalled;
     }
   }
 
