@@ -26,21 +26,44 @@ check_macos_version() {
 
 # Stop existing service if running
 stop_existing_service() {
-    if launchctl list 2>/dev/null | grep -q "$SERVICE_NAME"; then
+    log "Checking for existing SecureGuard service..."
+
+    # Try to stop via launchctl (both user and system level)
+    if sudo launchctl list 2>/dev/null | grep -q "$SERVICE_NAME"; then
         log "Stopping existing SecureGuard service..."
-        launchctl bootout system/"$SERVICE_NAME" 2>/dev/null || \
+        launchctl bootout system/"$SERVICE_NAME" 2>/dev/null || true
         launchctl unload "/Library/LaunchDaemons/$SERVICE_NAME.plist" 2>/dev/null || true
-        sleep 2
-        log "Existing service stopped"
-    else
-        log "No existing service found"
+        sleep 1
     fi
+
+    # Kill any lingering processes
+    pkill -9 -f "secureguard-service" 2>/dev/null || true
+    pkill -9 -f "secureguard-poc" 2>/dev/null || true
+
+    # Wait for processes to die and ports to be released
+    sleep 2
+
+    log "Existing service cleanup completed"
+}
+
+# Clean up old token file so daemon creates fresh one with correct permissions
+cleanup_old_files() {
+    log "Cleaning up old files..."
+
+    # Remove old token file (daemon will create new one with correct permissions)
+    if [ -f "/var/run/secureguard/auth-token" ]; then
+        rm -f "/var/run/secureguard/auth-token"
+        log "Removed old auth token"
+    fi
+
+    log "Cleanup completed"
 }
 
 # Main
 log "Starting preinstall checks..."
 check_macos_version
 stop_existing_service
+cleanup_old_files
 log "Preinstall checks completed successfully"
 
 exit 0

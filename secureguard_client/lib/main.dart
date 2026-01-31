@@ -159,7 +159,7 @@ class _SecureGuardAppState extends State<SecureGuardApp> with WindowListener {
       debugShowCheckedModeBanner: false,
       theme: _buildTheme(Brightness.light),
       darkTheme: _buildTheme(Brightness.dark),
-      themeMode: ThemeMode.system,
+      themeMode: ThemeMode.dark,
       home: widget.initialEnrollment != null
           ? EnrollmentScreen(
               initialServerUrl: widget.initialEnrollment!.serverUrl,

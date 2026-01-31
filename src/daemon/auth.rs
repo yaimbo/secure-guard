@@ -71,34 +71,68 @@ pub fn write_token_file(token: &str, path: Option<PathBuf>) -> Result<PathBuf, s
     Ok(token_path)
 }
 
-/// Set Unix file permissions (0o644 - owner rw, world r for testing)
-/// TODO: Change back to 0o640 for production with proper group setup
+/// Set Unix file permissions (0o640 - owner rw, group r)
+/// Also sets group ownership to 'secureguard' for secure token access
 #[cfg(unix)]
 fn set_unix_permissions(path: &PathBuf) -> Result<(), std::io::Error> {
     use std::os::unix::fs::PermissionsExt;
 
-    // Set file permissions to 0o644 (owner read/write, world read) for testing
-    // In production, use 0o640 with secureguard group
-    let permissions = std::fs::Permissions::from_mode(0o644);
+    // Set file permissions to 0o640 (owner read/write, group read)
+    let permissions = std::fs::Permissions::from_mode(0o640);
     std::fs::set_permissions(path, permissions)?;
 
-    // Try to set group to 'secureguard' if it exists
-    // This is best-effort - if the group doesn't exist, we continue with default group
-    #[cfg(target_os = "macos")]
-    {
-        // On macOS, use dscl to check for group - simplified approach
-        // The installer should create the group
-        tracing::debug!("Token file created with 0o640 permissions");
-    }
+    // Set group ownership to 'secureguard' if the group exists
+    set_group_ownership(path, "secureguard");
 
-    #[cfg(target_os = "linux")]
-    {
-        // On Linux, try to set group ownership via chgrp
-        // The installer should create the 'secureguard' group
-        tracing::debug!("Token file created with 0o640 permissions");
-    }
-
+    tracing::debug!("Token file created with 0o640 permissions");
     Ok(())
+}
+
+/// Set group ownership of a file (best-effort, logs warning on failure)
+#[cfg(unix)]
+fn set_group_ownership(path: &PathBuf, group_name: &str) {
+    use std::ffi::CString;
+    use std::os::unix::ffi::OsStrExt;
+
+    // Look up the group ID
+    let group_cstr = match CString::new(group_name) {
+        Ok(s) => s,
+        Err(_) => {
+            tracing::warn!("Invalid group name: {}", group_name);
+            return;
+        }
+    };
+
+    let grp = unsafe { libc::getgrnam(group_cstr.as_ptr()) };
+    if grp.is_null() {
+        tracing::warn!(
+            "Group '{}' not found - token file will use default group",
+            group_name
+        );
+        return;
+    }
+
+    let gid = unsafe { (*grp).gr_gid };
+
+    // Change group ownership (keep current owner with -1)
+    let path_cstr = match CString::new(path.as_os_str().as_bytes()) {
+        Ok(s) => s,
+        Err(_) => {
+            tracing::warn!("Invalid path for chown");
+            return;
+        }
+    };
+
+    let result = unsafe { libc::chown(path_cstr.as_ptr(), u32::MAX, gid) };
+    if result != 0 {
+        tracing::warn!(
+            "Failed to set group ownership to '{}': {}",
+            group_name,
+            std::io::Error::last_os_error()
+        );
+    } else {
+        tracing::info!("Token file group set to '{}'", group_name);
+    }
 }
 
 /// Set Windows file permissions (ACL-based)

@@ -164,17 +164,28 @@ class IpcClient {
     try {
       // Check if token file exists
       final tokenFile = File(tokenFilePath);
-      if (!await tokenFile.exists()) {
+      print('[IpcClient] Checking token file at: $tokenFilePath');
+
+      final exists = await tokenFile.exists();
+      print('[IpcClient] Token file exists: $exists');
+
+      if (!exists) {
+        print('[IpcClient] Token file not found - returning notInstalled');
         return DaemonStatus.notInstalled;
       }
 
       // Load token
+      print('[IpcClient] Reading token file...');
       final token = await tokenFile.readAsString();
+      print('[IpcClient] Token length: ${token.length}, empty: ${token.trim().isEmpty}');
+
       if (token.trim().isEmpty) {
+        print('[IpcClient] Token is empty - returning notInstalled');
         return DaemonStatus.notInstalled;
       }
 
       // Try to connect to daemon
+      print('[IpcClient] Connecting to daemon at http://$host:$port/api/v1/status');
       final client = http.Client();
       try {
         final response = await client
@@ -184,19 +195,25 @@ class IpcClient {
             )
             .timeout(const Duration(seconds: 3));
 
+        print('[IpcClient] Response status: ${response.statusCode}');
+
         if (response.statusCode == 200 || response.statusCode == 401) {
           // 200 = success, 401 = wrong token but daemon is responding
+          print('[IpcClient] Daemon is running');
           return DaemonStatus.running;
         }
+        print('[IpcClient] Unexpected status code - returning notRunning');
         return DaemonStatus.notRunning;
       } catch (e) {
         // Connection failed - daemon not responding
+        print('[IpcClient] HTTP error: $e - returning notRunning');
         return DaemonStatus.notRunning;
       } finally {
         client.close();
       }
     } catch (e) {
       // Error reading token file
+      print('[IpcClient] Exception: $e - returning notInstalled');
       return DaemonStatus.notInstalled;
     }
   }

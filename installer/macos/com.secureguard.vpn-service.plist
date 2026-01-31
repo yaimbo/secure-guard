@@ -11,8 +11,6 @@
     <array>
         <string>/Library/PrivilegedHelperTools/secureguard-service</string>
         <string>--daemon</string>
-        <string>--port</string>
-        <string>51820</string>
     </array>
 
     <!-- Run at system boot -->

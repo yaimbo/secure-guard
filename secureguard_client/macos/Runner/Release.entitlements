@@ -11,6 +11,7 @@
 	<key>com.apple.security.temporary-exception.files.absolute-path.read-only</key>
 	<array>
 		<string>/var/run/secureguard/</string>
+		<string>/private/var/run/secureguard/</string>
 	</array>
 </dict>
 </plist>
