@@ -226,19 +226,19 @@ The Flutter desktop client connects to the client port. The Dart REST server con
 
 **Platform installers:**
 - macOS: `installer/macos/install.sh` (LaunchDaemon manual install)
-- macOS: `installer/macos/build-dmg.sh` (DMG with PKG installer)
+- macOS: `installer/macos/build-dmg.sh` (unified PKG installer)
 - Linux: `installer/linux/install.sh` (systemd)
 - Windows: `installer/windows/install.ps1` (Windows Service)
 
-**macOS DMG Build:**
+**macOS Installer Build:**
 ```bash
 cd installer/macos
-./build-dmg.sh 1.0.0   # Creates SecureGuard-1.0.0-macOS.dmg
+./build-dmg.sh 1.0.0   # Creates SecureGuard-1.0.0.pkg
 ```
-The DMG contains:
-- `SecureGuard.app` - Flutter desktop client (drag to /Applications)
-- `Install SecureGuard Service.pkg` - Daemon installer with postinstall scripts
-- `Applications` symlink for drag-and-drop install
+The PKG installer includes:
+- `SecureGuard.app` installed to `/Applications`
+- VPN daemon service with LaunchDaemon configuration
+- Postinstall scripts for group creation and service startup
 
 ### Key Implementation Details
 

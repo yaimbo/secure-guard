@@ -61,7 +61,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
               ),
               SizedBox(height: 16),
               Text(
-                'Please run "Install SecureGuard Service.pkg" from the disk image to install the service.',
+                'Please run the SecureGuard installer (SecureGuard-x.x.x.pkg) to install the VPN service.',
                 style: TextStyle(fontWeight: FontWeight.w500),
               ),
               SizedBox(height: 12),
