@@ -1,10 +1,14 @@
 //! Daemon mode for SecureGuard VPN service
 //!
-//! Runs as a background service, accepting commands via Unix socket (macOS/Linux)
-//! or named pipe (Windows). The Flutter UI client communicates with this daemon
-//! to control the VPN connection.
+//! Runs as a background service, accepting commands via REST API (HTTP).
+//! The Flutter UI client and Dart server communicate with this daemon
+//! to control VPN connections.
+//!
+//! Authentication is provided via Bearer token stored in a protected file.
 
+pub mod auth;
 pub mod ipc;
+pub mod routes;
 
 use std::path::PathBuf;
 use std::sync::Arc;
@@ -45,7 +49,7 @@ pub const DEFAULT_SERVER_PIPE_NAME: &str = r"\\.\pipe\secureguard-server";
 // ============================================================================
 
 /// The active VPN mode with mode-specific state
-enum VpnMode {
+pub enum VpnMode {
     /// Client mode - connects to a VPN server
     Client {
         vpn_ip: String,
@@ -73,19 +77,19 @@ pub struct DaemonService {
     status_tx: broadcast::Sender<String>,
 }
 
-struct DaemonState {
+pub struct DaemonState {
     /// Current connection state
-    connection_state: ConnectionState,
+    pub connection_state: ConnectionState,
     /// Active VPN mode (None when disconnected)
-    mode: Option<VpnMode>,
+    pub mode: Option<VpnMode>,
     /// When the connection/server started
-    started_at: Option<String>,
+    pub started_at: Option<String>,
     /// Shared traffic statistics (updated by VPN client/server)
-    traffic_stats: Arc<TrafficStats>,
+    pub traffic_stats: Arc<TrafficStats>,
     /// Error message (if in error state)
-    error_message: Option<String>,
+    pub error_message: Option<String>,
     /// Shutdown signal sender - send true to stop the VPN
-    shutdown_tx: Option<watch::Sender<bool>>,
+    pub shutdown_tx: Option<watch::Sender<bool>>,
 }
 
 impl Default for DaemonState {
@@ -190,7 +194,68 @@ impl DaemonService {
         }
     }
 
-    /// Handle a single client connection
+    /// Run the daemon service as an HTTP REST API server
+    ///
+    /// This is the preferred method for running the daemon, providing a REST API
+    /// with Bearer token authentication instead of Unix sockets.
+    pub async fn run_http(&self, port: u16, token_path: Option<std::path::PathBuf>) -> Result<(), SecureGuardError> {
+        use axum::middleware;
+        use std::net::SocketAddr;
+
+        // Generate auth token
+        let token = auth::generate_token();
+
+        // Write token to file
+        let token_file_path = auth::write_token_file(&token, token_path).map_err(|e| {
+            SecureGuardError::Config(ConfigError::ParseError {
+                line: 0,
+                message: format!("Failed to write auth token: {}", e),
+            })
+        })?;
+
+        tracing::info!("Auth token written to {:?}", token_file_path);
+
+        // In debug mode, also log the token for testing (remove in production)
+        tracing::debug!("Auth token (for testing): {}", token);
+
+        // Create auth state
+        let auth_state = auth::AuthState::new(token);
+
+        // Create app state for routes
+        let app_state = routes::AppState {
+            daemon_state: Arc::clone(&self.state),
+            status_tx: self.status_tx.clone(),
+        };
+
+        // Build router with auth middleware
+        // Note: The routes already have AppState via build_router
+        // We add auth middleware using a layer
+        let app = routes::build_router(app_state)
+            .layer(middleware::from_fn_with_state(auth_state, auth::auth_middleware));
+
+        // Bind to localhost only
+        let addr = SocketAddr::from(([127, 0, 0, 1], port));
+        let listener = tokio::net::TcpListener::bind(addr).await.map_err(|e| {
+            SecureGuardError::Config(ConfigError::ParseError {
+                line: 0,
+                message: format!("Failed to bind HTTP server to {}: {}", addr, e),
+            })
+        })?;
+
+        tracing::info!("HTTP daemon listening on http://{}", addr);
+
+        // Run the server
+        axum::serve(listener, app).await.map_err(|e| {
+            SecureGuardError::Config(ConfigError::ParseError {
+                line: 0,
+                message: format!("HTTP server error: {}", e),
+            })
+        })?;
+
+        Ok(())
+    }
+
+    /// Handle a single client connection (legacy Unix socket method)
     #[cfg(unix)]
     async fn handle_client(
         stream: tokio::net::UnixStream,

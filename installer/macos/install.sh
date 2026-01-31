@@ -11,8 +11,12 @@ LAUNCH_DAEMONS_DIR="/Library/LaunchDaemons"
 APPLICATION_SUPPORT_DIR="/Library/Application Support/SecureGuard"
 LOG_DIR="/var/log"
 DATA_DIR="/var/lib/secureguard"
-SOCKET_PATH="/var/run/secureguard.sock"
+TOKEN_DIR="/var/run/secureguard"
+TOKEN_FILE="$TOKEN_DIR/auth-token"
+HTTP_PORT=51820
 MIN_MACOS_VERSION="10.15"
+SECUREGUARD_GROUP="secureguard"
+SECUREGUARD_GID=1100
 
 # Colors for output
 RED='\033[0;31m'
@@ -136,10 +140,30 @@ stop_existing_service() {
         launchctl unload "$LAUNCH_DAEMONS_DIR/$SERVICE_NAME.plist" 2>/dev/null || true
         sleep 2
     fi
+}
 
-    # Remove stale socket
-    if [ -S "$SOCKET_PATH" ]; then
-        rm -f "$SOCKET_PATH"
+# Create secureguard group for token access
+create_secureguard_group() {
+    log_info "Setting up secureguard group..."
+
+    # Check if group exists
+    if ! dscl . -read /Groups/$SECUREGUARD_GROUP &>/dev/null; then
+        log_info "Creating group: $SECUREGUARD_GROUP"
+        dscl . -create /Groups/$SECUREGUARD_GROUP
+        dscl . -create /Groups/$SECUREGUARD_GROUP PrimaryGroupID $SECUREGUARD_GID
+        dscl . -create /Groups/$SECUREGUARD_GROUP RealName "SecureGuard VPN Users"
+    else
+        log_info "Group $SECUREGUARD_GROUP already exists"
+    fi
+
+    # Add the invoking user to the group (if SUDO_USER is set)
+    if [ -n "${SUDO_USER:-}" ] && [ "$SUDO_USER" != "root" ]; then
+        if ! dscl . -read /Groups/$SECUREGUARD_GROUP GroupMembership 2>/dev/null | grep -q "$SUDO_USER"; then
+            log_info "Adding user $SUDO_USER to $SECUREGUARD_GROUP group"
+            dscl . -append /Groups/$SECUREGUARD_GROUP GroupMembership "$SUDO_USER"
+        else
+            log_info "User $SUDO_USER already in $SECUREGUARD_GROUP group"
+        fi
     fi
 }
 
@@ -150,9 +174,14 @@ create_directories() {
     mkdir -p "$HELPER_TOOLS_DIR"
     mkdir -p "$APPLICATION_SUPPORT_DIR"
     mkdir -p "$DATA_DIR"
+    mkdir -p "$TOKEN_DIR"
 
     # Set permissions on data directory
     chmod 700 "$DATA_DIR"
+
+    # Set permissions on token directory (root:secureguard, 750)
+    chown root:$SECUREGUARD_GROUP "$TOKEN_DIR"
+    chmod 750 "$TOKEN_DIR"
 }
 
 # Install binary
@@ -238,18 +267,23 @@ verify_service() {
         return 1
     fi
 
-    # Check if socket exists
+    # Check if HTTP port is listening
     local retries=5
     while [ $retries -gt 0 ]; do
-        if [ -S "$SOCKET_PATH" ]; then
-            log_info "IPC socket created successfully"
+        if lsof -i :$HTTP_PORT -sTCP:LISTEN &>/dev/null; then
+            log_info "HTTP server listening on port $HTTP_PORT"
             return 0
         fi
         sleep 1
         ((retries--))
     done
 
-    log_warn "Socket not created yet, but service may still be starting"
+    # Check if token file was created
+    if [ -f "$TOKEN_FILE" ]; then
+        log_info "Auth token file created"
+    fi
+
+    log_warn "HTTP server not responding yet, but service may still be starting"
     return 0
 }
 
@@ -262,9 +296,17 @@ print_success() {
     echo ""
     echo "Service Details:"
     echo "  Binary:  $HELPER_TOOLS_DIR/secureguard-service"
-    echo "  Socket:  $SOCKET_PATH"
+    echo "  API:     http://127.0.0.1:$HTTP_PORT/api/v1"
+    echo "  Token:   $TOKEN_FILE"
     echo "  Logs:    $LOG_DIR/secureguard.log"
     echo "  Data:    $DATA_DIR"
+    echo ""
+    echo "Authentication:"
+    echo "  Users in the '$SECUREGUARD_GROUP' group can access the daemon API."
+    if [ -n "${SUDO_USER:-}" ] && [ "$SUDO_USER" != "root" ]; then
+        echo "  User '$SUDO_USER' has been added to this group."
+        echo "  NOTE: You may need to log out and back in for group changes to take effect."
+    fi
     echo ""
     echo "Management Commands:"
     echo "  Status:  sudo launchctl list | grep secureguard"
@@ -296,6 +338,7 @@ main() {
 
     backup_existing
     stop_existing_service
+    create_secureguard_group
     create_directories
     install_binary "$binary_path"
     install_configs

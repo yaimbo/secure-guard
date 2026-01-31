@@ -31,6 +31,9 @@ dependencies:
   crypto: ^3.0.3
   cryptography: ^2.7.0
 
+  # HTTP client
+  http: ^1.2.0
+
   # Deep links / URL scheme handling
   app_links: ^6.3.2
 

@@ -2,6 +2,8 @@ import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 
+import 'package:http/http.dart' as http;
+
 /// Connection state enum matching Rust daemon
 enum VpnConnectionState {
   disconnected,
@@ -61,21 +63,34 @@ class VpnStatus {
       state == VpnConnectionState.connecting || state == VpnConnectionState.disconnecting;
 }
 
-/// IPC client for communicating with SecureGuard daemon
+/// REST API client for communicating with SecureGuard daemon
+///
+/// Uses HTTP REST API with Bearer token authentication and SSE for real-time notifications.
 class IpcClient {
-  static const String defaultSocketPath = '/var/run/secureguard.sock';
+  /// Default HTTP port for client mode daemon
+  static const int defaultPort = 51820;
 
-  final String socketPath;
-  Socket? _socket;
-  int _requestId = 0;
-  final Map<int, Completer<Map<String, dynamic>>> _pendingRequests = {};
+  /// Token file path (platform-specific)
+  static String get tokenFilePath {
+    if (Platform.isWindows) {
+      return r'C:\ProgramData\SecureGuard\auth-token';
+    }
+    return '/var/run/secureguard/auth-token';
+  }
+
+  final String host;
+  final int port;
+  String? _authToken;
+  http.Client? _httpClient;
+  HttpClient? _sseClient;
+  bool _sseRunning = false;
+
   final StreamController<VpnStatus> _statusController = StreamController.broadcast();
   final StreamController<bool> _connectionController = StreamController.broadcast();
   final StreamController<ConfigUpdateNotification> _configUpdatedController = StreamController.broadcast();
   final StreamController<ConfigUpdateFailedNotification> _configUpdateFailedController = StreamController.broadcast();
-  StringBuffer _buffer = StringBuffer();
 
-  IpcClient({this.socketPath = defaultSocketPath});
+  IpcClient({this.host = '127.0.0.1', this.port = defaultPort});
 
   /// Stream of VPN status updates
   Stream<VpnStatus> get statusStream => _statusController.stream;
@@ -90,82 +105,128 @@ class IpcClient {
   Stream<ConfigUpdateFailedNotification> get configUpdateFailedStream => _configUpdateFailedController.stream;
 
   /// Whether connected to daemon
-  bool get isConnectedToDaemon => _socket != null;
+  bool get isConnectedToDaemon => _httpClient != null && _authToken != null;
 
-  /// Connect to the daemon socket
+  /// Base URL for API requests
+  String get _baseUrl => 'http://$host:$port/api/v1';
+
+  /// Connect to the daemon (load token and start SSE)
   Future<bool> connect() async {
-    if (_socket != null) return true;
+    if (_httpClient != null) return true;
 
     try {
-      final address = InternetAddress(socketPath, type: InternetAddressType.unix);
-      _socket = await Socket.connect(address, 0);
+      // Load auth token from file
+      _authToken = await _loadAuthToken();
+      if (_authToken == null) {
+        _connectionController.add(false);
+        return false;
+      }
+
+      _httpClient = http.Client();
+
+      // Verify connection by getting status
+      await getStatus();
+
       _connectionController.add(true);
 
-      _socket!.listen(
-        _onData,
-        onError: _onError,
-        onDone: _onDone,
-        cancelOnError: false,
-      );
+      // Start SSE listener for notifications
+      _startSseListener();
 
       return true;
     } catch (e) {
+      _httpClient?.close();
+      _httpClient = null;
+      _authToken = null;
       _connectionController.add(false);
       return false;
     }
   }
 
-  /// Disconnect from daemon socket
-  Future<void> disconnect() async {
-    await _socket?.close();
-    _socket = null;
-    _connectionController.add(false);
-    _pendingRequests.clear();
-    _buffer.clear();
+  /// Load authentication token from file
+  Future<String?> _loadAuthToken() async {
+    try {
+      final file = File(tokenFilePath);
+      if (!await file.exists()) {
+        return null;
+      }
+      final token = await file.readAsString();
+      return token.trim();
+    } catch (e) {
+      return null;
+    }
   }
 
-  /// Handle incoming data from socket
-  void _onData(List<int> data) {
-    _buffer.write(utf8.decode(data));
+  /// Start SSE listener for real-time notifications
+  void _startSseListener() {
+    _sseClient = HttpClient();
+    _sseRunning = true;
+    _connectSse();
+  }
 
-    // Process complete JSON-RPC messages (newline-delimited)
-    final content = _buffer.toString();
-    final lines = content.split('\n');
+  Future<void> _connectSse() async {
+    if (_sseClient == null || _authToken == null || !_sseRunning) return;
 
-    // Process all complete lines
-    for (int i = 0; i < lines.length - 1; i++) {
-      final line = lines[i].trim();
-      if (line.isEmpty) continue;
+    try {
+      final request = await _sseClient!.getUrl(Uri.parse('$_baseUrl/events'));
+      request.headers.set('Authorization', 'Bearer $_authToken');
+      request.headers.set('Accept', 'text/event-stream');
+      request.headers.set('Cache-Control', 'no-cache');
 
-      try {
-        final json = jsonDecode(line) as Map<String, dynamic>;
-        _processMessage(json);
-      } catch (e) {
-        // Skip malformed JSON
+      final response = await request.close();
+
+      if (response.statusCode != 200) {
+        // Retry after delay
+        await Future.delayed(const Duration(seconds: 5));
+        if (_sseRunning) _connectSse();
+        return;
+      }
+
+      // Process SSE stream
+      await for (final chunk in response.transform(utf8.decoder)) {
+        if (!_sseRunning) break;
+        _processSseChunk(chunk);
+      }
+    } catch (e) {
+      // Reconnect on error after delay
+      await Future.delayed(const Duration(seconds: 5));
+      if (_sseRunning) {
+        _connectSse();
+      }
+    }
+  }
+
+  String _sseBuffer = '';
+
+  void _processSseChunk(String chunk) {
+    _sseBuffer += chunk;
+
+    // Process complete events (double newline separated)
+    while (_sseBuffer.contains('\n\n')) {
+      final eventEnd = _sseBuffer.indexOf('\n\n');
+      final event = _sseBuffer.substring(0, eventEnd);
+      _sseBuffer = _sseBuffer.substring(eventEnd + 2);
+
+      _processSseEvent(event);
+    }
+  }
+
+  void _processSseEvent(String event) {
+    // Parse SSE event - just look for data field
+    String? data;
+
+    for (final line in event.split('\n')) {
+      if (line.startsWith('data:')) {
+        data = line.substring(5).trim();
       }
     }
 
-    // Keep incomplete line in buffer
-    _buffer = StringBuffer(lines.last);
-  }
+    if (data == null || data.isEmpty) return;
 
-  /// Process a JSON-RPC message
-  void _processMessage(Map<String, dynamic> json) {
-    // Check if it's a notification (no id)
-    if (!json.containsKey('id') || json['id'] == null) {
+    try {
+      final json = jsonDecode(data) as Map<String, dynamic>;
       _handleNotification(json);
-      return;
-    }
-
-    // It's a response to a request
-    final id = json['id'] as int;
-    final completer = _pendingRequests.remove(id);
-    if (completer != null) {
-      if (json.containsKey('error')) {
-        completer.completeError(IpcError.fromJson(json['error'] as Map<String, dynamic>));
-      } else {
-        completer.complete(json['result'] as Map<String, dynamic>? ?? {});
-      }
+    } catch (e) {
+      // Skip malformed JSON
     }
   }
 
@@ -187,65 +248,91 @@ class IpcClient {
     }
   }
 
-  void _onError(Object error) {
+  /// Disconnect from daemon
+  Future<void> disconnect() async {
+    _sseRunning = false;
+    _sseClient?.close(force: true);
+    _sseClient = null;
+    _httpClient?.close();
+    _httpClient = null;
+    _authToken = null;
+    _sseBuffer = '';
     _connectionController.add(false);
-    for (final completer in _pendingRequests.values) {
-      completer.completeError(error);
-    }
-    _pendingRequests.clear();
   }
 
-  void _onDone() {
-    _socket = null;
-    _connectionController.add(false);
-    for (final completer in _pendingRequests.values) {
-      completer.completeError(const SocketException('Connection closed'));
-    }
-    _pendingRequests.clear();
-  }
-
-  /// Send a JSON-RPC request
-  Future<Map<String, dynamic>> _request(String method, [Map<String, dynamic>? params]) async {
-    if (_socket == null) {
+  /// Make an HTTP request with authentication
+  Future<Map<String, dynamic>> _request(
+    String method,
+    String path, {
+    Map<String, dynamic>? body,
+  }) async {
+    if (_httpClient == null || _authToken == null) {
       throw const SocketException('Not connected to daemon');
     }
 
-    final id = ++_requestId;
-    final request = {
-      'jsonrpc': '2.0',
-      'method': method,
-      'params': params ?? {},
-      'id': id,
+    final uri = Uri.parse('$_baseUrl$path');
+    final headers = {
+      'Authorization': 'Bearer $_authToken',
+      'Content-Type': 'application/json',
     };
 
-    final completer = Completer<Map<String, dynamic>>();
-    _pendingRequests[id] = completer;
+    http.Response response;
 
-    final json = jsonEncode(request);
-    _socket!.write('$json\n');
+    switch (method) {
+      case 'GET':
+        response = await _httpClient!.get(uri, headers: headers);
+        break;
+      case 'POST':
+        response = await _httpClient!.post(
+          uri,
+          headers: headers,
+          body: body != null ? jsonEncode(body) : null,
+        );
+        break;
+      case 'PUT':
+        response = await _httpClient!.put(
+          uri,
+          headers: headers,
+          body: body != null ? jsonEncode(body) : null,
+        );
+        break;
+      case 'DELETE':
+        response = await _httpClient!.delete(uri, headers: headers);
+        break;
+      default:
+        throw ArgumentError('Unknown HTTP method: $method');
+    }
 
-    return completer.future.timeout(
-      const Duration(seconds: 30),
-      onTimeout: () {
-        _pendingRequests.remove(id);
-        throw TimeoutException('Request timed out');
-      },
-    );
+    if (response.statusCode == 401) {
+      _connectionController.add(false);
+      throw IpcError(code: -401, message: 'Unauthorized');
+    }
+
+    final json = jsonDecode(response.body) as Map<String, dynamic>;
+
+    if (response.statusCode >= 400) {
+      throw IpcError(
+        code: json['code'] as int? ?? response.statusCode,
+        message: json['message'] as String? ?? 'Request failed',
+      );
+    }
+
+    return json;
   }
 
   /// Connect to VPN with config
   Future<void> connectVpn(String config) async {
-    await _request('connect', {'config': config});
+    await _request('POST', '/connect', body: {'config': config});
   }
 
   /// Disconnect from VPN
   Future<void> disconnectVpn() async {
-    await _request('disconnect');
+    await _request('POST', '/disconnect');
   }
 
   /// Get current VPN status
   Future<VpnStatus> getStatus() async {
-    final result = await _request('status');
+    final result = await _request('GET', '/status');
     return VpnStatus.fromJson(result);
   }
 
@@ -257,7 +344,7 @@ class IpcClient {
   /// Listen to [configUpdatedStream] for success notifications and
   /// [configUpdateFailedStream] for failure notifications.
   Future<UpdateConfigResponse> updateConfig(String config) async {
-    final result = await _request('update_config', {'config': config});
+    final result = await _request('PUT', '/config', body: {'config': config});
     return UpdateConfigResponse.fromJson(result);
   }
 

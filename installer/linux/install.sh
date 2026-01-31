@@ -11,7 +11,9 @@ SYSTEMD_DIR="/etc/systemd/system"
 DATA_DIR="/var/lib/secureguard"
 RUN_DIR="/var/run/secureguard"
 LOG_DIR="/var/log/secureguard"
-SOCKET_PATH="$RUN_DIR/secureguard.sock"
+TOKEN_FILE="$RUN_DIR/auth-token"
+HTTP_PORT=51820
+SECUREGUARD_GROUP="secureguard"
 
 # Colors for output
 RED='\033[0;31m'
@@ -167,10 +169,28 @@ stop_existing_service() {
         systemctl stop "$SERVICE_NAME" || true
         sleep 2
     fi
+}
 
-    # Remove stale socket
-    if [ -S "$SOCKET_PATH" ]; then
-        rm -f "$SOCKET_PATH"
+# Create secureguard group for token access
+create_secureguard_group() {
+    log_info "Setting up secureguard group..."
+
+    # Create group if it doesn't exist
+    if ! getent group "$SECUREGUARD_GROUP" > /dev/null 2>&1; then
+        log_info "Creating group: $SECUREGUARD_GROUP"
+        groupadd -f "$SECUREGUARD_GROUP"
+    else
+        log_info "Group $SECUREGUARD_GROUP already exists"
+    fi
+
+    # Add the invoking user to the group (if SUDO_USER is set)
+    if [ -n "${SUDO_USER:-}" ] && [ "$SUDO_USER" != "root" ]; then
+        if ! id -nG "$SUDO_USER" | grep -qw "$SECUREGUARD_GROUP"; then
+            log_info "Adding user $SUDO_USER to $SECUREGUARD_GROUP group"
+            usermod -aG "$SECUREGUARD_GROUP" "$SUDO_USER"
+        else
+            log_info "User $SUDO_USER already in $SECUREGUARD_GROUP group"
+        fi
     fi
 }
 
@@ -185,8 +205,11 @@ create_directories() {
 
     # Set permissions
     chmod 700 "$DATA_DIR"
-    chmod 755 "$RUN_DIR"
     chmod 750 "$LOG_DIR"
+
+    # Token directory: root:secureguard, 750
+    chown root:$SECUREGUARD_GROUP "$RUN_DIR"
+    chmod 750 "$RUN_DIR"
 }
 
 # Install binary
@@ -266,18 +289,23 @@ verify_service() {
 
     log_info "Service is running"
 
-    # Check if socket exists
+    # Check if HTTP port is listening
     local retries=5
     while [ $retries -gt 0 ]; do
-        if [ -S "$SOCKET_PATH" ]; then
-            log_info "IPC socket created successfully"
+        if ss -tlnp | grep -q ":$HTTP_PORT "; then
+            log_info "HTTP server listening on port $HTTP_PORT"
             return 0
         fi
         sleep 1
         ((retries--))
     done
 
-    log_warn "Socket not created yet, but service may still be starting"
+    # Check if token file was created
+    if [ -f "$TOKEN_FILE" ]; then
+        log_info "Auth token file created"
+    fi
+
+    log_warn "HTTP server not responding yet, but service may still be starting"
     return 0
 }
 
@@ -290,8 +318,16 @@ print_success() {
     echo ""
     echo "Service Details:"
     echo "  Binary:  $INSTALL_DIR/secureguard-service"
-    echo "  Socket:  $SOCKET_PATH"
+    echo "  API:     http://127.0.0.1:$HTTP_PORT/api/v1"
+    echo "  Token:   $TOKEN_FILE"
     echo "  Data:    $DATA_DIR"
+    echo ""
+    echo "Authentication:"
+    echo "  Users in the '$SECUREGUARD_GROUP' group can access the daemon API."
+    if [ -n "${SUDO_USER:-}" ] && [ "$SUDO_USER" != "root" ]; then
+        echo "  User '$SUDO_USER' has been added to this group."
+        echo "  NOTE: You may need to log out and back in for group changes to take effect."
+    fi
     echo ""
     echo "Management Commands:"
     echo "  Status:  sudo systemctl status secureguard"
@@ -330,6 +366,7 @@ main() {
 
     backup_existing
     stop_existing_service
+    create_secureguard_group
     create_directories
     install_binary "$binary_path"
     set_capabilities

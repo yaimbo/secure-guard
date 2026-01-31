@@ -2,16 +2,21 @@ import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 
-/// Client for communicating with the SecureGuard Rust daemon via Unix socket.
+import 'package:http/http.dart' as http;
+
+/// Client for communicating with the SecureGuard Rust daemon via HTTP REST API.
 ///
 /// This client enables the Dart REST API server to dynamically manage VPN peers
-/// by sending JSON-RPC 2.0 commands to the Rust daemon over its Unix socket.
+/// by sending HTTP requests to the Rust daemon's REST API.
 ///
-/// **Socket Path Convention:**
-/// - Client mode daemon: `/var/run/secureguard.sock`
-/// - Server mode daemon: `/var/run/secureguard-server.sock` (default for this client)
+/// **Port Convention:**
+/// - Client mode daemon: `127.0.0.1:51820`
+/// - Server mode daemon: `127.0.0.1:51821` (default for this client)
 ///
-/// This allows running both client and server daemons simultaneously for testing.
+/// **Authentication:**
+/// Uses Bearer token authentication. The token is read from a protected file:
+/// - Unix: `/var/run/secureguard/auth-token`
+/// - Windows: `C:\ProgramData\SecureGuard\auth-token`
 ///
 /// Example usage:
 /// ```dart
@@ -24,148 +29,136 @@ import 'dart:io';
 /// await client.disconnect();
 /// ```
 class VpnDaemonClient {
-  /// Default socket path for server mode daemon
-  /// Use `/var/run/secureguard.sock` if connecting to client mode daemon
-  static const String defaultSocketPath = '/var/run/secureguard-server.sock';
+  /// Default HTTP port for server mode daemon
+  /// Use 51820 if connecting to client mode daemon
+  static const int defaultPort = 51821;
 
-  final String socketPath;
-  Socket? _socket;
-  int _requestId = 0;
-  final Map<int, Completer<Map<String, dynamic>>> _pendingRequests = {};
-  StreamSubscription<List<int>>? _subscription;
-  StringBuffer _buffer = StringBuffer();
+  /// Token file path (platform-specific)
+  static String get tokenFilePath {
+    if (Platform.isWindows) {
+      return r'C:\ProgramData\SecureGuard\auth-token';
+    }
+    return '/var/run/secureguard/auth-token';
+  }
 
-  VpnDaemonClient({this.socketPath = defaultSocketPath});
+  final String host;
+  final int port;
+  String? _authToken;
+  http.Client? _httpClient;
+
+  VpnDaemonClient({this.host = '127.0.0.1', this.port = defaultPort});
 
   /// Whether currently connected to the daemon
-  bool get isConnected => _socket != null;
+  bool get isConnected => _httpClient != null && _authToken != null;
 
-  /// Connect to the daemon socket
+  /// Base URL for API requests
+  String get _baseUrl => 'http://$host:$port/api/v1';
+
+  /// Connect to the daemon (load token and verify connection)
   Future<void> connect() async {
-    if (_socket != null) return;
+    if (_httpClient != null) return;
 
     try {
-      final address = InternetAddress(socketPath, type: InternetAddressType.unix);
-      _socket = await Socket.connect(address, 0);
+      // Load auth token from file
+      _authToken = await _loadAuthToken();
+      if (_authToken == null) {
+        throw const VpnDaemonException('Auth token not found');
+      }
 
-      // Handle incoming responses
-      _subscription = _socket!.listen(
-        _onData,
-        onError: _onError,
-        onDone: _onDone,
-        cancelOnError: false,
-      );
+      _httpClient = http.Client();
+
+      // Verify connection by getting status
+      await getStatus();
     } catch (e) {
+      _httpClient?.close();
+      _httpClient = null;
+      _authToken = null;
       throw VpnDaemonException('Failed to connect to daemon: $e');
+    }
+  }
+
+  /// Load authentication token from file
+  Future<String?> _loadAuthToken() async {
+    try {
+      final file = File(tokenFilePath);
+      if (!await file.exists()) {
+        return null;
+      }
+      final token = await file.readAsString();
+      return token.trim();
+    } catch (e) {
+      return null;
     }
   }
 
   /// Disconnect from the daemon
   Future<void> disconnect() async {
-    await _subscription?.cancel();
-    await _socket?.close();
-    _socket = null;
-    _buffer.clear();
-
-    // Complete any pending requests with error
-    for (final completer in _pendingRequests.values) {
-      completer.completeError(
-        const VpnDaemonException('Connection closed'),
-      );
-    }
-    _pendingRequests.clear();
+    _httpClient?.close();
+    _httpClient = null;
+    _authToken = null;
   }
 
-  void _onData(List<int> data) {
-    _buffer.write(utf8.decode(data));
-
-    // Process complete JSON-RPC messages (newline-delimited)
-    final content = _buffer.toString();
-    final lines = content.split('\n');
-
-    // Process all complete lines
-    for (int i = 0; i < lines.length - 1; i++) {
-      final line = lines[i].trim();
-      if (line.isEmpty) continue;
-
-      try {
-        final json = jsonDecode(line) as Map<String, dynamic>;
-        _processMessage(json);
-      } catch (e) {
-        // Skip malformed JSON
-      }
-    }
-
-    // Keep incomplete line in buffer
-    _buffer = StringBuffer(lines.last);
-  }
-
-  void _processMessage(Map<String, dynamic> json) {
-    // Check if it's a response (has id)
-    if (json.containsKey('id') && json['id'] != null) {
-      final id = json['id'] as int;
-      final completer = _pendingRequests.remove(id);
-      if (completer != null) {
-        if (json.containsKey('error') && json['error'] != null) {
-          final error = json['error'] as Map<String, dynamic>;
-          completer.completeError(VpnDaemonException(
-            error['message'] as String? ?? 'Unknown error',
-            code: error['code'] as int?,
-          ));
-        } else {
-          completer.complete(json['result'] as Map<String, dynamic>? ?? {});
-        }
-      }
-    }
-    // Notifications (no id) are ignored - server doesn't need them
-  }
-
-  void _onError(Object error) {
-    for (final completer in _pendingRequests.values) {
-      completer.completeError(VpnDaemonException('Socket error: $error'));
-    }
-    _pendingRequests.clear();
-  }
-
-  void _onDone() {
-    _socket = null;
-    for (final completer in _pendingRequests.values) {
-      completer.completeError(
-        const VpnDaemonException('Connection closed'),
-      );
-    }
-    _pendingRequests.clear();
-  }
-
-  /// Send a JSON-RPC request and wait for response
+  /// Make an HTTP request with authentication
   Future<Map<String, dynamic>> _sendRequest(
     String method,
-    Map<String, dynamic> params,
-  ) async {
-    if (_socket == null) {
+    String path, {
+    Map<String, dynamic>? body,
+  }) async {
+    if (_httpClient == null || _authToken == null) {
       throw const VpnDaemonException('Not connected to daemon');
     }
 
-    final id = ++_requestId;
-    final completer = Completer<Map<String, dynamic>>();
-    _pendingRequests[id] = completer;
-
-    final request = {
-      'jsonrpc': '2.0',
-      'method': method,
-      'params': params,
-      'id': id,
+    final uri = Uri.parse('$_baseUrl$path');
+    final headers = {
+      'Authorization': 'Bearer $_authToken',
+      'Content-Type': 'application/json',
     };
 
-    _socket!.write('${jsonEncode(request)}\n');
+    http.Response response;
 
-    return completer.future.timeout(
-      const Duration(seconds: 10),
-      onTimeout: () {
-        _pendingRequests.remove(id);
-        throw const VpnDaemonException('Request timed out');
-      },
-    );
+    try {
+      switch (method) {
+        case 'GET':
+          response = await _httpClient!.get(uri, headers: headers);
+          break;
+        case 'POST':
+          response = await _httpClient!.post(
+            uri,
+            headers: headers,
+            body: body != null ? jsonEncode(body) : null,
+          );
+          break;
+        case 'PUT':
+          response = await _httpClient!.put(
+            uri,
+            headers: headers,
+            body: body != null ? jsonEncode(body) : null,
+          );
+          break;
+        case 'DELETE':
+          response = await _httpClient!.delete(uri, headers: headers);
+          break;
+        default:
+          throw VpnDaemonException('Unknown HTTP method: $method');
+      }
+    } catch (e) {
+      throw VpnDaemonException('Request failed: $e');
+    }
+
+    if (response.statusCode == 401) {
+      throw const VpnDaemonException('Unauthorized', code: 401);
+    }
+
+    final json = jsonDecode(response.body) as Map<String, dynamic>;
+
+    if (response.statusCode >= 400) {
+      throw VpnDaemonException(
+        json['message'] as String? ?? 'Request failed',
+        code: json['code'] as int? ?? response.statusCode,
+      );
+    }
+
+    return json;
   }
 
   // ===========================================================================
@@ -174,17 +167,17 @@ class VpnDaemonClient {
 
   /// Start the VPN server with bootstrap config
   Future<Map<String, dynamic>> startServer(String config) async {
-    return _sendRequest('start', {'config': config});
+    return _sendRequest('POST', '/server/start', body: {'config': config});
   }
 
   /// Stop the VPN server
   Future<Map<String, dynamic>> stopServer() async {
-    return _sendRequest('stop', {});
+    return _sendRequest('POST', '/server/stop');
   }
 
   /// Get server status
   Future<Map<String, dynamic>> getStatus() async {
-    return _sendRequest('status', {});
+    return _sendRequest('GET', '/status');
   }
 
   /// Add a peer to the running server
@@ -197,7 +190,7 @@ class VpnDaemonClient {
     required List<String> allowedIps,
     String? presharedKey,
   }) async {
-    final result = await _sendRequest('add_peer', {
+    final result = await _sendRequest('POST', '/server/peers', body: {
       'public_key': publicKey,
       'allowed_ips': allowedIps,
       if (presharedKey != null) 'preshared_key': presharedKey,
@@ -213,9 +206,9 @@ class VpnDaemonClient {
   ///
   /// [publicKey] - Base64-encoded 32-byte public key
   Future<RemovePeerResult> removePeer(String publicKey) async {
-    final result = await _sendRequest('remove_peer', {
-      'public_key': publicKey,
-    });
+    // URL-encode the public key for path parameter
+    final encodedKey = Uri.encodeComponent(publicKey);
+    final result = await _sendRequest('DELETE', '/server/peers/$encodedKey');
 
     return RemovePeerResult(
       removed: result['removed'] as bool? ?? false,
@@ -226,7 +219,7 @@ class VpnDaemonClient {
 
   /// List all configured peers
   Future<List<PeerInfo>> listPeers() async {
-    final result = await _sendRequest('list_peers', {});
+    final result = await _sendRequest('GET', '/server/peers');
     final peers = result['peers'] as List<dynamic>? ?? [];
 
     return peers
@@ -238,9 +231,9 @@ class VpnDaemonClient {
   ///
   /// [publicKey] - Base64-encoded 32-byte public key
   Future<PeerInfo> getPeerStatus(String publicKey) async {
-    final result = await _sendRequest('peer_status', {
-      'public_key': publicKey,
-    });
+    // URL-encode the public key for path parameter
+    final encodedKey = Uri.encodeComponent(publicKey);
+    final result = await _sendRequest('GET', '/server/peers/$encodedKey');
 
     return PeerInfo.fromJson(result);
   }

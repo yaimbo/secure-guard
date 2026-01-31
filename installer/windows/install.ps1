@@ -47,7 +47,9 @@ $ServiceName = "SecureGuardVPN"
 $ServiceDisplayName = "SecureGuard VPN Service"
 $ServiceDescription = "WireGuard-compatible VPN daemon for SecureGuard"
 $InstallDir = "C:\Program Files\SecureGuard"
-$SocketPath = "\\.\pipe\secureguard"
+$TokenDir = "$DataDir"
+$TokenFile = "$TokenDir\auth-token"
+$HttpPort = 51820
 $LogDir = "$DataDir\logs"
 
 # Colors and logging
@@ -156,20 +158,29 @@ function New-Directories {
         }
     }
 
-    # Set restrictive permissions on data directory
+    # Set permissions on data directory:
+    # - SYSTEM and Administrators: Full Control
+    # - Users: Read (for token access)
+    Write-Info "Setting directory permissions..."
     $acl = Get-Acl $DataDir
     $acl.SetAccessRuleProtection($true, $false)  # Disable inheritance
 
-    # Allow only SYSTEM and Administrators
+    # Allow SYSTEM full control
     $systemRule = New-Object System.Security.AccessControl.FileSystemAccessRule(
         "SYSTEM", "FullControl", "ContainerInherit,ObjectInherit", "None", "Allow"
     )
+    # Allow Administrators full control
     $adminRule = New-Object System.Security.AccessControl.FileSystemAccessRule(
         "Administrators", "FullControl", "ContainerInherit,ObjectInherit", "None", "Allow"
+    )
+    # Allow Users read access (for token file)
+    $usersRule = New-Object System.Security.AccessControl.FileSystemAccessRule(
+        "Users", "Read,ReadAndExecute", "ContainerInherit,ObjectInherit", "None", "Allow"
     )
 
     $acl.AddAccessRule($systemRule)
     $acl.AddAccessRule($adminRule)
+    $acl.AddAccessRule($usersRule)
     Set-Acl -Path $DataDir -AclObject $acl
 }
 
@@ -203,8 +214,8 @@ function New-VpnService {
 
     Write-Info "Creating Windows Service..."
 
-    # Service command line
-    $binPathArg = "`"$BinaryPath`" --daemon --socket `"$SocketPath`""
+    # Service command line (uses HTTP API on localhost)
+    $binPathArg = "`"$BinaryPath`" --daemon --port $HttpPort"
 
     # Create the service
     $result = sc.exe create $ServiceName `
@@ -281,8 +292,12 @@ function Write-Success {
     Write-Host "Service Details:"
     Write-Host "  Name:    $ServiceName"
     Write-Host "  Binary:  $InstallDir\secureguard-service.exe"
-    Write-Host "  Socket:  $SocketPath"
+    Write-Host "  API:     http://127.0.0.1:$HttpPort/api/v1"
+    Write-Host "  Token:   $TokenFile"
     Write-Host "  Data:    $DataDir"
+    Write-Host ""
+    Write-Host "Authentication:"
+    Write-Host "  All local users can access the daemon API via the token file."
     Write-Host ""
     Write-Host "Management Commands (PowerShell as Admin):"
     Write-Host "  Status:  Get-Service $ServiceName"

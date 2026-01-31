@@ -80,6 +80,47 @@ sudo setcap cap_net_admin=eip ./target/release/secureguard-poc
 sudo ./setuid.sh
 ```
 
+## Important Development Notes
+
+### Cross-Platform Compatibility
+The Flutter desktop client must run on **Windows, macOS, and Linux**. Always consider all three platforms when making changes to:
+- File paths (use platform-specific paths)
+- System APIs (credentials, networking, permissions)
+- Build configurations and dependencies
+
+### Testing Prerequisites
+Before testing the Rust client or server process, you must run setuid setup:
+```bash
+sudo ./setuid.sh
+```
+This grants the necessary root permissions for TUN device access and routing.
+
+### Test Configuration Files
+Test configs are located in `docs/clients/`:
+
+| File | Purpose | IP Subnet |
+|------|---------|-----------|
+| `local-client.conf` | Local client testing | 10.200.0.9/24 |
+| `wg0.conf` | Local server testing | 10.100.0.1/24 |
+| `vpn.fronthouse.ai.conf` | Testing client connection to official WireGuard server | - |
+
+**Important**: The local configs use separate subnets (10.100.x.x and 10.200.x.x) to avoid routing conflicts when running both client and server on the same machine.
+
+Example usage:
+```bash
+# Start local server (in one terminal)
+./target/release/secureguard-poc -c docs/clients/wg0.conf --server -v
+
+# Start local client (in another terminal)
+./target/release/secureguard-poc -c docs/clients/local-client.conf -v
+
+# Test tunnel connectivity
+ping 10.100.0.1  # From client, ping server through tunnel
+
+# Test against official server
+./target/release/secureguard-poc -c docs/clients/vpn.fronthouse.ai.conf
+```
+
 ## Architecture
 
 This is a WireGuard-compatible VPN client/server implementing the Noise IKpsk2 handshake protocol.
@@ -108,9 +149,11 @@ This is a WireGuard-compatible VPN client/server implementing the Noise IKpsk2 h
 
 - **server.rs** - Server event loop: multi-peer support, incoming handshake handling (responder mode)
 
-- **daemon/** - Daemon mode for service/IPC control
-  - `mod.rs` - DaemonService with Unix socket listener
-  - `ipc.rs` - JSON-RPC 2.0 message types and protocol
+- **daemon/** - Daemon mode for service/REST API control
+  - `mod.rs` - DaemonService with HTTP server (axum)
+  - `ipc.rs` - Message types and DTOs (reused from JSON-RPC)
+  - `auth.rs` - Token generation and Bearer auth middleware
+  - `routes.rs` - REST API route handlers
 
 ### CLI Usage
 
@@ -125,45 +168,56 @@ This is a WireGuard-compatible VPN client/server implementing the Noise IKpsk2 h
 ./secureguard-poc -c config.conf --server
 ./secureguard-poc -c config.conf --client
 
-# Daemon mode (for Flutter UI control via IPC)
+# Daemon mode (for Flutter UI control via REST API)
 sudo ./secureguard-poc --daemon
-sudo ./secureguard-poc --daemon --socket /custom/path.sock
+sudo ./secureguard-poc --daemon --port 51820
 
 # Run client and server daemons simultaneously (for testing)
-sudo ./secureguard-poc --daemon                                          # Client mode (default socket)
-sudo ./secureguard-poc --daemon --socket /var/run/secureguard-server.sock  # Server mode (separate socket)
+sudo ./secureguard-poc --daemon --port 51820  # Client mode (default)
+sudo ./secureguard-poc --daemon --port 51821  # Server mode (separate port)
 ```
 
 ### Daemon Mode
 
-The daemon runs as a background service, controlled via Unix socket IPC (JSON-RPC 2.0 protocol).
+The daemon runs as a background service, controlled via REST API with Bearer token authentication.
 
-**Socket paths (convention for running both modes simultaneously):**
-- Client mode daemon: `/var/run/secureguard.sock` (default)
-- Server mode daemon: `/var/run/secureguard-server.sock`
+**HTTP Ports (convention for running both modes simultaneously):**
+- Client mode daemon: `127.0.0.1:51820` (default)
+- Server mode daemon: `127.0.0.1:51821`
 
-The Flutter desktop client connects to the client socket. The Dart REST server connects to the server socket for peer management.
+The Flutter desktop client connects to the client port. The Dart REST server connects to the server port for peer management.
 
-**IPC Commands (Client Mode):**
-- `connect` - Start VPN client: `{"method": "connect", "params": {"config": "<wireguard-config>"}}`
-- `disconnect` - Stop VPN client: `{"method": "disconnect"}`
-- `status` - Get connection status: `{"method": "status"}`
-- `update_config` - Update config dynamically (reconnects if connected): `{"method": "update_config", "params": {"config": "<wireguard-config>"}}`
+**Authentication:**
+- On startup, daemon generates a 32-byte random token
+- Token is written to a protected file with group-based permissions
+- Clients read token from file and include as `Authorization: Bearer <token>` header
+- Token file paths:
+  - Unix: `/var/run/secureguard/auth-token` (permissions: `root:secureguard 0640`)
+  - Windows: `C:\ProgramData\SecureGuard\auth-token` (ACL: SYSTEM + Administrators full, Users read)
 
-**IPC Commands (Server Mode):**
-- `start` - Start VPN server: `{"method": "start", "params": {"config": "<wireguard-config>"}}`
-- `stop` - Stop VPN server: `{"method": "stop"}`
-- `list_peers` - List all configured peers: `{"method": "list_peers"}`
-- `peer_status` - Get specific peer status: `{"method": "peer_status", "params": {"public_key": "<base64>"}}`
-- `add_peer` - Add peer dynamically: `{"method": "add_peer", "params": {"public_key": "<base64>", "allowed_ips": ["10.0.0.2/32"], "preshared_key": "<base64-optional>"}}`
-- `remove_peer` - Remove peer (terminates connection): `{"method": "remove_peer", "params": {"public_key": "<base64>"}}`
+**REST API Endpoints (Client Mode):**
+- `POST /api/v1/connect` - Start VPN client (body: `{"config": "<wireguard-config>"}`)
+- `POST /api/v1/disconnect` - Stop VPN client
+- `GET /api/v1/status` - Get connection status
+- `PUT /api/v1/config` - Update config dynamically (body: `{"config": "<wireguard-config>"}`)
 
-**Notifications (Client Mode):**
+**REST API Endpoints (Server Mode):**
+- `POST /api/v1/server/start` - Start VPN server (body: `{"config": "<wireguard-config>"}`)
+- `POST /api/v1/server/stop` - Stop VPN server
+- `GET /api/v1/server/peers` - List all configured peers
+- `GET /api/v1/server/peers/:pubkey` - Get specific peer status
+- `POST /api/v1/server/peers` - Add peer (body: `{"public_key": "<base64>", "allowed_ips": ["10.0.0.2/32"], "preshared_key": "<optional>"}`)
+- `DELETE /api/v1/server/peers/:pubkey` - Remove peer
+
+**Server-Sent Events (SSE):**
+- `GET /api/v1/events` - Real-time notification stream
+
+**SSE Event Types (Client Mode):**
 - `status_changed` - Connection state changes
-- `config_updated` - Config update succeeded (includes vpn_ip, server_endpoint, reconnected)
+- `config_updated` - Config update succeeded (includes vpn_ip, server_endpoint)
 - `config_update_failed` - Config update failed (includes error, rolled_back)
 
-**Notifications (Server Mode):**
+**SSE Event Types (Server Mode):**
 - `server_status_changed` - Server state changes
 - `peer_connected` - Peer completed handshake
 - `peer_disconnected` - Peer session terminated
@@ -532,7 +586,7 @@ flutter build macos --release
 ### Architecture
 
 - **State Management**: Riverpod (flutter_riverpod)
-- **IPC**: Unix socket communication with Rust daemon (JSON-RPC 2.0)
+- **Daemon Communication**: HTTP REST API with Bearer token auth + SSE for events
 - **System Tray**: tray_manager for menu bar/system tray integration
 - **Window Management**: window_manager for custom title bar
 
@@ -545,7 +599,7 @@ secureguard_client/lib/
 │   ├── home_screen.dart       # Main VPN control screen
 │   └── enrollment_screen.dart # Enrollment code / deep link enrollment
 ├── services/
-│   ├── ipc_client.dart        # Unix socket IPC to Rust daemon
+│   ├── ipc_client.dart        # HTTP REST API client to Rust daemon + SSE
 │   ├── tray_service.dart      # System tray integration
 │   ├── api_client.dart        # HTTP client for server API
 │   ├── update_service.dart    # Auto-update functionality
@@ -560,15 +614,24 @@ secureguard_client/lib/
     └── config_dialog.dart     # WireGuard config input
 ```
 
-### IPC Communication
+### Daemon Communication
 
-The client communicates with the Rust daemon via Unix socket at `/var/run/secureguard.sock`.
+The client communicates with the Rust daemon via HTTP REST API at `http://127.0.0.1:51820/api/v1`.
 
-**JSON-RPC Commands:**
-- `connect` - Connect with WireGuard config
-- `disconnect` - Disconnect VPN
-- `status` - Get current connection status
-- `update_config` - Update config dynamically (validates before disconnect, reconnects with new config)
+**Authentication:**
+- Token is read from platform-specific path on startup:
+  - Unix: `/var/run/secureguard/auth-token`
+  - Windows: `C:\ProgramData\SecureGuard\auth-token`
+- Token is sent as `Authorization: Bearer <token>` header with all requests
+
+**REST Endpoints:**
+- `POST /connect` - Connect with WireGuard config
+- `POST /disconnect` - Disconnect VPN
+- `GET /status` - Get current connection status
+- `PUT /config` - Update config dynamically (validates before disconnect, reconnects with new config)
+
+**Real-time Events:**
+- `GET /events` - SSE stream for status notifications
 
 ### Auto-Update Service
 

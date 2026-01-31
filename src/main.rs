@@ -48,6 +48,14 @@ struct Args {
     /// Socket path for daemon mode (default: /var/run/secureguard.sock)
     #[arg(long, requires = "daemon")]
     socket: Option<PathBuf>,
+
+    /// HTTP port for daemon REST API (default: 51820 for client, 51821 for server)
+    #[arg(long, requires = "daemon")]
+    http_port: Option<u16>,
+
+    /// Path to write the auth token file (default: /var/run/secureguard/auth-token)
+    #[arg(long, requires = "daemon")]
+    token_path: Option<PathBuf>,
 }
 
 #[tokio::main]
@@ -109,17 +117,20 @@ async fn run(args: Args) -> Result<(), SecureGuardError> {
     }
 }
 
-/// Run in daemon mode (IPC service for Flutter UI)
+/// Run in daemon mode (REST API service for Flutter UI)
 async fn run_daemon(args: Args) -> Result<(), SecureGuardError> {
-    tracing::info!("SecureGuard Daemon starting...");
+    tracing::info!("SecureGuard Daemon starting (REST API mode)...");
 
     let daemon = DaemonService::new(args.socket);
+
+    // Default port: 51820 for client mode
+    let port = args.http_port.unwrap_or(51820);
 
     // Run with cleanup on Ctrl+C
     let ctrl_c = tokio::signal::ctrl_c();
 
     tokio::select! {
-        result = daemon.run() => {
+        result = daemon.run_http(port, args.token_path) => {
             result
         }
         _ = ctrl_c => {

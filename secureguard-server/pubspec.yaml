@@ -35,6 +35,9 @@ dependencies:
   args: ^2.4.2
   logging: ^1.2.0
 
+  # HTTP client (for daemon communication)
+  http: ^1.2.0
+
   # Serialization
   json_annotation: ^4.8.1
 

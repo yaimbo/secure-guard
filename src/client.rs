@@ -100,15 +100,7 @@ impl WireGuardClient {
         // Create route manager
         let routes = RouteManager::new(tun.name().to_string());
 
-        // Bind UDP socket
-        // Use 0.0.0.0:0 to let the OS choose a port
-        let socket = UdpSocket::bind("0.0.0.0:0").await
-            .map_err(|e| NetworkError::BindFailed {
-                addr: "0.0.0.0:0".to_string(),
-                reason: e.to_string(),
-            })?;
-
-        // Get peer endpoint
+        // Get peer endpoint first to determine bind address
         let peer = config.peers.first()
             .ok_or_else(|| SecureGuardError::Config(crate::error::ConfigError::MissingField {
                 field: "Peer".to_string(),
@@ -118,6 +110,21 @@ impl WireGuardClient {
             .ok_or_else(|| SecureGuardError::Config(crate::error::ConfigError::MissingField {
                 field: "Endpoint".to_string(),
             }))?;
+
+        // Bind UDP socket
+        // For localhost endpoints, bind to 127.0.0.1 to ensure correct source address
+        // For other endpoints, use 0.0.0.0 to let the OS choose
+        let bind_addr = if peer_endpoint.ip().is_loopback() {
+            "127.0.0.1:0"
+        } else {
+            "0.0.0.0:0"
+        };
+
+        let socket = UdpSocket::bind(bind_addr).await
+            .map_err(|e| NetworkError::BindFailed {
+                addr: bind_addr.to_string(),
+                reason: e.to_string(),
+            })?;
 
         // Keepalive interval
         let keepalive_interval = peer.persistent_keepalive
@@ -157,10 +164,13 @@ impl WireGuardClient {
 
         // CRITICAL: First add a route for the VPN endpoint to bypass the tunnel
         // This prevents a routing loop where encrypted packets get re-routed through the tunnel
+        // Skip this for loopback addresses - they don't need bypass routing
         if let std::net::SocketAddr::V4(v4_addr) = self.peer_endpoint {
             let endpoint_ip = *v4_addr.ip();
-            if let Err(e) = self.routes.add_endpoint_bypass(endpoint_ip).await {
-                tracing::warn!("Failed to add endpoint bypass route: {}", e);
+            if !endpoint_ip.is_loopback() {
+                if let Err(e) = self.routes.add_endpoint_bypass(endpoint_ip).await {
+                    tracing::warn!("Failed to add endpoint bypass route: {}", e);
+                }
             }
         }
 
@@ -395,7 +405,7 @@ impl WireGuardClient {
         let encrypted = session.transport.encrypt(session.remote_index, packet)?;
         session.mark_sent();
 
-        self.socket.send_to(&encrypted, session.endpoint).await
+        self.socket.send_to(&encrypted, self.peer_endpoint).await
             .map_err(|e| NetworkError::SendFailed {
                 reason: e.to_string(),
             })?;
@@ -508,7 +518,7 @@ impl WireGuardClient {
         let encrypted = session.transport.encrypt(session.remote_index, &[])?;
         session.mark_sent();
 
-        self.socket.send_to(&encrypted, session.endpoint).await
+        self.socket.send_to(&encrypted, self.peer_endpoint).await
             .map_err(|e| NetworkError::SendFailed {
                 reason: e.to_string(),
             })?;
