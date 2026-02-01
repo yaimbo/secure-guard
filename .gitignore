@@ -41,3 +41,6 @@ Thumbs.db
 .packages
 *.freezed.dart
 *.g.dart
+
+# Installer build artifacts
+installer/*/build/
