@@ -1,0 +1,102 @@
+# =============================================================================
+# SecureGuard Rust WireGuard VPN Daemon
+# Multi-architecture build (amd64 + arm64)
+# =============================================================================
+# syntax=docker/dockerfile:1
+
+# -----------------------------------------------------------------------------
+# Stage 1: Build the Rust daemon
+# -----------------------------------------------------------------------------
+FROM --platform=$BUILDPLATFORM rust:1.75-bookworm AS build
+
+ARG TARGETPLATFORM
+ARG BUILDPLATFORM
+
+# Install cross-compilation tools
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    musl-tools \
+    gcc-aarch64-linux-gnu \
+    gcc-x86-64-linux-gnu \
+    libc6-dev-arm64-cross \
+    libc6-dev-amd64-cross \
+    pkg-config \
+    libssl-dev \
+    && rm -rf /var/lib/apt/lists/*
+
+# Determine target architecture and add Rust target
+RUN case "$TARGETPLATFORM" in \
+    "linux/amd64") \
+        echo "x86_64-unknown-linux-gnu" > /target.txt && \
+        echo "x86_64-linux-gnu-gcc" > /cc.txt ;; \
+    "linux/arm64") \
+        echo "aarch64-unknown-linux-gnu" > /target.txt && \
+        echo "aarch64-linux-gnu-gcc" > /cc.txt ;; \
+    *) \
+        echo "Unsupported platform: $TARGETPLATFORM" && exit 1 ;; \
+    esac && \
+    rustup target add $(cat /target.txt)
+
+WORKDIR /app
+
+# Copy Cargo files first for better layer caching
+COPY Cargo.toml Cargo.lock ./
+
+# Create a dummy main.rs to build dependencies
+RUN mkdir src && \
+    echo "fn main() {}" > src/main.rs && \
+    export TARGET=$(cat /target.txt) && \
+    export CC=$(cat /cc.txt) && \
+    cargo build --release --target $TARGET || true && \
+    rm -rf src
+
+# Copy actual source code
+COPY src/ ./src/
+
+# Build the actual binary
+RUN export TARGET=$(cat /target.txt) && \
+    export CC=$(cat /cc.txt) && \
+    cargo build --release --target $TARGET && \
+    cp target/$TARGET/release/secureguard-poc /secureguard
+
+# -----------------------------------------------------------------------------
+# Stage 2: Create minimal runtime image
+# -----------------------------------------------------------------------------
+FROM debian:bookworm-slim
+
+# Install runtime dependencies
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    ca-certificates \
+    libssl3 \
+    iproute2 \
+    iptables \
+    curl \
+    procps \
+    && rm -rf /var/lib/apt/lists/* \
+    && apt-get clean
+
+# Create directories for state and runtime
+RUN mkdir -p /var/lib/secureguard /var/run/secureguard \
+    && chmod 755 /var/lib/secureguard /var/run/secureguard
+
+# Copy compiled binary
+COPY --from=build /secureguard /usr/local/bin/secureguard
+
+# Make it executable
+RUN chmod +x /usr/local/bin/secureguard
+
+# Expose ports
+# UDP 51820 - WireGuard protocol
+# TCP 51821 - REST API for server mode
+EXPOSE 51820/udp 51821/tcp
+
+# Health check (REST API)
+HEALTHCHECK --interval=10s --timeout=5s --start-period=10s --retries=3 \
+    CMD curl -sf http://127.0.0.1:51821/api/v1/status || exit 1
+
+# Labels for Watchtower
+LABEL com.centurylinklabs.watchtower.enable="true"
+
+# Run daemon in server mode
+# --daemon: Run as HTTP REST API service
+# --port 51821: HTTP API port (VPN uses 51820)
+CMD ["secureguard", "--daemon", "--port", "51821"]

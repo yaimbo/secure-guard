@@ -44,3 +44,9 @@ Thumbs.db
 
 # Installer build artifacts
 installer/*/build/
+
+# Docker deployment secrets and backups
+installer/docker/secrets/
+installer/docker/backups/
+installer/docker/.env
+installer/docker/docker-compose.override.yml

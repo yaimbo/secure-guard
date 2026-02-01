@@ -235,6 +235,7 @@ The Flutter desktop client connects to the client port. The Dart REST server con
 - Linux: `installer/linux/uninstall.sh` (CLI uninstall)
 - Windows: `installer/windows/install.ps1` (Windows Service)
 - Windows: `installer/windows/uninstall.ps1` (PowerShell uninstall)
+- Docker: `installer/docker/` (Docker Compose deployment)
 
 **macOS Installer Build:**
 
@@ -325,6 +326,45 @@ sudo apt-get install -f  # Fix dependencies if needed
 # Fedora/RHEL
 sudo rpm -i secureguard-1.0.0-1.aarch64.rpm
 ```
+
+**Docker Deployment:**
+
+All-in-one Docker Compose deployment with automatic HTTPS, monitoring, and security hardening.
+
+```bash
+cd installer/docker
+./scripts/setup.sh
+```
+
+The setup wizard prompts for domain, email, and server IP, then:
+1. Generates secure random secrets
+2. Builds all containers (multi-arch: amd64 + arm64)
+3. Starts the full stack with Let's Encrypt HTTPS
+
+**Docker Services:**
+- `postgres` - PostgreSQL 15 database
+- `redis` - Redis 7 cache/pub-sub
+- `dart-server` - REST API server
+- `flutter-console` - Web management console (nginx)
+- `vpn-daemon` - Rust WireGuard VPN server (host network)
+- `caddy` - Reverse proxy with auto-HTTPS
+- `watchtower` - Automatic container updates (daily)
+- `fail2ban` - Brute-force protection
+
+**Monitoring Stack** (enable with `--profile monitoring`):
+- `prometheus` - Metrics collection
+- `grafana` - Dashboards
+- `node-exporter`, `redis-exporter`, `postgres-exporter`
+
+**Docker Secrets:**
+Sensitive values are stored in `installer/docker/secrets/` (never committed):
+- `db_password.txt`, `redis_password.txt`, `jwt_secret.txt`, `encryption_key.txt`
+
+**Configuration:**
+- `.env` - Domain, email, ports (user-configurable)
+- `Caddyfile` - Reverse proxy with security headers
+- `config/fail2ban/` - Login protection rules
+- `config/prometheus.yml` - Metrics scrape config
 
 ### Key Implementation Details
 

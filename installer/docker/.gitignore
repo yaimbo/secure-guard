@@ -1,0 +1,40 @@
+# =============================================================================
+# SecureGuard Docker - Git Ignore
+# =============================================================================
+
+# Secrets (NEVER commit these!)
+secrets/
+*.txt
+
+# Environment file (contains server-specific config)
+.env
+
+# Local development overrides
+docker-compose.override.yml
+
+# Backups
+backups/
+*.tar.gz
+
+# Log files
+*.log
+logs/
+
+# Caddy data (certificates are server-specific)
+caddy_data/
+
+# Temporary files
+*.tmp
+*.temp
+.DS_Store
+Thumbs.db
+
+# IDE files
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+
+# Build artifacts
+build/

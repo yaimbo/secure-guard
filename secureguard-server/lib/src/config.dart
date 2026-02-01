@@ -45,6 +45,7 @@ class ServerConfig {
   });
 
   /// Create config from environment variables
+  /// Supports Docker secrets via _FILE suffix (e.g., DB_PASSWORD_FILE)
   factory ServerConfig.fromEnv() {
     return ServerConfig(
       host: _env('HOST', '0.0.0.0'),
@@ -53,23 +54,79 @@ class ServerConfig {
       dbPort: int.parse(_env('DB_PORT', '5432')),
       dbName: _env('DB_NAME', 'secureguard'),
       dbUser: _env('DB_USER', 'postgres'),
-      dbPassword: _env('DB_PASSWORD', ''),
+      dbPassword: _envOrSecret('DB_PASSWORD', ''),
       redisHost: _env('REDIS_HOST', 'localhost'),
       redisPort: int.parse(_env('REDIS_PORT', '6379')),
-      redisPassword: _envOrNull('REDIS_PASSWORD'),
-      jwtSecret: _env('JWT_SECRET', 'change-me-in-production'),
-      encryptionKey: _envOrNull('ENCRYPTION_KEY'),
+      redisPassword: _envOrSecretOrNull('REDIS_PASSWORD'),
+      jwtSecret: _envOrSecret('JWT_SECRET', 'change-me-in-production'),
+      encryptionKey: _envOrSecretOrNull('ENCRYPTION_KEY'),
       corsOrigins: _env('CORS_ORIGINS', 'http://localhost:3000').split(','),
       serverDomain: _env('SERVER_DOMAIN', 'localhost:8080'),
     );
   }
 }
 
+/// Get environment variable with default value
 String _env(String key, String defaultValue) {
   return Platform.environment[key] ?? defaultValue;
 }
 
-String? _envOrNull(String key) {
-  final value = Platform.environment[key];
-  return (value != null && value.isNotEmpty) ? value : null;
+/// Get environment variable or Docker secret (via _FILE suffix)
+/// Docker secrets pattern: if KEY_FILE is set, read value from that file
+/// This allows secure secret management in Docker Swarm/Compose
+String _envOrSecret(String key, String defaultValue) {
+  // First check for direct environment variable
+  final directValue = Platform.environment[key];
+  if (directValue != null && directValue.isNotEmpty) {
+    return directValue;
+  }
+
+  // Check for _FILE variant (Docker secrets)
+  final fileKey = '${key}_FILE';
+  final filePath = Platform.environment[fileKey];
+  if (filePath != null && filePath.isNotEmpty) {
+    try {
+      final file = File(filePath);
+      if (file.existsSync()) {
+        final content = file.readAsStringSync().trim();
+        if (content.isNotEmpty) {
+          return content;
+        }
+      }
+    } catch (e) {
+      // Log error but don't fail - fall through to default
+      stderr.writeln('Warning: Failed to read secret from $filePath: $e');
+    }
+  }
+
+  return defaultValue;
+}
+
+/// Get environment variable or Docker secret, returning null if not set
+String? _envOrSecretOrNull(String key) {
+  // First check for direct environment variable
+  final directValue = Platform.environment[key];
+  if (directValue != null && directValue.isNotEmpty) {
+    return directValue;
+  }
+
+  // Check for _FILE variant (Docker secrets)
+  final fileKey = '${key}_FILE';
+  final filePath = Platform.environment[fileKey];
+  if (filePath != null && filePath.isNotEmpty) {
+    try {
+      final file = File(filePath);
+      if (file.existsSync()) {
+        final content = file.readAsStringSync().trim();
+        if (content.isNotEmpty) {
+          return content;
+        }
+      }
+    } catch (e) {
+      // Log error but don't fail
+      stderr.writeln('Warning: Failed to read secret from $filePath: $e');
+    }
+  }
+
+  return null;
 }

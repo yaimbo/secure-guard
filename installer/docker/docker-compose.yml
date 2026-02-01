@@ -1,0 +1,473 @@
+version: "3.9"
+
+# =============================================================================
+# SecureGuard VPN Server - Docker Compose Configuration
+# =============================================================================
+#
+# Usage:
+#   ./scripts/setup.sh                    # First-time setup wizard
+#   docker compose up -d                  # Start core services
+#   docker compose --profile monitoring up -d  # Start with Prometheus/Grafana
+#   docker compose logs -f                # View logs
+#   docker compose down                   # Stop services
+#   docker compose down -v                # Stop and remove volumes
+#
+# =============================================================================
+
+secrets:
+  db_password:
+    file: ./secrets/db_password.txt
+  redis_password:
+    file: ./secrets/redis_password.txt
+  jwt_secret:
+    file: ./secrets/jwt_secret.txt
+  encryption_key:
+    file: ./secrets/encryption_key.txt
+  grafana_admin_password:
+    file: ./secrets/grafana_admin_password.txt
+
+networks:
+  secureguard:
+    driver: bridge
+
+services:
+  # ===========================================================================
+  # PostgreSQL Database
+  # ===========================================================================
+  postgres:
+    image: postgres:15-alpine
+    container_name: secureguard-postgres
+    secrets:
+      - db_password
+    environment:
+      POSTGRES_DB: secureguard
+      POSTGRES_USER: secureguard
+      POSTGRES_PASSWORD_FILE: /run/secrets/db_password
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    networks:
+      - secureguard
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U secureguard -d secureguard"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+      start_period: 10s
+    restart: unless-stopped
+    deploy:
+      resources:
+        limits:
+          memory: 512M
+
+  # ===========================================================================
+  # Redis Cache & Pub/Sub
+  # ===========================================================================
+  redis:
+    image: redis:7-alpine
+    container_name: secureguard-redis
+    secrets:
+      - redis_password
+    command: >
+      sh -c 'redis-server
+      --requirepass "$$(cat /run/secrets/redis_password)"
+      --appendonly yes
+      --appendfsync everysec'
+    volumes:
+      - redis_data:/data
+    networks:
+      - secureguard
+    healthcheck:
+      test: ["CMD-SHELL", "redis-cli --no-auth-warning -a $$(cat /run/secrets/redis_password) ping | grep PONG"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+      start_period: 5s
+    restart: unless-stopped
+    deploy:
+      resources:
+        limits:
+          memory: 256M
+
+  # ===========================================================================
+  # Dart REST API Server
+  # ===========================================================================
+  dart-server:
+    build:
+      context: ../..
+      dockerfile: installer/docker/Dockerfile.dart-server
+      platforms:
+        - linux/amd64
+        - linux/arm64
+    image: secureguard/api:latest
+    container_name: secureguard-api
+    secrets:
+      - db_password
+      - redis_password
+      - jwt_secret
+      - encryption_key
+    environment:
+      HOST: "0.0.0.0"
+      PORT: "8080"
+      DB_HOST: postgres
+      DB_PORT: "5432"
+      DB_NAME: secureguard
+      DB_USER: secureguard
+      DB_PASSWORD_FILE: /run/secrets/db_password
+      REDIS_HOST: redis
+      REDIS_PORT: "6379"
+      REDIS_PASSWORD_FILE: /run/secrets/redis_password
+      JWT_SECRET_FILE: /run/secrets/jwt_secret
+      ENCRYPTION_KEY_FILE: /run/secrets/encryption_key
+      SERVER_DOMAIN: ${DOMAIN:-localhost}
+      CORS_ORIGINS: https://${DOMAIN:-localhost}
+    volumes:
+      - server_logs:/app/logs
+    networks:
+      - secureguard
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "-sf", "http://localhost:8080/api/v1/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+    restart: unless-stopped
+    deploy:
+      resources:
+        limits:
+          memory: 512M
+
+  # ===========================================================================
+  # Flutter Web Management Console
+  # ===========================================================================
+  flutter-console:
+    build:
+      context: ../..
+      dockerfile: installer/docker/Dockerfile.flutter-console
+      platforms:
+        - linux/amd64
+        - linux/arm64
+    image: secureguard/console:latest
+    container_name: secureguard-console
+    networks:
+      - secureguard
+    depends_on:
+      dart-server:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "wget", "-q", "--spider", "http://localhost:80/"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+    restart: unless-stopped
+    deploy:
+      resources:
+        limits:
+          memory: 64M
+
+  # ===========================================================================
+  # Rust WireGuard VPN Daemon
+  # ===========================================================================
+  vpn-daemon:
+    build:
+      context: ../..
+      dockerfile: installer/docker/Dockerfile.vpn-daemon
+      platforms:
+        - linux/amd64
+        - linux/arm64
+    image: secureguard/vpn:latest
+    container_name: secureguard-vpn
+    # Host networking required for TUN device and routing table access
+    network_mode: host
+    cap_add:
+      - NET_ADMIN
+      - NET_RAW
+      - NET_BIND_SERVICE
+    sysctls:
+      - net.ipv4.ip_forward=1
+      - net.ipv4.conf.all.src_valid_mark=1
+      - net.ipv6.conf.all.forwarding=1
+    devices:
+      - /dev/net/tun:/dev/net/tun
+    volumes:
+      - vpn_state:/var/lib/secureguard
+      - vpn_run:/var/run/secureguard
+    environment:
+      # VPN daemon connects to dart-server on host network
+      DART_SERVER_URL: http://127.0.0.1:8080
+    depends_on:
+      dart-server:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "-sf", "http://127.0.0.1:51821/api/v1/status"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+    restart: unless-stopped
+
+  # ===========================================================================
+  # Caddy Reverse Proxy (with automatic HTTPS)
+  # ===========================================================================
+  caddy:
+    image: caddy:2-alpine
+    container_name: secureguard-caddy
+    ports:
+      - "${HTTP_PORT:-80}:80"
+      - "${HTTPS_PORT:-443}:443"
+      - "${HTTPS_PORT:-443}:443/udp"  # HTTP/3 QUIC
+    environment:
+      DOMAIN: ${DOMAIN:-localhost}
+      GRAFANA_DOMAIN: ${GRAFANA_DOMAIN:-grafana.localhost}
+      ACME_EMAIL: ${ACME_EMAIL:-admin@example.com}
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+      - caddy_logs:/var/log/caddy
+    networks:
+      - secureguard
+    depends_on:
+      dart-server:
+        condition: service_healthy
+      flutter-console:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "wget", "-q", "--spider", "http://localhost:80/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+    restart: unless-stopped
+    deploy:
+      resources:
+        limits:
+          memory: 128M
+
+  # ===========================================================================
+  # Watchtower - Automatic Container Updates
+  # ===========================================================================
+  watchtower:
+    image: containrrr/watchtower:latest
+    container_name: secureguard-watchtower
+    environment:
+      # Cron schedule: daily at 4am UTC
+      WATCHTOWER_SCHEDULE: ${WATCHTOWER_SCHEDULE:-0 0 4 * * *}
+      WATCHTOWER_CLEANUP: "true"
+      WATCHTOWER_INCLUDE_RESTARTING: "true"
+      WATCHTOWER_ROLLING_RESTART: "true"
+      WATCHTOWER_TIMEOUT: 60s
+      # Optional notifications (set WATCHTOWER_NOTIFICATION_URL in .env)
+      WATCHTOWER_NOTIFICATIONS: ${WATCHTOWER_NOTIFICATION_URL:+shoutrrr}
+      WATCHTOWER_NOTIFICATION_URL: ${WATCHTOWER_NOTIFICATION_URL:-}
+      # Only update containers with this label
+      WATCHTOWER_LABEL_ENABLE: "true"
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+    labels:
+      - "com.centurylinklabs.watchtower.enable=true"
+    restart: unless-stopped
+    deploy:
+      resources:
+        limits:
+          memory: 64M
+
+  # ===========================================================================
+  # Fail2ban - Brute Force Protection
+  # ===========================================================================
+  fail2ban:
+    image: crazymax/fail2ban:latest
+    container_name: secureguard-fail2ban
+    network_mode: host
+    cap_add:
+      - NET_ADMIN
+      - NET_RAW
+    volumes:
+      - ./config/fail2ban:/data
+      - caddy_logs:/var/log/caddy:ro
+      - fail2ban_db:/var/lib/fail2ban
+    environment:
+      TZ: ${TZ:-UTC}
+      F2B_LOG_LEVEL: INFO
+      F2B_DB_PURGE_AGE: 1d
+    restart: unless-stopped
+    deploy:
+      resources:
+        limits:
+          memory: 64M
+
+  # ===========================================================================
+  # MONITORING STACK (--profile monitoring)
+  # ===========================================================================
+
+  # Prometheus - Metrics Collection
+  prometheus:
+    image: prom/prometheus:latest
+    container_name: secureguard-prometheus
+    profiles: ["monitoring"]
+    volumes:
+      - ./config/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - prometheus_data:/prometheus
+    command:
+      - '--config.file=/etc/prometheus/prometheus.yml'
+      - '--storage.tsdb.path=/prometheus'
+      - '--storage.tsdb.retention.time=30d'
+      - '--web.enable-lifecycle'
+      - '--web.console.libraries=/usr/share/prometheus/console_libraries'
+      - '--web.console.templates=/usr/share/prometheus/consoles'
+    networks:
+      - secureguard
+    healthcheck:
+      test: ["CMD", "wget", "-q", "--spider", "http://localhost:9090/-/healthy"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+    restart: unless-stopped
+    labels:
+      - "com.centurylinklabs.watchtower.enable=true"
+    deploy:
+      resources:
+        limits:
+          memory: 512M
+
+  # Grafana - Dashboard & Visualization
+  grafana:
+    image: grafana/grafana:latest
+    container_name: secureguard-grafana
+    profiles: ["monitoring"]
+    secrets:
+      - grafana_admin_password
+    environment:
+      GF_SECURITY_ADMIN_USER: admin
+      GF_SECURITY_ADMIN_PASSWORD__FILE: /run/secrets/grafana_admin_password
+      GF_USERS_ALLOW_SIGN_UP: "false"
+      GF_SERVER_ROOT_URL: https://${GRAFANA_DOMAIN:-grafana.localhost}
+      GF_SERVER_DOMAIN: ${GRAFANA_DOMAIN:-grafana.localhost}
+      GF_INSTALL_PLUGINS: grafana-clock-panel,grafana-piechart-panel
+    volumes:
+      - grafana_data:/var/lib/grafana
+      - ./config/grafana/provisioning:/etc/grafana/provisioning:ro
+    networks:
+      - secureguard
+    depends_on:
+      - prometheus
+    healthcheck:
+      test: ["CMD", "wget", "-q", "--spider", "http://localhost:3000/api/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+    restart: unless-stopped
+    labels:
+      - "com.centurylinklabs.watchtower.enable=true"
+    deploy:
+      resources:
+        limits:
+          memory: 256M
+
+  # Node Exporter - Host System Metrics
+  node-exporter:
+    image: prom/node-exporter:latest
+    container_name: secureguard-node-exporter
+    profiles: ["monitoring"]
+    command:
+      - '--path.rootfs=/host'
+      - '--path.procfs=/host/proc'
+      - '--path.sysfs=/host/sys'
+      - '--collector.filesystem.mount-points-exclude=^/(sys|proc|dev|host|etc)($$|/)'
+    volumes:
+      - /:/host:ro,rslave
+    networks:
+      - secureguard
+    pid: host
+    restart: unless-stopped
+    deploy:
+      resources:
+        limits:
+          memory: 64M
+
+  # Redis Exporter - Redis Metrics
+  redis-exporter:
+    image: oliver006/redis_exporter:latest
+    container_name: secureguard-redis-exporter
+    profiles: ["monitoring"]
+    secrets:
+      - redis_password
+    environment:
+      REDIS_ADDR: redis:6379
+    command:
+      - '--redis.password-file=/run/secrets/redis_password'
+    networks:
+      - secureguard
+    depends_on:
+      redis:
+        condition: service_healthy
+    restart: unless-stopped
+    deploy:
+      resources:
+        limits:
+          memory: 32M
+
+  # Postgres Exporter - PostgreSQL Metrics
+  postgres-exporter:
+    image: prometheuscommunity/postgres-exporter:latest
+    container_name: secureguard-postgres-exporter
+    profiles: ["monitoring"]
+    secrets:
+      - db_password
+    environment:
+      DATA_SOURCE_URI: postgres:5432/secureguard?sslmode=disable
+      DATA_SOURCE_USER: secureguard
+      DATA_SOURCE_PASS_FILE: /run/secrets/db_password
+    networks:
+      - secureguard
+    depends_on:
+      postgres:
+        condition: service_healthy
+    restart: unless-stopped
+    deploy:
+      resources:
+        limits:
+          memory: 32M
+
+# =============================================================================
+# Volumes
+# =============================================================================
+volumes:
+  # Database
+  postgres_data:
+    driver: local
+
+  # Cache
+  redis_data:
+    driver: local
+
+  # Caddy/TLS
+  caddy_data:
+    driver: local
+  caddy_config:
+    driver: local
+  caddy_logs:
+    driver: local
+
+  # VPN State
+  vpn_state:
+    driver: local
+  vpn_run:
+    driver: local
+
+  # Server Logs
+  server_logs:
+    driver: local
+
+  # Fail2ban
+  fail2ban_db:
+    driver: local
+
+  # Monitoring
+  prometheus_data:
+    driver: local
+  grafana_data:
+    driver: local

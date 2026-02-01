@@ -1,0 +1,61 @@
+# =============================================================================
+# SecureGuard Flutter Web Management Console
+# Multi-architecture build (amd64 + arm64)
+# =============================================================================
+# syntax=docker/dockerfile:1
+
+# -----------------------------------------------------------------------------
+# Stage 1: Build Flutter web app
+# -----------------------------------------------------------------------------
+FROM --platform=$BUILDPLATFORM ghcr.io/cirruslabs/flutter:stable AS build
+
+WORKDIR /app
+
+# Copy pubspec files first for better layer caching
+COPY secureguard_console/pubspec.* ./
+
+# Get dependencies
+RUN flutter pub get
+
+# Copy the rest of the source code
+COPY secureguard_console/ ./
+
+# Build web release
+# API_URL is set to /api/v1 since Caddy proxies this path
+RUN flutter build web --release \
+    --dart-define=API_URL=/api/v1 \
+    --no-tree-shake-icons
+
+# -----------------------------------------------------------------------------
+# Stage 2: Serve with nginx
+# -----------------------------------------------------------------------------
+FROM nginx:alpine
+
+# Remove default nginx config
+RUN rm -rf /etc/nginx/conf.d/*
+
+# Copy custom nginx config for SPA routing
+COPY installer/docker/config/nginx.conf /etc/nginx/conf.d/default.conf
+
+# Copy built Flutter web app
+COPY --from=build /app/build/web /usr/share/nginx/html
+
+# Create non-root user
+RUN addgroup -S nginx-app && adduser -S nginx-app -G nginx-app \
+    && chown -R nginx-app:nginx-app /usr/share/nginx/html \
+    && chown -R nginx-app:nginx-app /var/cache/nginx \
+    && touch /var/run/nginx.pid \
+    && chown -R nginx-app:nginx-app /var/run/nginx.pid
+
+# Expose port
+EXPOSE 80
+
+# Health check
+HEALTHCHECK --interval=10s --timeout=5s --retries=3 \
+    CMD wget -q --spider http://localhost/ || exit 1
+
+# Labels for Watchtower
+LABEL com.centurylinklabs.watchtower.enable="true"
+
+# Run nginx in foreground
+CMD ["nginx", "-g", "daemon off;"]

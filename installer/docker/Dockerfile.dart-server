@@ -1,0 +1,75 @@
+# =============================================================================
+# SecureGuard Dart REST API Server
+# Multi-architecture build (amd64 + arm64)
+# =============================================================================
+# syntax=docker/dockerfile:1
+
+# -----------------------------------------------------------------------------
+# Stage 1: Build the Dart server
+# -----------------------------------------------------------------------------
+FROM --platform=$BUILDPLATFORM dart:stable AS build
+
+WORKDIR /app
+
+# Copy pubspec files first for better layer caching
+COPY secureguard-server/pubspec.* ./
+
+# Get dependencies
+RUN dart pub get
+
+# Copy the rest of the source code
+COPY secureguard-server/ ./
+
+# Compile to native executable
+RUN dart compile exe bin/server.dart -o server
+
+# Also compile the init script
+RUN dart compile exe bin/init_server_config.dart -o init_server_config
+
+# -----------------------------------------------------------------------------
+# Stage 2: Create minimal runtime image
+# -----------------------------------------------------------------------------
+FROM debian:bookworm-slim
+
+# Install minimal runtime dependencies
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    ca-certificates \
+    curl \
+    && rm -rf /var/lib/apt/lists/* \
+    && apt-get clean
+
+# Create non-root user
+RUN groupadd -r secureguard && useradd -r -g secureguard secureguard
+
+# Create directories
+RUN mkdir -p /app/logs && chown -R secureguard:secureguard /app
+
+WORKDIR /app
+
+# Copy compiled binaries from build stage
+COPY --from=build /app/server /app/server
+COPY --from=build /app/init_server_config /app/init_server_config
+
+# Copy entrypoint script
+COPY installer/docker/scripts/docker-entrypoint-server.sh /app/entrypoint.sh
+RUN chmod +x /app/entrypoint.sh
+
+# Set ownership
+RUN chown -R secureguard:secureguard /app
+
+# Switch to non-root user
+USER secureguard
+
+# Expose API port
+EXPOSE 8080
+
+# Health check
+HEALTHCHECK --interval=10s --timeout=5s --start-period=30s --retries=3 \
+    CMD curl -sf http://localhost:8080/api/v1/health || exit 1
+
+# Labels for Watchtower
+LABEL com.centurylinklabs.watchtower.enable="true"
+
+# Run the server via entrypoint (handles Docker secrets)
+ENTRYPOINT ["/app/entrypoint.sh"]
+CMD ["/app/server"]

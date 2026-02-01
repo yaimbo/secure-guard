@@ -1,0 +1,170 @@
+# =============================================================================
+# SecureGuard Caddy Reverse Proxy Configuration
+# =============================================================================
+#
+# Features:
+# - Automatic HTTPS with Let's Encrypt
+# - HTTP/3 (QUIC) support
+# - WebSocket proxying for real-time dashboard
+# - Security headers (HSTS, CSP, X-Frame-Options)
+# - JSON access logging for fail2ban integration
+# - Health endpoint for container healthcheck
+#
+# =============================================================================
+
+{
+    # Global options
+    email {$ACME_EMAIL}
+
+    # Enable admin API for metrics (used by caddy-exporter)
+    admin 0.0.0.0:2019
+
+    # Logging
+    log {
+        output file /var/log/caddy/caddy.log
+        format json
+        level INFO
+    }
+}
+
+# =============================================================================
+# Main Domain - SecureGuard Console & API
+# =============================================================================
+{$DOMAIN} {
+    # Enable HTTPS with automatic certificate
+    tls {$ACME_EMAIL}
+
+    # Access logging for fail2ban (JSON format)
+    log {
+        output file /var/log/caddy/access.log {
+            roll_size 100mb
+            roll_keep 10
+            roll_keep_for 720h
+        }
+        format json {
+            time_format iso8601
+        }
+    }
+
+    # Health endpoint for container healthcheck
+    handle /health {
+        respond "OK" 200
+    }
+
+    # API proxy - all /api/* requests go to Dart server
+    handle /api/* {
+        # WebSocket upgrade support (for /api/v1/ws/*)
+        @websocket {
+            header Connection *Upgrade*
+            header Upgrade websocket
+        }
+        handle @websocket {
+            reverse_proxy dart-server:8080
+        }
+
+        # Regular API requests
+        reverse_proxy dart-server:8080 {
+            # Headers
+            header_up X-Real-IP {remote_host}
+            header_up X-Forwarded-For {remote_host}
+            header_up X-Forwarded-Proto {scheme}
+
+            # Timeouts for long-polling/SSE
+            transport http {
+                read_timeout 120s
+                write_timeout 120s
+            }
+        }
+    }
+
+    # Static console - everything else goes to Flutter web app
+    handle {
+        reverse_proxy flutter-console:80 {
+            header_up X-Real-IP {remote_host}
+            header_up X-Forwarded-For {remote_host}
+            header_up X-Forwarded-Proto {scheme}
+        }
+    }
+
+    # Security headers
+    header {
+        # HSTS - 1 year, include subdomains, preload eligible
+        Strict-Transport-Security "max-age=31536000; includeSubDomains; preload"
+
+        # Prevent MIME type sniffing
+        X-Content-Type-Options nosniff
+
+        # Clickjacking protection
+        X-Frame-Options DENY
+
+        # XSS protection (legacy, but still useful)
+        X-XSS-Protection "1; mode=block"
+
+        # Referrer policy
+        Referrer-Policy strict-origin-when-cross-origin
+
+        # Permissions policy (disable unnecessary APIs)
+        Permissions-Policy "geolocation=(), microphone=(), camera=(), usb=(), payment=()"
+
+        # Content Security Policy
+        # Note: Flutter web requires unsafe-inline for styles
+        Content-Security-Policy "default-src 'self'; script-src 'self' 'unsafe-inline' 'unsafe-eval'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self'; connect-src 'self' wss://{$DOMAIN} https://{$DOMAIN}; frame-ancestors 'none'; base-uri 'self'; form-action 'self'"
+
+        # Remove server header
+        -Server
+    }
+
+    # Compression
+    encode gzip zstd
+}
+
+# =============================================================================
+# Grafana Subdomain (when monitoring profile is enabled)
+# =============================================================================
+{$GRAFANA_DOMAIN:grafana.localhost} {
+    # Enable HTTPS with automatic certificate
+    tls {$ACME_EMAIL}
+
+    # Access logging
+    log {
+        output file /var/log/caddy/grafana-access.log {
+            roll_size 50mb
+            roll_keep 5
+        }
+        format json
+    }
+
+    # Health endpoint
+    handle /health {
+        respond "OK" 200
+    }
+
+    # Proxy to Grafana
+    reverse_proxy grafana:3000 {
+        header_up X-Real-IP {remote_host}
+        header_up X-Forwarded-For {remote_host}
+        header_up X-Forwarded-Proto {scheme}
+    }
+
+    # Security headers (less strict than main app for Grafana compatibility)
+    header {
+        Strict-Transport-Security "max-age=31536000; includeSubDomains"
+        X-Content-Type-Options nosniff
+        X-Frame-Options SAMEORIGIN
+        Referrer-Policy strict-origin-when-cross-origin
+        -Server
+    }
+
+    encode gzip
+}
+
+# =============================================================================
+# HTTP to HTTPS redirect (implicit in Caddy, but explicit for clarity)
+# =============================================================================
+http://{$DOMAIN} {
+    redir https://{$DOMAIN}{uri} permanent
+}
+
+http://{$GRAFANA_DOMAIN:grafana.localhost} {
+    redir https://{$GRAFANA_DOMAIN:grafana.localhost}{uri} permanent
+}
