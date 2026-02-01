@@ -341,6 +341,22 @@ The setup wizard prompts for domain, email, and server IP, then:
 2. Builds all containers (multi-arch: amd64 + arm64)
 3. Starts the full stack with Let's Encrypt HTTPS
 
+**Publish to Docker Hub:**
+```bash
+cd installer/docker/scripts
+./publish.sh 1.0.0                    # Build + push all (both arch)
+./publish.sh 1.0.0 --no-push          # Build only
+./publish.sh 1.0.0 --amd64-only       # x86_64 only
+./publish.sh 1.0.0 --arm64-only       # ARM64 only
+./publish.sh 1.0.0 --image=api        # Single image only
+./publish.sh 1.0.0 -y                 # Skip prompts (CI/CD)
+```
+
+**Docker Images:**
+- `secureguard/api` - Dart REST API server
+- `secureguard/console` - Flutter web management console
+- `secureguard/vpn` - Rust WireGuard VPN daemon
+
 **Docker Services:**
 - `postgres` - PostgreSQL 15 database
 - `redis` - Redis 7 cache/pub-sub
