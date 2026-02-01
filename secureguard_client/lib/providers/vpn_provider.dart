@@ -98,6 +98,7 @@ class VpnNotifier extends StateNotifier<VpnState> {
   StreamSubscription<VpnStatus>? _statusSub;
   Timer? _reconnectTimer;
   Timer? _heartbeatTimer;
+  Timer? _statusPollTimer;
   VpnConnectionState? _previousState;
 
   VpnNotifier(this._client, {EnrollmentService? enrollment})
@@ -147,18 +148,21 @@ class VpnNotifier extends StateNotifier<VpnState> {
     // Report connection events to server
     if (currentState == VpnConnectionState.connected &&
         previousState != VpnConnectionState.connected) {
-      // Connected - report to server and start heartbeat
+      // Connected - report to server, start heartbeat and status polling
       _reportConnected(status);
       _startHeartbeat();
+      _startStatusPolling();
     } else if (currentState == VpnConnectionState.disconnected &&
         previousState == VpnConnectionState.connected) {
-      // Disconnected - report to server and stop heartbeat
+      // Disconnected - report to server and stop timers
       _reportDisconnected(status);
       _stopHeartbeat();
+      _stopStatusPolling();
     } else if (currentState == VpnConnectionState.error) {
-      // Error - report to server
+      // Error - report to server and stop timers
       _reportDisconnected(status, errorMessage: status.errorMessage);
       _stopHeartbeat();
+      _stopStatusPolling();
     }
   }
 
@@ -197,6 +201,33 @@ class VpnNotifier extends StateNotifier<VpnState> {
   void _stopHeartbeat() {
     _heartbeatTimer?.cancel();
     _heartbeatTimer = null;
+  }
+
+  /// Start periodic status polling for bandwidth updates
+  void _startStatusPolling() {
+    _stopStatusPolling();
+    // Poll status every second for live bandwidth stats
+    _statusPollTimer = Timer.periodic(const Duration(seconds: 1), (_) {
+      _pollStatus();
+    });
+  }
+
+  /// Stop status polling
+  void _stopStatusPolling() {
+    _statusPollTimer?.cancel();
+    _statusPollTimer = null;
+  }
+
+  /// Poll status from daemon (for bandwidth updates)
+  Future<void> _pollStatus() async {
+    if (!state.isDaemonConnected || !state.status.isConnected) return;
+
+    try {
+      final status = await _client.getStatus();
+      state = state.copyWith(status: status);
+    } catch (e) {
+      // Ignore polling errors - SSE will handle reconnection
+    }
   }
 
   /// Send heartbeat to server with current status
@@ -366,6 +397,7 @@ class VpnNotifier extends StateNotifier<VpnState> {
     _statusSub?.cancel();
     _reconnectTimer?.cancel();
     _heartbeatTimer?.cancel();
+    _stopStatusPolling();
     super.dispose();
   }
 }

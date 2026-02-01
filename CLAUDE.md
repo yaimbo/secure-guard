@@ -231,14 +231,44 @@ The Flutter desktop client connects to the client port. The Dart REST server con
 - Windows: `installer/windows/install.ps1` (Windows Service)
 
 **macOS Installer Build:**
+
+Prerequisites:
+- Rust toolchain with both x86_64-apple-darwin and aarch64-apple-darwin targets
+- Flutter SDK
+- Xcode Command Line Tools (pkgbuild, productbuild, lipo)
+
+Build the PKG installer:
 ```bash
 cd installer/macos
-./build-dmg.sh 1.0.0   # Creates SecureGuard-1.0.0.pkg
+./build-dmg.sh <VERSION>   # e.g., ./build-dmg.sh 1.0.1
 ```
+
+The build script performs:
+1. Builds Rust daemon as universal binary (x86_64 + arm64) using `lipo`
+2. Builds Flutter macOS app with `flutter build macos --release`
+3. Creates unified PKG installer via `create-pkg.sh`
+
+Output: `installer/macos/build/SecureGuard-<VERSION>.pkg` (~20MB)
+
 The PKG installer includes:
 - `SecureGuard.app` installed to `/Applications`
-- VPN daemon service with LaunchDaemon configuration
-- Postinstall scripts for group creation and service startup
+- VPN daemon service at `/Library/PrivilegedHelperTools/secureguard-service`
+- LaunchDaemon plist for auto-start at boot
+- Preinstall script (stops existing services, cleans old tokens)
+- Postinstall script (creates secureguard group, sets permissions, starts service)
+
+To install the PKG:
+```bash
+# Double-click the PKG file in Finder, or:
+sudo installer -pkg installer/macos/build/SecureGuard-<VERSION>.pkg -target /
+```
+
+To uninstall:
+```bash
+cd installer/macos
+sudo ./uninstall.sh          # Remove service only
+sudo ./uninstall.sh --all    # Remove everything including app, data, logs
+```
 
 ### Key Implementation Details
 

@@ -244,6 +244,26 @@ impl DaemonService {
 
         tracing::info!("HTTP daemon listening on http://{}", addr);
 
+        // Spawn bandwidth update task - sends status updates every second when connected
+        let bandwidth_state = Arc::clone(&self.state);
+        let bandwidth_status_tx = self.status_tx.clone();
+        tokio::spawn(async move {
+            let mut interval = tokio::time::interval(tokio::time::Duration::from_secs(1));
+            loop {
+                interval.tick().await;
+
+                // Only send updates when connected
+                let should_send = {
+                    let s = bandwidth_state.lock().await;
+                    s.connection_state == ConnectionState::Connected && s.mode.is_some()
+                };
+
+                if should_send {
+                    let _ = Self::send_status_notification(&bandwidth_state, &bandwidth_status_tx).await;
+                }
+            }
+        });
+
         // Run the server
         axum::serve(listener, app).await.map_err(|e| {
             SecureGuardError::Config(ConfigError::ParseError {
