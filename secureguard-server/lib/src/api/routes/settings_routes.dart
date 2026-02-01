@@ -470,7 +470,7 @@ class SettingsRoutes {
             'use_ssl': false,
             'use_starttls': true,
             'from_email': null,
-            'from_name': 'SecureGuard VPN',
+            'from_name': 'MinnowVPN',
             'last_test_at': null,
             'last_test_success': null,
           }),
@@ -513,7 +513,7 @@ class SettingsRoutes {
         useSsl: data['use_ssl'] as bool? ?? false,
         useStarttls: data['use_starttls'] as bool? ?? true,
         fromEmail: data['from_email'] as String?,
-        fromName: data['from_name'] as String? ?? 'SecureGuard VPN',
+        fromName: data['from_name'] as String? ?? 'MinnowVPN',
       );
 
       // Reconfigure the email service with new settings

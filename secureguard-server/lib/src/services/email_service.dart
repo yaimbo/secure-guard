@@ -50,7 +50,7 @@ class SmtpConfig {
       useSsl: json['use_ssl'] as bool? ?? false,
       useStarttls: json['use_starttls'] as bool? ?? true,
       fromEmail: json['from_email'] as String? ?? '',
-      fromName: json['from_name'] as String? ?? 'SecureGuard VPN',
+      fromName: json['from_name'] as String? ?? 'MinnowVPN',
     );
   }
 
@@ -129,7 +129,7 @@ class EmailService {
     final message = Message()
       ..from = Address(_config!.fromEmail, _config!.fromName)
       ..recipients.add(toEmail)
-      ..subject = 'Your SecureGuard VPN Access'
+      ..subject = 'Your MinnowVPN Access'
       ..html = htmlBody
       ..text = textBody;
 
@@ -145,7 +145,7 @@ class EmailService {
     final message = Message()
       ..from = Address(_config!.fromEmail, _config!.fromName)
       ..recipients.add(toEmail)
-      ..subject = 'SecureGuard VPN - Test Email'
+      ..subject = 'MinnowVPN - Test Email'
       ..html = EmailTemplates.testEmailHtml()
       ..text = EmailTemplates.testEmailText();
 

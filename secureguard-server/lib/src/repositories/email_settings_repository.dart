@@ -41,7 +41,7 @@ class EmailSettingsModel {
       useSsl: row['use_ssl'] as bool? ?? false,
       useStarttls: row['use_starttls'] as bool? ?? true,
       fromEmail: row['from_email'] as String?,
-      fromName: row['from_name'] as String? ?? 'SecureGuard VPN',
+      fromName: row['from_name'] as String? ?? 'MinnowVPN',
       lastTestAt: row['last_test_at'] as DateTime?,
       lastTestSuccess: row['last_test_success'] as bool?,
       updatedAt: row['updated_at'] as DateTime?,
@@ -103,7 +103,7 @@ class EmailSettingsRepository {
     bool useSsl = false,
     bool useStarttls = true,
     String? fromEmail,
-    String fromName = 'SecureGuard VPN',
+    String fromName = 'MinnowVPN',
   }) async {
     final result = await db.execute('''
       INSERT INTO email_settings (

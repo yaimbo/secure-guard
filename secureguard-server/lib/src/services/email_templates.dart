@@ -1,4 +1,4 @@
-/// Email templates for SecureGuard notifications
+/// Email templates for MinnowVPN notifications
 class EmailTemplates {
   /// HTML template for enrollment email
   static String enrollmentHtml({
@@ -85,20 +85,20 @@ class EmailTemplates {
 </head>
 <body>
   <div class="header">
-    <h1>SecureGuard VPN</h1>
+    <h1>MinnowVPN</h1>
   </div>
 
   <div class="content">
     <p>Hi $name,</p>
 
-    <p>You've been granted VPN access. Click the button below to set up SecureGuard on your device:</p>
+    <p>You've been granted VPN access. Click the button below to set up MinnowVPN on your device:</p>
 
     <p style="text-align: center;">
       <a href="$deepLink" class="button">Set Up VPN</a>
     </p>
 
     <div class="code-box">
-      <p style="margin: 0 0 10px 0;"><strong>If the button doesn't work, enter these details manually in the SecureGuard app:</strong></p>
+      <p style="margin: 0 0 10px 0;"><strong>If the button doesn't work, enter these details manually in the MinnowVPN app:</strong></p>
       <ul class="instructions" style="margin: 0; padding-left: 20px;">
         <li>Server: <span class="code">$serverDomain</span></li>
         <li>Enrollment Code: <span class="code">$code</span></li>
@@ -109,7 +109,7 @@ class EmailTemplates {
 
     <h3>Quick Start Guide</h3>
     <ol class="instructions">
-      <li>Download the SecureGuard app for your device (if you haven't already)</li>
+      <li>Download the MinnowVPN app for your device (if you haven't already)</li>
       <li>Click the "Set Up VPN" button above, or enter the code manually</li>
       <li>The app will automatically configure and connect</li>
     </ol>
@@ -118,7 +118,7 @@ class EmailTemplates {
   </div>
 
   <div class="footer">
-    <p>This is an automated message from SecureGuard VPN. Please do not reply to this email.</p>
+    <p>This is an automated message from MinnowVPN. Please do not reply to this email.</p>
     <p>If you did not request VPN access, please contact your IT administrator immediately.</p>
   </div>
 </body>
@@ -135,29 +135,29 @@ class EmailTemplates {
     required String expiresIn,
   }) {
     return '''
-SecureGuard VPN - Your Access is Ready
+MinnowVPN - Your Access is Ready
 
 Hi $name,
 
-You've been granted VPN access. Use the link below to set up SecureGuard on your device:
+You've been granted VPN access. Use the link below to set up MinnowVPN on your device:
 
 $deepLink
 
-If the link doesn't work, open the SecureGuard app and enter:
+If the link doesn't work, open the MinnowVPN app and enter:
   - Server: $serverDomain
   - Enrollment Code: $code
 
 This enrollment code expires in $expiresIn.
 
 Quick Start Guide:
-1. Download the SecureGuard app for your device (if you haven't already)
+1. Download the MinnowVPN app for your device (if you haven't already)
 2. Click the link above, or enter the code manually
 3. The app will automatically configure and connect
 
 Need help? Contact your IT administrator.
 
 ---
-This is an automated message from SecureGuard VPN.
+This is an automated message from MinnowVPN.
 If you did not request VPN access, please contact your IT administrator immediately.
 ''';
   }
@@ -170,7 +170,7 @@ If you did not request VPN access, please contact your IT administrator immediat
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>SecureGuard Test Email</title>
+  <title>MinnowVPN Test Email</title>
   <style>
     body {
       font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
@@ -196,10 +196,10 @@ If you did not request VPN access, please contact your IT administrator immediat
 <body>
   <div class="success">
     <h2>Email Configuration Successful</h2>
-    <p>Your SecureGuard SMTP settings are working correctly.</p>
+    <p>Your MinnowVPN SMTP settings are working correctly.</p>
   </div>
   <p style="margin-top: 20px; font-size: 12px; color: #6B7280;">
-    This is a test email from SecureGuard VPN. No action is required.
+    This is a test email from MinnowVPN. No action is required.
   </p>
 </body>
 </html>
@@ -209,14 +209,14 @@ If you did not request VPN access, please contact your IT administrator immediat
   /// Plain text template for test email
   static String testEmailText() {
     return '''
-SecureGuard VPN - Test Email
+MinnowVPN - Test Email
 
 Email Configuration Successful!
 
-Your SecureGuard SMTP settings are working correctly.
+Your MinnowVPN SMTP settings are working correctly.
 
 ---
-This is a test email from SecureGuard VPN. No action is required.
+This is a test email from MinnowVPN. No action is required.
 ''';
   }
 }
