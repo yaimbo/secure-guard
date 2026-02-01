@@ -17,6 +17,7 @@ class TrayService with TrayListener {
   bool _hasConfig = false;
   VoidCallback? onConnectRequested;
   VoidCallback? onDisconnectRequested;
+  VoidCallback? onUninstallRequested;
   VoidCallback? onQuitRequested;
 
   /// Initialize the system tray
@@ -128,6 +129,11 @@ class TrayService with TrayListener {
           ),
         MenuItem.separator(),
         MenuItem(
+          key: 'uninstall',
+          label: 'Uninstall SecureGuard...',
+        ),
+        MenuItem.separator(),
+        MenuItem(
           key: 'quit',
           label: 'Quit',
         ),
@@ -170,6 +176,8 @@ class TrayService with TrayListener {
         onConnectRequested?.call();
       case 'disconnect':
         onDisconnectRequested?.call();
+      case 'uninstall':
+        onUninstallRequested?.call();
       case 'quit':
         onQuitRequested?.call();
     }

@@ -77,6 +77,7 @@ prepare_build_dir() {
     mkdir -p "$PKG_ROOT/Applications"
     mkdir -p "$PKG_ROOT/Library/PrivilegedHelperTools"
     mkdir -p "$PKG_ROOT/Library/LaunchDaemons"
+    mkdir -p "$PKG_ROOT/Library/Application Support/SecureGuard"
     mkdir -p "$BUILD_DIR"
 }
 
@@ -99,6 +100,11 @@ copy_files() {
     cp "$SCRIPT_DIR/com.secureguard.vpn-service.plist" \
        "$PKG_ROOT/Library/LaunchDaemons/$SERVICE_NAME.plist"
     log_info "LaunchDaemon plist copied"
+
+    # Copy uninstall script for in-app uninstallation
+    cp "$SCRIPT_DIR/uninstall.sh" \
+       "$PKG_ROOT/Library/Application Support/SecureGuard/uninstall.sh"
+    log_info "Uninstall script copied"
 }
 
 # Update Distribution.xml with version

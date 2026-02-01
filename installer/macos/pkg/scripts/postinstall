@@ -112,6 +112,19 @@ setup_logging() {
     chown root:wheel "$LOG_DIR/secureguard.log" "$LOG_DIR/secureguard.error.log"
 }
 
+# Set up uninstall script permissions
+setup_uninstall_script() {
+    local uninstall_script="$APPLICATION_SUPPORT_DIR/uninstall.sh"
+
+    if [ -f "$uninstall_script" ]; then
+        log "Setting up uninstall script permissions..."
+        chown root:wheel "$uninstall_script"
+        chmod 755 "$uninstall_script"
+    else
+        log "WARNING: Uninstall script not found at $uninstall_script"
+    fi
+}
+
 # Start the service
 start_service() {
     log "Starting SecureGuard service..."
@@ -163,6 +176,7 @@ main() {
     setup_binary
     setup_plist
     setup_logging
+    setup_uninstall_script
     start_service
 
     if verify_service; then

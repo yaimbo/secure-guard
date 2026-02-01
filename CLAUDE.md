@@ -229,8 +229,11 @@ The Flutter desktop client connects to the client port. The Dart REST server con
 **Platform installers:**
 - macOS: `installer/macos/install.sh` (LaunchDaemon manual install)
 - macOS: `installer/macos/build-dmg.sh` (unified PKG installer)
+- macOS: `installer/macos/uninstall.sh` (CLI uninstall, also bundled in PKG for in-app use)
 - Linux: `installer/linux/install.sh` (systemd)
+- Linux: `installer/linux/uninstall.sh` (CLI uninstall)
 - Windows: `installer/windows/install.ps1` (Windows Service)
+- Windows: `installer/windows/uninstall.ps1` (PowerShell uninstall)
 
 **macOS Installer Build:**
 
@@ -256,6 +259,7 @@ The PKG installer includes:
 - `SecureGuard.app` installed to `/Applications`
 - VPN daemon service at `/Library/PrivilegedHelperTools/secureguard-service`
 - LaunchDaemon plist for auto-start at boot
+- Uninstall script at `/Library/Application Support/SecureGuard/uninstall.sh` (for in-app uninstall)
 - Preinstall script (stops existing services, cleans old tokens)
 - Postinstall script (creates secureguard group, sets permissions, starts service)
 
@@ -267,6 +271,10 @@ sudo installer -pkg installer/macos/build/SecureGuard-<VERSION>.pkg -target /
 
 To uninstall:
 ```bash
+# Option 1: From the app (recommended for end users)
+# Right-click system tray → "Uninstall SecureGuard..."
+
+# Option 2: Command line
 cd installer/macos
 sudo ./uninstall.sh          # Remove service only
 sudo ./uninstall.sh --all    # Remove everything including app, data, logs
@@ -654,18 +662,20 @@ secureguard_client/lib/
 │   └── enrollment_screen.dart # Enrollment code / deep link enrollment
 ├── services/
 │   ├── ipc_client.dart        # HTTP REST API client to Rust daemon + SSE
-│   ├── tray_service.dart      # System tray integration
+│   ├── tray_service.dart      # System tray integration + uninstall menu
 │   ├── api_client.dart        # HTTP client for server API
 │   ├── update_service.dart    # Auto-update functionality
 │   ├── credential_storage.dart # Secure platform credential storage
-│   └── enrollment_service.dart # SSO auth and device enrollment
+│   ├── enrollment_service.dart # SSO auth and device enrollment
+│   └── uninstall_service.dart # Cross-platform uninstall with elevation
 ├── providers/
 │   └── vpn_provider.dart  # VPN state management
 └── widgets/
     ├── status_card.dart       # Connection status display
     ├── traffic_stats.dart     # Bytes sent/received
     ├── connection_button.dart # Connect/disconnect button
-    └── config_dialog.dart     # WireGuard config input
+    ├── config_dialog.dart     # WireGuard config input
+    └── uninstall_dialog.dart  # Uninstall confirmation dialog
 ```
 
 ### Daemon Communication
@@ -707,8 +717,32 @@ Binary updates:
 
 The app minimizes to system tray on close:
 - **Icons**: Shield icons in green/gray/amber/red for connection states
-- **Menu**: Connect, Disconnect, Show Window, Quit
+- **Menu**: Connect, Disconnect, Show Window, Uninstall SecureGuard..., Quit
 - **Click**: Shows/focuses the main window
+
+### In-App Uninstallation
+
+Users can uninstall SecureGuard directly from the system tray menu:
+
+1. Right-click tray icon → "Uninstall SecureGuard..."
+2. Confirmation dialog appears explaining what will be removed
+3. User is prompted for admin/root password (platform-specific elevation)
+4. Uninstall script runs with elevated privileges
+5. App exits after successful uninstall
+
+**Platform-specific elevation methods:**
+
+| Platform | Elevation Method | Script Location |
+|----------|------------------|-----------------|
+| macOS | `osascript` with administrator privileges | `/Library/Application Support/SecureGuard/uninstall.sh` |
+| Windows | PowerShell `Start-Process -Verb RunAs` (UAC) | `C:\Program Files\SecureGuard\uninstall.ps1` |
+| Linux | `pkexec` (PolicyKit) | `/opt/secureguard/uninstall.sh` |
+
+**Implementation files:**
+- `lib/services/uninstall_service.dart` - Platform-specific uninstall execution
+- `lib/widgets/uninstall_dialog.dart` - Confirmation dialog UI
+
+**Note for Linux installers:** Ensure the uninstall script is installed to `/opt/secureguard/uninstall.sh` for the Flutter app to find it.
 
 ### Known Limitations (TODOs)
 

@@ -11,6 +11,7 @@ import 'screens/enrollment_screen.dart';
 import 'services/api_client.dart';
 import 'services/tray_service.dart';
 import 'services/update_service.dart';
+import 'widgets/uninstall_dialog.dart';
 
 /// Global navigator key for navigation from anywhere
 final GlobalKey<NavigatorState> navigatorKey = GlobalKey<NavigatorState>();
@@ -42,6 +43,26 @@ EnrollmentData? parseEnrollmentDeepLink(Uri uri) {
 /// App links handler for deep link support
 late AppLinks _appLinks;
 StreamSubscription<Uri>? _linkSubscription;
+
+/// Handle uninstall request from tray menu
+Future<void> _handleUninstallRequest() async {
+  // Show the window first so user can see the dialog
+  await windowManager.show();
+  await windowManager.focus();
+
+  // Show uninstall dialog using the navigator key
+  final context = navigatorKey.currentContext;
+  if (context == null) return;
+
+  final success = await showUninstallDialog(context);
+  if (success) {
+    // Uninstall succeeded, exit the app
+    _linkSubscription?.cancel();
+    UpdateService.instance.dispose();
+    await TrayService.instance.dispose();
+    exit(0);
+  }
+}
 
 /// Handle incoming deep link
 void _handleDeepLink(Uri uri) {
@@ -109,6 +130,11 @@ void main() async {
 
   // Initialize system tray
   await TrayService.instance.init();
+
+  // Handle uninstall from tray
+  TrayService.instance.onUninstallRequested = () {
+    _handleUninstallRequest();
+  };
 
   // Handle quit from tray
   TrayService.instance.onQuitRequested = () async {
