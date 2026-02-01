@@ -1,8 +1,8 @@
 # =============================================================================
-# Fail2ban Jail Configuration for SecureGuard
+# Fail2ban Jail Configuration for MinnowVPN
 # =============================================================================
 #
-# This configuration protects the SecureGuard API from brute-force attacks:
+# This configuration protects the MinnowVPN API from brute-force attacks:
 # - Login attempts (5 failures = 1 hour ban)
 # - Enrollment code redemption (10 failures = 30 min ban)
 # - General API abuse (20 failures = 15 min ban)
@@ -28,7 +28,7 @@ ignoreip = 127.0.0.1/8 ::1 10.0.0.0/8 172.16.0.0/12 192.168.0.0/16
 loglevel = INFO
 
 # =============================================================================
-# SecureGuard Authentication Jail
+# MinnowVPN Authentication Jail
 # =============================================================================
 # Protects admin login endpoint from brute-force attacks
 #
@@ -42,7 +42,7 @@ bantime = 1h
 port = http,https
 
 # =============================================================================
-# SecureGuard Enrollment Jail
+# MinnowVPN Enrollment Jail
 # =============================================================================
 # Protects enrollment code redemption from abuse
 # (Higher threshold since legitimate users might mistype codes)
@@ -57,7 +57,7 @@ bantime = 30m
 port = http,https
 
 # =============================================================================
-# SecureGuard API Abuse Jail
+# MinnowVPN API Abuse Jail
 # =============================================================================
 # General protection against API abuse (too many 4xx errors)
 #

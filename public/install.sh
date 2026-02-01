@@ -1,9 +1,9 @@
 #!/bin/bash
 # =============================================================================
-# SecureGuard VPN - Quick Install
+# MinnowVPN - Quick Install
 # =============================================================================
 #
-# This is the entry point for installing SecureGuard VPN Server.
+# This is the entry point for installing MinnowVPN Server.
 # It simply calls the setup script with any provided arguments.
 #
 # Usage:

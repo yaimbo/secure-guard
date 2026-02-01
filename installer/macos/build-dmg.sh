@@ -28,7 +28,7 @@ log_step() { echo -e "${BLUE}[STEP]${NC} $1"; }
 print_banner() {
     echo ""
     echo "╔════════════════════════════════════════════════════════════╗"
-    echo "║          SecureGuard VPN - macOS Installer Builder         ║"
+    echo "║            MinnowVPN - macOS Installer Builder             ║"
     echo "║                      Version: $VERSION                         ║"
     echo "╚════════════════════════════════════════════════════════════╝"
     echo ""
@@ -143,7 +143,7 @@ create_installer_pkg() {
 
 # Print final summary
 print_summary() {
-    local pkg_file="$BUILD_DIR/SecureGuard-$VERSION.pkg"
+    local pkg_file="$BUILD_DIR/MinnowVPN-$VERSION.pkg"
     local pkg_size
     pkg_size=$(du -h "$pkg_file" | cut -f1)
 
@@ -157,7 +157,7 @@ print_summary() {
     echo "  Size: $pkg_size"
     echo ""
     echo "The installer includes:"
-    echo "  - SecureGuard.app (installed to /Applications)"
+    echo "  - MinnowVPN.app (installed to /Applications)"
     echo "  - VPN daemon service (runs in background)"
     echo ""
     echo "To install:"

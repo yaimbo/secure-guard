@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 <installer-gui-script minSpecVersion="2">
-    <title>SecureGuard VPN</title>
+    <title>MinnowVPN</title>
     <organization>com.secureguard</organization>
     <domains enable_anywhere="false" enable_localSystem="true"/>
     <options customize="never" require-scripts="true" hostArchitectures="x86_64,arm64"/>

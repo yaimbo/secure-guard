@@ -766,7 +766,7 @@ class EmailSettings {
     this.useSsl = false,
     this.useStarttls = true,
     this.fromEmail,
-    this.fromName = 'SecureGuard VPN',
+    this.fromName = 'MinnowVPN',
     this.lastTestAt,
     this.lastTestSuccess,
   });
@@ -781,7 +781,7 @@ class EmailSettings {
       useSsl: json['use_ssl'] as bool? ?? false,
       useStarttls: json['use_starttls'] as bool? ?? true,
       fromEmail: json['from_email'] as String?,
-      fromName: json['from_name'] as String? ?? 'SecureGuard VPN',
+      fromName: json['from_name'] as String? ?? 'MinnowVPN',
       lastTestAt: json['last_test_at'] != null
           ? DateTime.parse(json['last_test_at'] as String)
           : null,

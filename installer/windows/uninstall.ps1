@@ -17,7 +17,7 @@ $LogDir = "$env:ProgramData\SecureGuard\logs"
 # Show help
 if ($Help) {
     Write-Host ""
-    Write-Host "SecureGuard VPN Uninstaller for Windows"
+    Write-Host "MinnowVPN Uninstaller for Windows"
     Write-Host ""
     Write-Host "Usage: .\uninstall.ps1 [OPTIONS]"
     Write-Host ""
@@ -40,7 +40,7 @@ if (-not $currentPrincipal.IsInRole([Security.Principal.WindowsBuiltInRole]::Adm
 
 Write-Host ""
 Write-Host "=========================================" -ForegroundColor Cyan
-Write-Host "  SecureGuard VPN Uninstaller"
+Write-Host "  MinnowVPN Uninstaller"
 Write-Host "=========================================" -ForegroundColor Cyan
 Write-Host ""
 
@@ -52,7 +52,7 @@ if ($All) {
 
 # Stop Flutter desktop app if running
 function Stop-SecureGuardApp {
-    Write-Host "[INFO] Checking for running SecureGuard app..." -ForegroundColor Green
+    Write-Host "[INFO] Checking for running MinnowVPN app..." -ForegroundColor Green
 
     # Try various possible process names for the Flutter app
     $processNames = @("SecureGuard", "secureguard_client", "secureguard")
@@ -112,7 +112,7 @@ function Remove-LogFiles {
 
 # Remove Start Menu shortcut
 function Remove-StartMenuShortcut {
-    $shortcutPath = "$env:ProgramData\Microsoft\Windows\Start Menu\Programs\SecureGuard VPN.lnk"
+    $shortcutPath = "$env:ProgramData\Microsoft\Windows\Start Menu\Programs\MinnowVPN.lnk"
     if (Test-Path $shortcutPath) {
         Write-Host "[INFO] Removing Start Menu shortcut..." -ForegroundColor Green
         Remove-Item -Path $shortcutPath -Force
@@ -122,10 +122,8 @@ function Remove-StartMenuShortcut {
 # Remove Desktop shortcuts (for all users and current user)
 function Remove-DesktopShortcuts {
     $shortcuts = @(
-        "$env:PUBLIC\Desktop\SecureGuard VPN.lnk",
-        "$env:USERPROFILE\Desktop\SecureGuard VPN.lnk",
-        "$env:PUBLIC\Desktop\SecureGuard.lnk",
-        "$env:USERPROFILE\Desktop\SecureGuard.lnk"
+        "$env:PUBLIC\Desktop\MinnowVPN.lnk",
+        "$env:USERPROFILE\Desktop\MinnowVPN.lnk"
     )
 
     foreach ($shortcut in $shortcuts) {

@@ -34,7 +34,7 @@ log_step() { echo -e "${BLUE}[STEP]${NC} $1"; }
 print_banner() {
     echo ""
     echo "=============================================================="
-    echo "          SecureGuard VPN - Linux Package Builder            "
+    echo "            MinnowVPN - Linux Package Builder                "
     echo "                      Version: $VERSION                       "
     echo "=============================================================="
     echo ""

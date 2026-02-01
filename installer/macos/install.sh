@@ -35,7 +35,7 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 # Print banner
 echo ""
 echo "╔═══════════════════════════════════════════════════════════╗"
-echo "║        SecureGuard VPN Service Installer for macOS        ║"
+echo "║          MinnowVPN Service Installer for macOS            ║"
 echo "╚═══════════════════════════════════════════════════════════╝"
 echo ""
 
@@ -151,7 +151,7 @@ create_secureguard_group() {
         log_info "Creating group: $SECUREGUARD_GROUP"
         dscl . -create /Groups/$SECUREGUARD_GROUP
         dscl . -create /Groups/$SECUREGUARD_GROUP PrimaryGroupID $SECUREGUARD_GID
-        dscl . -create /Groups/$SECUREGUARD_GROUP RealName "SecureGuard VPN Users"
+        dscl . -create /Groups/$SECUREGUARD_GROUP RealName "MinnowVPN Users"
     else
         log_info "Group $SECUREGUARD_GROUP already exists"
     fi

@@ -1,10 +1,10 @@
 #Requires -RunAsAdministrator
 <#
 .SYNOPSIS
-    SecureGuard VPN Service Installer for Windows
+    MinnowVPN Service Installer for Windows
 
 .DESCRIPTION
-    This script installs the SecureGuard VPN daemon as a Windows Service
+    This script installs the MinnowVPN daemon as a Windows Service
     with proper security configuration.
 
 .PARAMETER BinaryPath
@@ -44,8 +44,8 @@ param(
 
 # Configuration
 $ServiceName = "SecureGuardVPN"
-$ServiceDisplayName = "SecureGuard VPN Service"
-$ServiceDescription = "WireGuard-compatible VPN daemon for SecureGuard"
+$ServiceDisplayName = "MinnowVPN Service"
+$ServiceDescription = "WireGuard-compatible VPN daemon for MinnowVPN"
 $InstallDir = "C:\Program Files\SecureGuard"
 $TokenDir = "$DataDir"
 $TokenFile = "$TokenDir\auth-token"
@@ -60,7 +60,7 @@ function Write-Err { Write-Host "[ERROR] $args" -ForegroundColor Red }
 # Print banner
 Write-Host ""
 Write-Host "╔═══════════════════════════════════════════════════════════╗" -ForegroundColor Cyan
-Write-Host "║       SecureGuard VPN Service Installer for Windows       ║" -ForegroundColor Cyan
+Write-Host "║          MinnowVPN Service Installer for Windows          ║" -ForegroundColor Cyan
 Write-Host "╚═══════════════════════════════════════════════════════════╝" -ForegroundColor Cyan
 Write-Host ""
 
@@ -283,10 +283,10 @@ function Set-FirewallRules {
     Write-Info "Configuring firewall rules..."
 
     # Remove existing rules
-    Get-NetFirewallRule -DisplayName "SecureGuard*" -ErrorAction SilentlyContinue | Remove-NetFirewallRule -ErrorAction SilentlyContinue
+    Get-NetFirewallRule -DisplayName "MinnowVPN*" -ErrorAction SilentlyContinue | Remove-NetFirewallRule -ErrorAction SilentlyContinue
 
     # Allow outbound UDP (WireGuard default port)
-    New-NetFirewallRule -DisplayName "SecureGuard VPN (UDP Out)" `
+    New-NetFirewallRule -DisplayName "MinnowVPN (UDP Out)" `
         -Direction Outbound -Protocol UDP -LocalPort Any -RemotePort 51820 `
         -Action Allow -Profile Any | Out-Null
 
@@ -325,7 +325,7 @@ function Write-Success {
 function Uninstall-Service {
     Write-Host ""
     Write-Host "╔═══════════════════════════════════════════════════════════╗" -ForegroundColor Yellow
-    Write-Host "║      SecureGuard VPN Service Uninstaller for Windows      ║" -ForegroundColor Yellow
+    Write-Host "║          MinnowVPN Service Uninstaller for Windows        ║" -ForegroundColor Yellow
     Write-Host "╚═══════════════════════════════════════════════════════════╝" -ForegroundColor Yellow
     Write-Host ""
 
@@ -334,7 +334,7 @@ function Uninstall-Service {
 
     # Remove firewall rules
     Write-Info "Removing firewall rules..."
-    Get-NetFirewallRule -DisplayName "SecureGuard*" -ErrorAction SilentlyContinue | Remove-NetFirewallRule -ErrorAction SilentlyContinue
+    Get-NetFirewallRule -DisplayName "MinnowVPN*" -ErrorAction SilentlyContinue | Remove-NetFirewallRule -ErrorAction SilentlyContinue
 
     # Remove binary
     if (Test-Path "$InstallDir\secureguard-service.exe") {

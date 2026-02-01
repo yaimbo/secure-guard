@@ -79,11 +79,11 @@ class TrayService with TrayListener {
 
     // Set tooltip
     final tooltip = switch (state) {
-      VpnConnectionState.connected => 'SecureGuard VPN - Connected',
-      VpnConnectionState.connecting => 'SecureGuard VPN - Connecting...',
-      VpnConnectionState.disconnecting => 'SecureGuard VPN - Disconnecting...',
-      VpnConnectionState.error => 'SecureGuard VPN - Error',
-      VpnConnectionState.disconnected => 'SecureGuard VPN - Disconnected',
+      VpnConnectionState.connected => 'MinnowVPN - Connected',
+      VpnConnectionState.connecting => 'MinnowVPN - Connecting...',
+      VpnConnectionState.disconnecting => 'MinnowVPN - Disconnecting...',
+      VpnConnectionState.error => 'MinnowVPN - Error',
+      VpnConnectionState.disconnected => 'MinnowVPN - Disconnected',
     };
 
     await trayManager.setToolTip(tooltip);
@@ -101,7 +101,7 @@ class TrayService with TrayListener {
     final menu = Menu(
       items: [
         MenuItem(
-          label: 'SecureGuard VPN',
+          label: 'MinnowVPN',
           disabled: true,
         ),
         MenuItem.separator(),
@@ -130,7 +130,7 @@ class TrayService with TrayListener {
         MenuItem.separator(),
         MenuItem(
           key: 'uninstall',
-          label: 'Uninstall SecureGuard...',
+          label: 'Uninstall MinnowVPN...',
         ),
         MenuItem.separator(),
         MenuItem(

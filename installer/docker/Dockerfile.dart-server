@@ -1,5 +1,5 @@
 # =============================================================================
-# SecureGuard Dart REST API Server
+# MinnowVPN Dart REST API Server
 # Multi-architecture build (amd64 + arm64)
 # =============================================================================
 # syntax=docker/dockerfile:1

@@ -18,7 +18,7 @@ Future<void> main(List<String> args) async {
   final results = parser.parse(args);
 
   if (results['help'] as bool) {
-    print('SecureGuard API Server\n');
+    print('MinnowVPN API Server\n');
     print('Usage: dart run bin/server.dart [options]\n');
     print(parser.usage);
     exit(0);
@@ -83,7 +83,7 @@ Future<void> main(List<String> args) async {
     serverDomain: env['SERVER_DOMAIN'] ?? 'localhost:8080',
   );
 
-  log.info('Starting SecureGuard API Server...');
+  log.info('Starting MinnowVPN API Server...');
   log.info('Host: ${config.host}:${config.port}');
   log.info('Database: ${config.dbHost}:${config.dbPort}/${config.dbName}');
 

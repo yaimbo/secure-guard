@@ -57,11 +57,11 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               Text(
-                'SecureGuard requires a background service to manage VPN connections.',
+                'MinnowVPN requires a background service to manage VPN connections.',
               ),
               SizedBox(height: 16),
               Text(
-                'Please run the SecureGuard installer (SecureGuard-x.x.x.pkg) to install the VPN service.',
+                'Please run the MinnowVPN installer (MinnowVPN-x.x.x.pkg) to install the VPN service.',
                 style: TextStyle(fontWeight: FontWeight.w500),
               ),
               SizedBox(height: 12),
@@ -233,7 +233,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
         color: isDark ? const Color(0xFF1E1E1E) : Colors.white,
         child: Center(
           child: Text(
-            'SecureGuard VPN',
+            'MinnowVPN',
             style: TextStyle(
               fontSize: 14,
               fontWeight: FontWeight.w500,

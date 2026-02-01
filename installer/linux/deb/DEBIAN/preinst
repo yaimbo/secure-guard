@@ -7,11 +7,11 @@ set -e
 SERVICE_NAME="secureguard"
 RUN_DIR="/var/run/secureguard"
 
-echo "SecureGuard: Pre-installation cleanup..."
+echo "MinnowVPN: Pre-installation cleanup..."
 
 # Stop existing service if running
 if systemctl is-active --quiet "$SERVICE_NAME" 2>/dev/null; then
-    echo "Stopping existing SecureGuard service..."
+    echo "Stopping existing MinnowVPN service..."
     systemctl stop "$SERVICE_NAME" || true
     sleep 2
 fi

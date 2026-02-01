@@ -10,11 +10,11 @@
 apiVersion: 1
 
 providers:
-  - name: 'SecureGuard Dashboards'
+  - name: 'MinnowVPN Dashboards'
     # Unique provider name
     orgId: 1
     # Folder to store dashboards (empty = General folder)
-    folder: 'SecureGuard'
+    folder: 'MinnowVPN'
     # Create folder if it doesn't exist
     folderUid: 'secureguard'
     # Dashboard provider type

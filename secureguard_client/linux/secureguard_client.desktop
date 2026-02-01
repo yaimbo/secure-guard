@@ -1,5 +1,5 @@
 [Desktop Entry]
-Name=SecureGuard VPN
+Name=MinnowVPN
 Comment=Secure VPN Client
 Exec=secureguard_client %u
 Icon=secureguard_client

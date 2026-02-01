@@ -287,7 +287,7 @@ const _migrations = <_Migration>[
       use_ssl BOOLEAN DEFAULT false,
       use_starttls BOOLEAN DEFAULT true,
       from_email VARCHAR(255),
-      from_name VARCHAR(255) DEFAULT 'SecureGuard VPN',
+      from_name VARCHAR(255) DEFAULT 'MinnowVPN',
       last_test_at TIMESTAMPTZ,
       last_test_success BOOLEAN,
       updated_at TIMESTAMPTZ DEFAULT NOW()

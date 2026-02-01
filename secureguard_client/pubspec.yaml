@@ -1,5 +1,5 @@
 name: secureguard_client
-description: "SecureGuard VPN Desktop Client"
+description: "MinnowVPN Desktop Client"
 publish_to: 'none'
 
 version: 1.0.0+1

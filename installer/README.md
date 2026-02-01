@@ -1,10 +1,10 @@
-# SecureGuard VPN Service Installers
+# MinnowVPN Service Installers
 
-Platform-specific installers for the SecureGuard VPN daemon service.
+Platform-specific installers for the MinnowVPN daemon service.
 
 ## Overview
 
-The SecureGuard VPN daemon runs as a system service, providing an IPC socket
+The MinnowVPN daemon runs as a system service, providing an IPC socket
 for the Flutter desktop client to control VPN connections. The daemon requires
 elevated privileges to create TUN devices for VPN tunneling.
 
@@ -152,7 +152,7 @@ cd installer/windows
 makensis secureguard.nsi
 ```
 
-This creates `SecureGuard-1.0.0-Setup.exe` which can be distributed.
+This creates `MinnowVPN-1.0.0-Setup.exe` which can be distributed.
 
 ### Management Commands (PowerShell as Admin)
 

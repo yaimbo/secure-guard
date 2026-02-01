@@ -12,7 +12,7 @@ class SecureGuardConsole extends ConsumerWidget {
     final router = ref.watch(routerProvider);
 
     return MaterialApp.router(
-      title: 'SecureGuard Admin',
+      title: 'MinnowVPN Admin',
       debugShowCheckedModeBanner: false,
       theme: AppTheme.light,
       darkTheme: AppTheme.dark,

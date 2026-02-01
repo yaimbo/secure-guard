@@ -18,7 +18,7 @@ HTTP_PORT=51820
 
 # Log to installer log
 log() {
-    echo "[SecureGuard Postinstall] $1"
+    echo "[MinnowVPN Postinstall] $1"
 }
 
 # Create secureguard group for token access
@@ -30,7 +30,7 @@ create_secureguard_group() {
         log "Creating group: $SECUREGUARD_GROUP"
         dscl . -create /Groups/$SECUREGUARD_GROUP
         dscl . -create /Groups/$SECUREGUARD_GROUP PrimaryGroupID $SECUREGUARD_GID
-        dscl . -create /Groups/$SECUREGUARD_GROUP RealName "SecureGuard VPN Users"
+        dscl . -create /Groups/$SECUREGUARD_GROUP RealName "MinnowVPN Users"
     else
         log "Group $SECUREGUARD_GROUP already exists"
     fi
@@ -127,7 +127,7 @@ setup_uninstall_script() {
 
 # Start the service
 start_service() {
-    log "Starting SecureGuard service..."
+    log "Starting MinnowVPN service..."
 
     # Use bootstrap for modern macOS
     if launchctl bootstrap system "$LAUNCH_DAEMONS_DIR/$SERVICE_NAME.plist" 2>/dev/null; then

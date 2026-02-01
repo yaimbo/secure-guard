@@ -1,6 +1,6 @@
-# SecureGuard Docker Deployment
+# MinnowVPN Docker Deployment
 
-Production-ready Docker deployment for SecureGuard VPN Server with automatic HTTPS, monitoring, and security hardening.
+Production-ready Docker deployment for MinnowVPN Server with automatic HTTPS, monitoring, and security hardening.
 
 ## Features
 

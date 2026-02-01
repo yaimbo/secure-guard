@@ -1,5 +1,5 @@
 [Unit]
-Description=SecureGuard VPN Service
+Description=MinnowVPN Service
 Documentation=https://github.com/secureguard/secureguard
 After=network-online.target
 Wants=network-online.target

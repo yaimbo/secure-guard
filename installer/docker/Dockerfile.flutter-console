@@ -1,5 +1,5 @@
 # =============================================================================
-# SecureGuard Flutter Web Management Console
+# MinnowVPN Flutter Web Management Console
 # Multi-architecture build (amd64 + arm64)
 # =============================================================================
 # syntax=docker/dockerfile:1

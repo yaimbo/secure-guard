@@ -1,9 +1,9 @@
 #!/bin/bash
 # =============================================================================
-# SecureGuard Backup Script
+# MinnowVPN Backup Script
 # =============================================================================
 #
-# Creates a complete backup of all SecureGuard data:
+# Creates a complete backup of all MinnowVPN data:
 # - PostgreSQL database dump
 # - Redis data
 # - Configuration files
@@ -210,7 +210,7 @@ print_summary() {
 # Main
 main() {
     echo ""
-    echo -e "${BLUE}SecureGuard Backup${NC}"
+    echo -e "${BLUE}MinnowVPN Backup${NC}"
     echo "===================="
     echo ""
 

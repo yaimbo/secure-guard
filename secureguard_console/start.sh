@@ -1,6 +1,6 @@
 #!/bin/bash
 
-# SecureGuard Console Startup Script
+# MinnowVPN Console Startup Script
 # Kills existing processes and starts both the API server and Flutter web console
 
 set -e
@@ -16,7 +16,7 @@ GREEN='\033[0;32m'
 YELLOW='\033[1;33m'
 NC='\033[0m' # No Color
 
-echo -e "${YELLOW}SecureGuard Console Startup${NC}"
+echo -e "${YELLOW}MinnowVPN Console Startup${NC}"
 echo "================================"
 
 # Function to kill processes on a specific port

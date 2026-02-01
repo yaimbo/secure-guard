@@ -1,5 +1,5 @@
 #!/bin/bash
-# SecureGuard VPN Client Stop Script
+# MinnowVPN Client Stop Script
 # Stops all running instances
 
 RED='\033[0;31m'
@@ -7,7 +7,7 @@ GREEN='\033[0;32m'
 YELLOW='\033[1;33m'
 NC='\033[0m'
 
-echo -e "${YELLOW}Stopping SecureGuard VPN...${NC}"
+echo -e "${YELLOW}Stopping MinnowVPN...${NC}"
 
 # Kill Flutter client
 if pgrep -f "secureguard_client" > /dev/null 2>&1; then

@@ -133,7 +133,7 @@ class _WelcomeHeroState extends State<WelcomeHero>
 
             // Welcome text with fade-in effect
             Text(
-              'Welcome to SecureGuard',
+              'Welcome to MinnowVPN',
               style: TextStyle(
                 fontSize: 24,
                 fontWeight: FontWeight.bold,

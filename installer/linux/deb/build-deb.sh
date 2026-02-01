@@ -87,8 +87,8 @@ Section: net
 Priority: optional
 Architecture: $DEB_ARCH
 Depends: libgtk-3-0, libsecret-1-0
-Maintainer: SecureGuard Team <support@secureguard.io>
-Description: SecureGuard VPN Client
+Maintainer: MinnowVPN Team <support@minnowvpn.com>
+Description: MinnowVPN Client
  WireGuard-compatible VPN client with a modern GUI.
  Includes background daemon service and Flutter desktop client.
 EOF

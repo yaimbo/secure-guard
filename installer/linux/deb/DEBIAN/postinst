@@ -10,7 +10,7 @@ DATA_DIR="/var/lib/secureguard"
 RUN_DIR="/var/run/secureguard"
 LOG_DIR="/var/log/secureguard"
 
-echo "SecureGuard: Running post-installation setup..."
+echo "MinnowVPN: Running post-installation setup..."
 
 # ============================================================================
 # Create secureguard group for token access
@@ -70,7 +70,7 @@ if pidof systemd &>/dev/null; then
     # ============================================================================
     # Start the service
     # ============================================================================
-    echo "Starting SecureGuard service..."
+    echo "Starting MinnowVPN service..."
 
     systemctl start "$SERVICE_NAME"
 
@@ -79,7 +79,7 @@ if pidof systemd &>/dev/null; then
 
     # Verify service is running
     if systemctl is-active --quiet "$SERVICE_NAME"; then
-        echo "SecureGuard service started successfully."
+        echo "MinnowVPN service started successfully."
     else
         echo "Warning: Service may not have started correctly."
         echo "Check status with: sudo systemctl status secureguard"
@@ -108,13 +108,13 @@ fi
 # ============================================================================
 echo ""
 echo "=============================================================="
-echo "          SecureGuard VPN installed successfully!             "
+echo "            MinnowVPN installed successfully!                 "
 echo "=============================================================="
 echo ""
 echo "The VPN daemon is running as a system service."
 echo ""
 echo "To launch the GUI:"
-echo "  - Open 'SecureGuard VPN' from your application menu"
+echo "  - Open 'MinnowVPN' from your application menu"
 echo "  - Or run: secureguard"
 echo ""
 echo "Service commands:"

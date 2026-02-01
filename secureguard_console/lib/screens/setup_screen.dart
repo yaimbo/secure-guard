@@ -91,7 +91,7 @@ class _SetupScreenState extends ConsumerState<SetupScreen> {
 
                     // Title
                     Text(
-                      'Welcome to SecureGuard',
+                      'Welcome to MinnowVPN',
                       style: Theme.of(context).textTheme.headlineSmall?.copyWith(
                             fontWeight: FontWeight.bold,
                           ),

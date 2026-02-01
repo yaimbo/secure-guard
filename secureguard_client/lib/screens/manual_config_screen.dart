@@ -215,7 +215,7 @@ class _ManualConfigScreenState extends ConsumerState<ManualConfigScreen> {
         color: isDark ? const Color(0xFF1E1E1E) : Colors.white,
         child: Center(
           child: Text(
-            'SecureGuard VPN',
+            'MinnowVPN',
             style: TextStyle(
               fontSize: 14,
               fontWeight: FontWeight.w500,

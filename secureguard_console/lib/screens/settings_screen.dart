@@ -1373,7 +1373,7 @@ class _EmailSettingsSectionState extends ConsumerState<_EmailSettingsSection> {
                   controller: _fromNameController,
                   decoration: const InputDecoration(
                     labelText: 'From Name',
-                    hintText: 'SecureGuard VPN',
+                    hintText: 'MinnowVPN',
                   ),
                   enabled: _enabled,
                 ),
@@ -1502,7 +1502,7 @@ class _EmailSettingsSectionState extends ConsumerState<_EmailSettingsSection> {
         useSsl: _useSsl,
         useStarttls: _useStarttls,
         fromEmail: _fromEmailController.text.isNotEmpty ? _fromEmailController.text : null,
-        fromName: _fromNameController.text.isNotEmpty ? _fromNameController.text : 'SecureGuard VPN',
+        fromName: _fromNameController.text.isNotEmpty ? _fromNameController.text : 'MinnowVPN',
       );
 
       await api.updateEmailSettings(settings);

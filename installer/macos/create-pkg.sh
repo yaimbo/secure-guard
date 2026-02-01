@@ -30,7 +30,7 @@ log_error() { echo -e "${RED}[ERROR]${NC} $1"; }
 
 echo ""
 echo "========================================="
-echo "  SecureGuard VPN Installer Builder"
+echo "  MinnowVPN Installer Builder"
 echo "  Version: $VERSION"
 echo "========================================="
 echo ""
@@ -89,7 +89,7 @@ copy_files() {
     log_info "Copying files to package root..."
 
     # Copy Flutter app to /Applications
-    cp -R "$flutter_app" "$PKG_ROOT/Applications/SecureGuard.app"
+    cp -R "$flutter_app" "$PKG_ROOT/Applications/MinnowVPN.app"
     log_info "Flutter app copied to /Applications"
 
     # Copy daemon binary
@@ -138,7 +138,7 @@ build_distribution_pkg() {
         --distribution "$BUILD_DIR/Distribution.xml" \
         --resources "$SCRIPT_DIR/pkg/Resources" \
         --package-path "$BUILD_DIR" \
-        "$BUILD_DIR/SecureGuard-$VERSION.pkg"
+        "$BUILD_DIR/MinnowVPN-$VERSION.pkg"
 
     log_info "Distribution package created"
 }
@@ -172,11 +172,11 @@ main() {
     echo ""
     echo "========================================="
     echo "  Installer created successfully!"
-    echo "  Output: $BUILD_DIR/SecureGuard-$VERSION.pkg"
+    echo "  Output: $BUILD_DIR/MinnowVPN-$VERSION.pkg"
     echo "========================================="
     echo ""
     echo "The installer includes:"
-    echo "  - SecureGuard.app (installed to /Applications)"
+    echo "  - MinnowVPN.app (installed to /Applications)"
     echo "  - VPN daemon service (runs in background)"
     echo ""
 }

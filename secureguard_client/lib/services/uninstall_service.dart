@@ -57,7 +57,7 @@ class UninstallService {
     // Check if script exists
     if (!await File(scriptPath).exists()) {
       return UninstallResult.failure(
-        'Uninstall script not found. Please reinstall SecureGuard or manually remove it.',
+        'Uninstall script not found. Please reinstall MinnowVPN or manually remove it.',
       );
     }
 
@@ -99,7 +99,7 @@ do shell script "'\$scriptPath' --all" with administrator privileges
     // Check if script exists
     if (!await File(scriptPath).exists()) {
       return UninstallResult.failure(
-        'Uninstall script not found. Please use Windows Settings > Apps to uninstall SecureGuard.',
+        'Uninstall script not found. Please use Windows Settings > Apps to uninstall MinnowVPN.',
       );
     }
 

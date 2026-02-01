@@ -12,7 +12,7 @@ LOG_DIR="/var/log/secureguard"
 
 case "$1" in
     purge)
-        echo "SecureGuard: Purging configuration and data..."
+        echo "MinnowVPN: Purging configuration and data..."
 
         # Remove data directory
         if [ -d "$DATA_DIR" ]; then
@@ -49,7 +49,7 @@ case "$1" in
         ;;
 
     remove|upgrade|failed-upgrade|abort-install|abort-upgrade|disappear)
-        echo "SecureGuard: Cleaning up..."
+        echo "MinnowVPN: Cleaning up..."
 
         # Remove runtime directory (always safe to remove)
         if [ -d "$RUN_DIR" ]; then

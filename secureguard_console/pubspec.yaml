@@ -1,5 +1,5 @@
 name: secureguard_console
-description: SecureGuard VPN Management Console
+description: MinnowVPN Management Console
 publish_to: 'none'
 version: 1.0.0+1
 

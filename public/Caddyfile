@@ -1,5 +1,5 @@
 # =============================================================================
-# SecureGuard Caddy Reverse Proxy Configuration
+# MinnowVPN Caddy Reverse Proxy Configuration
 # =============================================================================
 #
 # Features:
@@ -28,7 +28,7 @@
 }
 
 # =============================================================================
-# Main Domain - SecureGuard Console & API
+# Main Domain - MinnowVPN Console & API
 # =============================================================================
 {$DOMAIN} {
     # Enable HTTPS with automatic certificate

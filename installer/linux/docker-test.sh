@@ -34,7 +34,7 @@ DOCKER_PLATFORM="linux/$ARCH"
 
 echo ""
 echo "=============================================================="
-echo "       SecureGuard Package Installation Test                 "
+echo "       MinnowVPN Package Installation Test                   "
 echo "=============================================================="
 echo ""
 echo "Distribution: $DISTRO"

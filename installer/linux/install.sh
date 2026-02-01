@@ -32,7 +32,7 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 # Print banner
 echo ""
 echo "╔═══════════════════════════════════════════════════════════╗"
-echo "║        SecureGuard VPN Service Installer for Linux        ║"
+echo "║           MinnowVPN Service Installer for Linux           ║"
 echo "╚═══════════════════════════════════════════════════════════╝"
 echo ""
 

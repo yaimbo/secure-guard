@@ -35,7 +35,7 @@ class AppShell extends ConsumerWidget {
                   ),
                   const SizedBox(height: 8),
                   Text(
-                    'SecureGuard',
+                    'MinnowVPN',
                     style: Theme.of(context).textTheme.labelSmall?.copyWith(
                           fontWeight: FontWeight.bold,
                         ),

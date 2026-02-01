@@ -99,7 +99,7 @@ void main() async {
     backgroundColor: Colors.transparent,
     skipTaskbar: false,
     titleBarStyle: TitleBarStyle.hidden,
-    title: 'SecureGuard VPN',
+    title: 'MinnowVPN',
   );
 
   await windowManager.waitUntilReadyToShow(windowOptions, () async {
@@ -181,7 +181,7 @@ class _SecureGuardAppState extends State<SecureGuardApp> with WindowListener {
   Widget build(BuildContext context) {
     return MaterialApp(
       navigatorKey: navigatorKey,
-      title: 'SecureGuard VPN',
+      title: 'MinnowVPN',
       debugShowCheckedModeBanner: false,
       theme: _buildTheme(Brightness.light),
       darkTheme: _buildTheme(Brightness.dark),

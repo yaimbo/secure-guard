@@ -1,5 +1,5 @@
 #!/bin/bash
-# SecureGuard VPN Client Startup Script
+# MinnowVPN Client Startup Script
 # Starts the Rust daemon and Flutter desktop client
 
 set -e
@@ -13,7 +13,7 @@ GREEN='\033[0;32m'
 YELLOW='\033[1;33m'
 NC='\033[0m' # No Color
 
-echo -e "${GREEN}=== SecureGuard VPN Client ===${NC}"
+echo -e "${GREEN}=== MinnowVPN Client ===${NC}"
 echo ""
 
 # Kill any existing instances
@@ -102,7 +102,7 @@ flutter run -d "$PLATFORM" &
 FLUTTER_PID=$!
 
 echo ""
-echo -e "${GREEN}=== SecureGuard VPN Started ===${NC}"
+echo -e "${GREEN}=== MinnowVPN Started ===${NC}"
 echo "  Daemon PID: $DAEMON_PID"
 echo "  Flutter PID: $FLUTTER_PID"
 echo ""

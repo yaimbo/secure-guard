@@ -108,7 +108,7 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
 
                     // Title
                     Text(
-                      'SecureGuard Admin',
+                      'MinnowVPN Admin',
                       style: Theme.of(context).textTheme.headlineSmall?.copyWith(
                             fontWeight: FontWeight.bold,
                           ),

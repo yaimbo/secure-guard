@@ -12,7 +12,7 @@ APPLICATION_SUPPORT_DIR="/Library/Application Support/SecureGuard"
 LOG_DIR="/var/log"
 DATA_DIR="/var/lib/secureguard"
 TOKEN_DIR="/var/run/secureguard"
-APP_PATH="/Applications/SecureGuard.app"
+APP_PATH="/Applications/MinnowVPN.app"
 
 # Colors for output
 RED='\033[0;31m'
@@ -28,7 +28,7 @@ log_error() { echo -e "${RED}[ERROR]${NC} $1"; }
 # Print banner
 echo ""
 echo "╔═══════════════════════════════════════════════════════════╗"
-echo "║       SecureGuard VPN Service Uninstaller for macOS       ║"
+echo "║           MinnowVPN Service Uninstaller for macOS         ║"
 echo "╚═══════════════════════════════════════════════════════════╝"
 echo ""
 
@@ -69,7 +69,7 @@ while [[ $# -gt 0 ]]; do
             echo ""
             echo "Options:"
             echo "  --all     Remove everything including app, data, and logs"
-            echo "  --app     Remove SecureGuard.app from /Applications"
+            echo "  --app     Remove MinnowVPN.app from /Applications"
             echo "  --data    Remove data directory (/var/lib/secureguard)"
             echo "  --logs    Remove log files (/var/log/secureguard*.log)"
             echo "  -h, --help  Show this help message"
@@ -122,7 +122,7 @@ remove_token_dir() {
 # Remove app (optional)
 remove_app() {
     if [ "$REMOVE_APP" = true ] && [ -d "$APP_PATH" ]; then
-        log_info "Removing SecureGuard.app from Applications..."
+        log_info "Removing MinnowVPN.app from Applications..."
         rm -rf "$APP_PATH"
     fi
 }
@@ -160,7 +160,7 @@ print_completion() {
     echo ""
 
     if [ "$REMOVE_APP" = false ] && [ -d "$APP_PATH" ]; then
-        echo "Note: SecureGuard.app preserved at $APP_PATH"
+        echo "Note: MinnowVPN.app preserved at $APP_PATH"
         echo "      To remove: sudo rm -rf '$APP_PATH'"
         echo ""
     fi

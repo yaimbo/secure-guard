@@ -333,7 +333,7 @@
   "time": { "from": "now-1h", "to": "now" },
   "timepicker": {},
   "timezone": "browser",
-  "title": "SecureGuard Infrastructure",
+  "title": "MinnowVPN Infrastructure",
   "uid": "secureguard-infra",
   "version": 1,
   "weekStart": ""

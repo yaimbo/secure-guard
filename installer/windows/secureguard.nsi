@@ -20,14 +20,14 @@
 ;--------------------------------
 ; General Configuration
 
-!define PRODUCT_NAME "SecureGuard VPN"
+!define PRODUCT_NAME "MinnowVPN"
 !define PRODUCT_VERSION "1.0.0"
-!define PRODUCT_PUBLISHER "SecureGuard"
-!define PRODUCT_WEB_SITE "https://secureguard.example.com"
+!define PRODUCT_PUBLISHER "MinnowVPN"
+!define PRODUCT_WEB_SITE "https://minnowvpn.com"
 !define SERVICE_NAME "SecureGuardVPN"
 
 Name "${PRODUCT_NAME} ${PRODUCT_VERSION}"
-OutFile "SecureGuard-${PRODUCT_VERSION}-Setup.exe"
+OutFile "MinnowVPN-${PRODUCT_VERSION}-Setup.exe"
 InstallDir "$PROGRAMFILES64\SecureGuard"
 InstallDirRegKey HKLM "Software\SecureGuard" "InstallDir"
 RequestExecutionLevel admin
@@ -75,20 +75,20 @@ VIAddVersionKey "ProductVersion" "${PRODUCT_VERSION}"
 Function .onInit
     ; Check Windows version (requires Windows 10+)
     ${IfNot} ${AtLeastWin10}
-        MessageBox MB_OK|MB_ICONSTOP "SecureGuard requires Windows 10 or later."
+        MessageBox MB_OK|MB_ICONSTOP "MinnowVPN requires Windows 10 or later."
         Abort
     ${EndIf}
 
     ; Check for 64-bit
     ${IfNot} ${RunningX64}
-        MessageBox MB_OK|MB_ICONSTOP "SecureGuard requires a 64-bit version of Windows."
+        MessageBox MB_OK|MB_ICONSTOP "MinnowVPN requires a 64-bit version of Windows."
         Abort
     ${EndIf}
 
     ; Check for existing installation
     ReadRegStr $0 HKLM "Software\SecureGuard" "InstallDir"
     ${If} $0 != ""
-        MessageBox MB_YESNO|MB_ICONQUESTION "SecureGuard is already installed. Do you want to upgrade?" IDYES +2
+        MessageBox MB_YESNO|MB_ICONQUESTION "MinnowVPN is already installed. Do you want to upgrade?" IDYES +2
         Abort
     ${EndIf}
 FunctionEnd
@@ -96,7 +96,7 @@ FunctionEnd
 ;--------------------------------
 ; Install Section
 
-Section "SecureGuard VPN Service" SecMain
+Section "MinnowVPN Service" SecMain
     SectionIn RO
 
     SetOutPath "$INSTDIR"
@@ -127,7 +127,7 @@ Section "SecureGuard VPN Service" SecMain
     nsExec::ExecToLog 'sc create ${SERVICE_NAME} binPath= "\"$INSTDIR\secureguard-service.exe\" --daemon --socket \\.\pipe\secureguard" start= auto DisplayName= "${PRODUCT_NAME} Service" obj= "LocalSystem"'
 
     ; Set service description
-    nsExec::ExecToLog 'sc description ${SERVICE_NAME} "WireGuard-compatible VPN daemon for SecureGuard"'
+    nsExec::ExecToLog 'sc description ${SERVICE_NAME} "WireGuard-compatible VPN daemon for MinnowVPN"'
 
     ; Set recovery options (restart on failure)
     nsExec::ExecToLog 'sc failure ${SERVICE_NAME} reset= 86400 actions= restart/5000/restart/10000/restart/30000'
@@ -137,8 +137,8 @@ Section "SecureGuard VPN Service" SecMain
 
     ; Configure firewall
     DetailPrint "Configuring firewall..."
-    nsExec::ExecToLog 'netsh advfirewall firewall delete rule name="SecureGuard VPN (UDP Out)"'
-    nsExec::ExecToLog 'netsh advfirewall firewall add rule name="SecureGuard VPN (UDP Out)" dir=out action=allow protocol=udp remoteport=51820'
+    nsExec::ExecToLog 'netsh advfirewall firewall delete rule name="MinnowVPN (UDP Out)"'
+    nsExec::ExecToLog 'netsh advfirewall firewall add rule name="MinnowVPN (UDP Out)" dir=out action=allow protocol=udp remoteport=51820'
 
     ; Start the service
     DetailPrint "Starting service..."
@@ -178,7 +178,7 @@ Section "Uninstall"
 
     ; Remove firewall rules
     DetailPrint "Removing firewall rules..."
-    nsExec::ExecToLog 'netsh advfirewall firewall delete rule name="SecureGuard VPN (UDP Out)"'
+    nsExec::ExecToLog 'netsh advfirewall firewall delete rule name="MinnowVPN (UDP Out)"'
 
     ; Remove files
     Delete "$INSTDIR\secureguard-service.exe"
@@ -199,5 +199,5 @@ SectionEnd
 ; Section Descriptions
 
 !insertmacro MUI_FUNCTION_DESCRIPTION_BEGIN
-    !insertmacro MUI_DESCRIPTION_TEXT ${SecMain} "Install the SecureGuard VPN service daemon."
+    !insertmacro MUI_DESCRIPTION_TEXT ${SecMain} "Install the MinnowVPN service daemon."
 !insertmacro MUI_FUNCTION_DESCRIPTION_END

@@ -1,10 +1,10 @@
-# SecureGuard VPN
+# MinnowVPN
 
 A WireGuard-compatible VPN solution with enterprise management capabilities.
 
 ## Overview
 
-SecureGuard is a complete VPN management platform consisting of:
+MinnowVPN is a complete VPN management platform consisting of:
 
 - **Rust VPN Client/Server** - WireGuard-compatible implementation with daemon mode for UI control
 - **Dart REST API Server** - Centralized client management, config generation, and device enrollment
@@ -356,7 +356,7 @@ sudo journalctl -u secureguard -f
               │                     │                     │
               ▼                     ▼                     ▼
 ┌─────────────────────┐  ┌─────────────────────┐  ┌─────────────────┐
-│  SecureGuard Client │  │  SecureGuard Client │  │ Legacy WireGuard│
+│  MinnowVPN Client   │  │  MinnowVPN Client   │  │ Legacy WireGuard│
 │  (Flutter + Rust)   │  │  (CLI Mode)         │  │ (manual config) │
 │  Desktop App + SSO  │  │                     │  │                 │
 └─────────────────────┘  └─────────────────────┘  └─────────────────┘

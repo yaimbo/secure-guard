@@ -1065,15 +1065,15 @@ class _EnrollmentCodeCardState extends ConsumerState<_EnrollmentCodeCard> {
     final domain = serverParam.replaceAll(RegExp(r'^https?://'), '');
 
     final emailTemplate = '''
-Subject: Your SecureGuard VPN Access
+Subject: Your MinnowVPN Access
 
 Hi,
 
-You've been granted VPN access. Click the link below to set up SecureGuard:
+You've been granted VPN access. Click the link below to set up MinnowVPN:
 
 ${code.deepLink}
 
-If the link doesn't work, open the SecureGuard app and enter:
+If the link doesn't work, open the MinnowVPN app and enter:
   - Domain: $domain
   - Code: ${code.code}
 

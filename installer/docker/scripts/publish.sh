@@ -1,6 +1,6 @@
 #!/bin/bash
 # =============================================================================
-# SecureGuard Docker Images - Build and Publish to Docker Hub
+# MinnowVPN Docker Images - Build and Publish to Docker Hub
 # =============================================================================
 #
 # Usage:
@@ -38,7 +38,7 @@ BUILDER_NAME="secureguard-builder"
 show_help() {
     echo "Usage: $0 <version> [options]"
     echo ""
-    echo "Build and push SecureGuard Docker images to Docker Hub."
+    echo "Build and push MinnowVPN Docker images to Docker Hub."
     echo ""
     echo "Options:"
     echo "  --no-push       Build only, don't push to Docker Hub"
@@ -133,7 +133,7 @@ REPO_ROOT="$(cd "$SCRIPT_DIR/../../.." && pwd)"
 cd "$REPO_ROOT"
 
 echo -e "${BLUE}═══════════════════════════════════════════════════════${NC}"
-echo -e "${BLUE}  SecureGuard Docker Image Publisher${NC}"
+echo -e "${BLUE}  MinnowVPN Docker Image Publisher${NC}"
 echo -e "${BLUE}═══════════════════════════════════════════════════════${NC}"
 echo ""
 echo -e "  Version:    ${GREEN}$VERSION${NC}"

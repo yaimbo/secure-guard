@@ -1,9 +1,9 @@
 #!/bin/bash
 # =============================================================================
-# SecureGuard Restore Script
+# MinnowVPN Restore Script
 # =============================================================================
 #
-# Restores SecureGuard from a backup:
+# Restores MinnowVPN from a backup:
 # - PostgreSQL database
 # - Redis data
 # - Configuration files
@@ -254,7 +254,7 @@ print_summary() {
     echo -e "${GREEN}║                   Restore Complete!                           ║${NC}"
     echo -e "${GREEN}╚═══════════════════════════════════════════════════════════════╝${NC}"
     echo ""
-    echo "SecureGuard has been restored from backup."
+    echo "MinnowVPN has been restored from backup."
     echo ""
     echo "Next steps:"
     echo "  1. Check container status: docker compose ps"
@@ -274,7 +274,7 @@ trap cleanup EXIT
 # Main
 main() {
     echo ""
-    echo -e "${BLUE}SecureGuard Restore${NC}"
+    echo -e "${BLUE}MinnowVPN Restore${NC}"
     echo "===================="
     echo ""
 

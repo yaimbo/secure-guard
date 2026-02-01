@@ -1,5 +1,5 @@
 name: secureguard_server
-description: SecureGuard VPN Management API Server
+description: MinnowVPN Management API Server
 version: 0.1.0
 publish_to: none
 

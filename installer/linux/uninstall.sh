@@ -29,7 +29,7 @@ log_error() { echo -e "${RED}[ERROR]${NC} $1"; }
 # Print banner
 echo ""
 echo "=============================================================="
-echo "          SecureGuard VPN Uninstaller for Linux              "
+echo "             MinnowVPN Uninstaller for Linux                 "
 echo "=============================================================="
 echo ""
 
@@ -87,7 +87,7 @@ done
 
 # Stop Flutter desktop app if running
 stop_app() {
-    log_info "Checking for running SecureGuard app..."
+    log_info "Checking for running MinnowVPN app..."
 
     # Kill any running SecureGuard GUI processes
     if pkill -f "secureguard_client" 2>/dev/null; then
@@ -96,7 +96,7 @@ stop_app() {
     fi
 
     if pkill -f "SecureGuard" 2>/dev/null; then
-        log_info "Stopped SecureGuard"
+        log_info "Stopped MinnowVPN"
         sleep 1
     fi
 }

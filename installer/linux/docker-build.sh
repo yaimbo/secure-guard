@@ -20,7 +20,7 @@ log_step() { echo -e "${BLUE}[STEP]${NC} $1"; }
 
 echo ""
 echo "=============================================================="
-echo "     SecureGuard Linux Package Builder (Docker)              "
+echo "     MinnowVPN Linux Package Builder (Docker)                "
 echo "=============================================================="
 echo ""
 echo "Version: $VERSION"

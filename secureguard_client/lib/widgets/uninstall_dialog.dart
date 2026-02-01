@@ -37,7 +37,7 @@ class _UninstallDialogState extends State<_UninstallDialog> {
             size: 28,
           ),
           const SizedBox(width: 12),
-          const Text('Uninstall SecureGuard'),
+          const Text('Uninstall MinnowVPN'),
         ],
       ),
       content: _isUninstalling
@@ -53,12 +53,12 @@ class _UninstallDialogState extends State<_UninstallDialog> {
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         const Text(
-          'This will completely remove SecureGuard from your computer, including:',
+          'This will completely remove MinnowVPN from your computer, including:',
         ),
         const SizedBox(height: 16),
         _buildRemovalItem(Icons.shield, 'VPN service and daemon'),
         const SizedBox(height: 8),
-        _buildRemovalItem(Icons.apps, 'SecureGuard application'),
+        _buildRemovalItem(Icons.apps, 'MinnowVPN application'),
         const SizedBox(height: 8),
         _buildRemovalItem(Icons.storage, 'Configuration and connection data'),
         const SizedBox(height: 8),
@@ -131,7 +131,7 @@ class _UninstallDialogState extends State<_UninstallDialog> {
         const CircularProgressIndicator(),
         const SizedBox(height: 24),
         const Text(
-          'Uninstalling SecureGuard...',
+          'Uninstalling MinnowVPN...',
           style: TextStyle(fontSize: 16),
         ),
         const SizedBox(height: 8),

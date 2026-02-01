@@ -1,8 +1,8 @@
-# SecureGuard VPN
+# MinnowVPN
 
 **Enterprise-grade WireGuard VPN server with web management console.**
 
-SecureGuard VPN provides a complete VPN solution for organizations, featuring a modern web interface, SSO integration, and automated security hardening.
+MinnowVPN provides a complete VPN solution for organizations, featuring a modern web interface, SSO integration, and automated security hardening.
 
 ---
 
@@ -410,7 +410,7 @@ If you enabled the monitoring stack:
 
 ### Pre-built Dashboards
 
-The SecureGuard dashboard shows:
+The MinnowVPN dashboard shows:
 - CPU and memory usage
 - Network traffic
 - Database connections

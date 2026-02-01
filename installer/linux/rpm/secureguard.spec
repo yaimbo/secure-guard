@@ -1,10 +1,10 @@
 Name:           secureguard
 Version:        %{VERSION}
 Release:        1%{?dist}
-Summary:        SecureGuard VPN Client
+Summary:        MinnowVPN Client
 
 License:        Proprietary
-URL:            https://secureguard.io
+URL:            https://minnowvpn.com
 Source0:        secureguard-%{VERSION}.tar.gz
 
 Requires:       gtk3
@@ -132,5 +132,5 @@ fi
 %dir %attr(750, root, secureguard) /var/log/secureguard
 
 %changelog
-* %(date +"%a %b %d %Y") SecureGuard Team <support@secureguard.io> - %{version}-1
+* %(date +"%a %b %d %Y") MinnowVPN Team <support@minnowvpn.com> - %{version}-1
 - Initial package

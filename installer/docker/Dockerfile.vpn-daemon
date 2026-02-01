@@ -1,5 +1,5 @@
 # =============================================================================
-# SecureGuard Rust WireGuard VPN Daemon
+# MinnowVPN Rust WireGuard VPN Daemon
 # Multi-architecture build (amd64 + arm64)
 # =============================================================================
 # syntax=docker/dockerfile:1
