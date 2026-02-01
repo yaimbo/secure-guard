@@ -75,5 +75,5 @@ LABEL com.centurylinklabs.watchtower.enable="true"
 
 # Run daemon in server mode
 # --daemon: Run as HTTP REST API service
-# --port 51821: HTTP API port (VPN uses 51820)
-CMD ["secureguard", "--daemon", "--port", "51821"]
+# --http-port 51821: HTTP API port (VPN uses 51820)
+CMD ["secureguard", "--daemon", "--http-port", "51821"]

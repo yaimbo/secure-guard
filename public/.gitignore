@@ -1,0 +1,33 @@
+# =============================================================================
+# SecureGuard VPN - Git Ignore
+# =============================================================================
+
+# Secrets (auto-generated during setup - NEVER commit)
+secrets/
+
+# Environment configuration (user-specific)
+.env
+
+# Backups
+backups/
+
+# Docker volume data
+*_data/
+
+# Logs
+*.log
+logs/
+
+# macOS
+.DS_Store
+
+# Editor
+*.swp
+*.swo
+*~
+.idea/
+.vscode/
+
+# Temporary files
+*.tmp
+*.temp

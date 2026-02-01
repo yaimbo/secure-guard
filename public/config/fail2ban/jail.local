@@ -1,0 +1,84 @@
+# =============================================================================
+# Fail2ban Jail Configuration for SecureGuard
+# =============================================================================
+#
+# This configuration protects the SecureGuard API from brute-force attacks:
+# - Login attempts (5 failures = 1 hour ban)
+# - Enrollment code redemption (10 failures = 30 min ban)
+# - General API abuse (20 failures = 15 min ban)
+#
+# Logs are read from Caddy's JSON access log format.
+#
+# =============================================================================
+
+[DEFAULT]
+# Default ban settings
+bantime = 1h
+findtime = 10m
+maxretry = 5
+
+# Ban action (iptables for blocking)
+banaction = iptables-multiport
+banaction_allports = iptables-allports
+
+# Don't ban localhost or Docker networks
+ignoreip = 127.0.0.1/8 ::1 10.0.0.0/8 172.16.0.0/12 192.168.0.0/16
+
+# Log level
+loglevel = INFO
+
+# =============================================================================
+# SecureGuard Authentication Jail
+# =============================================================================
+# Protects admin login endpoint from brute-force attacks
+#
+[secureguard-auth]
+enabled = true
+filter = secureguard-auth
+logpath = /var/log/caddy/access.log
+maxretry = 5
+findtime = 5m
+bantime = 1h
+port = http,https
+
+# =============================================================================
+# SecureGuard Enrollment Jail
+# =============================================================================
+# Protects enrollment code redemption from abuse
+# (Higher threshold since legitimate users might mistype codes)
+#
+[secureguard-enrollment]
+enabled = true
+filter = secureguard-enrollment
+logpath = /var/log/caddy/access.log
+maxretry = 10
+findtime = 1m
+bantime = 30m
+port = http,https
+
+# =============================================================================
+# SecureGuard API Abuse Jail
+# =============================================================================
+# General protection against API abuse (too many 4xx errors)
+#
+[secureguard-api]
+enabled = true
+filter = secureguard-api
+logpath = /var/log/caddy/access.log
+maxretry = 20
+findtime = 1m
+bantime = 15m
+port = http,https
+
+# =============================================================================
+# SSH Protection (if SSH is exposed)
+# =============================================================================
+# Uncomment if you want to protect SSH on the host
+#
+# [sshd]
+# enabled = true
+# port = ssh
+# filter = sshd
+# logpath = /var/log/auth.log
+# maxretry = 3
+# bantime = 1h

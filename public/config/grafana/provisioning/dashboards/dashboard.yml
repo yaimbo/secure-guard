@@ -1,0 +1,34 @@
+# =============================================================================
+# Grafana Dashboard Provisioning Configuration
+# =============================================================================
+#
+# This file tells Grafana where to find dashboard JSON files
+# and how to manage them.
+#
+# =============================================================================
+
+apiVersion: 1
+
+providers:
+  - name: 'SecureGuard Dashboards'
+    # Unique provider name
+    orgId: 1
+    # Folder to store dashboards (empty = General folder)
+    folder: 'SecureGuard'
+    # Create folder if it doesn't exist
+    folderUid: 'secureguard'
+    # Dashboard provider type
+    type: file
+    # Disable dashboard deletion from UI
+    disableDeletion: false
+    # Allow updates from UI
+    editable: true
+    # How often to check for changes (0 = only on startup)
+    updateIntervalSeconds: 30
+    # Allow UI updates to be saved
+    allowUiUpdates: true
+    options:
+      # Path to dashboard JSON files
+      path: /etc/grafana/provisioning/dashboards
+      # Watch for file changes
+      foldersFromFilesStructure: false

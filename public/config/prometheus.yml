@@ -1,0 +1,110 @@
+# =============================================================================
+# Prometheus Configuration for SecureGuard
+# =============================================================================
+#
+# Scrape targets:
+# - Prometheus itself (self-monitoring)
+# - Node Exporter (host system metrics)
+# - Redis Exporter (Redis metrics)
+# - Postgres Exporter (PostgreSQL metrics)
+# - Caddy (web server metrics)
+#
+# =============================================================================
+
+global:
+  # How often to scrape targets
+  scrape_interval: 15s
+
+  # How often to evaluate rules
+  evaluation_interval: 15s
+
+  # Attach these labels to all metrics
+  external_labels:
+    cluster: 'secureguard'
+    environment: 'production'
+
+# Alerting configuration (optional - add Alertmanager if needed)
+# alerting:
+#   alertmanagers:
+#     - static_configs:
+#         - targets:
+#           - alertmanager:9093
+
+# Rule files for recording rules and alerts
+# rule_files:
+#   - /etc/prometheus/rules/*.yml
+
+# =============================================================================
+# Scrape Configurations
+# =============================================================================
+scrape_configs:
+  # ---------------------------------------------------------------------------
+  # Prometheus self-monitoring
+  # ---------------------------------------------------------------------------
+  - job_name: 'prometheus'
+    static_configs:
+      - targets: ['localhost:9090']
+    metrics_path: /metrics
+    scheme: http
+
+  # ---------------------------------------------------------------------------
+  # Node Exporter - Host system metrics
+  # ---------------------------------------------------------------------------
+  - job_name: 'node'
+    static_configs:
+      - targets: ['node-exporter:9100']
+    metrics_path: /metrics
+    scheme: http
+    relabel_configs:
+      - source_labels: [__address__]
+        target_label: instance
+        replacement: 'secureguard-host'
+
+  # ---------------------------------------------------------------------------
+  # Redis Exporter - Redis cache metrics
+  # ---------------------------------------------------------------------------
+  - job_name: 'redis'
+    static_configs:
+      - targets: ['redis-exporter:9121']
+    metrics_path: /metrics
+    scheme: http
+    relabel_configs:
+      - source_labels: [__address__]
+        target_label: instance
+        replacement: 'secureguard-redis'
+
+  # ---------------------------------------------------------------------------
+  # Postgres Exporter - PostgreSQL database metrics
+  # ---------------------------------------------------------------------------
+  - job_name: 'postgres'
+    static_configs:
+      - targets: ['postgres-exporter:9187']
+    metrics_path: /metrics
+    scheme: http
+    relabel_configs:
+      - source_labels: [__address__]
+        target_label: instance
+        replacement: 'secureguard-postgres'
+
+  # ---------------------------------------------------------------------------
+  # Caddy - Web server / reverse proxy metrics
+  # ---------------------------------------------------------------------------
+  - job_name: 'caddy'
+    static_configs:
+      - targets: ['caddy:2019']
+    metrics_path: /metrics
+    scheme: http
+    relabel_configs:
+      - source_labels: [__address__]
+        target_label: instance
+        replacement: 'secureguard-caddy'
+
+  # ---------------------------------------------------------------------------
+  # Docker containers (if Docker daemon exposes metrics)
+  # Uncomment if you configure Docker to expose metrics
+  # ---------------------------------------------------------------------------
+  # - job_name: 'docker'
+  #   static_configs:
+  #     - targets: ['host.docker.internal:9323']
+  #   metrics_path: /metrics
+  #   scheme: http
