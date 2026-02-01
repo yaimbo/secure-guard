@@ -7,34 +7,15 @@
 # -----------------------------------------------------------------------------
 # Stage 1: Build the Rust daemon
 # -----------------------------------------------------------------------------
-FROM --platform=$BUILDPLATFORM rust:1.75-bookworm AS build
+# Use TARGETPLATFORM instead of BUILDPLATFORM to build natively for target arch
+# This uses QEMU emulation on cross-arch builds but avoids linker issues
+FROM rust:1.85-bookworm AS build
 
-ARG TARGETPLATFORM
-ARG BUILDPLATFORM
-
-# Install cross-compilation tools
+# Install build dependencies
 RUN apt-get update && apt-get install -y --no-install-recommends \
-    musl-tools \
-    gcc-aarch64-linux-gnu \
-    gcc-x86-64-linux-gnu \
-    libc6-dev-arm64-cross \
-    libc6-dev-amd64-cross \
     pkg-config \
     libssl-dev \
     && rm -rf /var/lib/apt/lists/*
-
-# Determine target architecture and add Rust target
-RUN case "$TARGETPLATFORM" in \
-    "linux/amd64") \
-        echo "x86_64-unknown-linux-gnu" > /target.txt && \
-        echo "x86_64-linux-gnu-gcc" > /cc.txt ;; \
-    "linux/arm64") \
-        echo "aarch64-unknown-linux-gnu" > /target.txt && \
-        echo "aarch64-linux-gnu-gcc" > /cc.txt ;; \
-    *) \
-        echo "Unsupported platform: $TARGETPLATFORM" && exit 1 ;; \
-    esac && \
-    rustup target add $(cat /target.txt)
 
 WORKDIR /app
 
@@ -44,19 +25,15 @@ COPY Cargo.toml Cargo.lock ./
 # Create a dummy main.rs to build dependencies
 RUN mkdir src && \
     echo "fn main() {}" > src/main.rs && \
-    export TARGET=$(cat /target.txt) && \
-    export CC=$(cat /cc.txt) && \
-    cargo build --release --target $TARGET || true && \
+    cargo build --release || true && \
     rm -rf src
 
 # Copy actual source code
 COPY src/ ./src/
 
 # Build the actual binary
-RUN export TARGET=$(cat /target.txt) && \
-    export CC=$(cat /cc.txt) && \
-    cargo build --release --target $TARGET && \
-    cp target/$TARGET/release/secureguard-poc /secureguard
+RUN cargo build --release && \
+    cp target/release/secureguard-poc /secureguard
 
 # -----------------------------------------------------------------------------
 # Stage 2: Create minimal runtime image

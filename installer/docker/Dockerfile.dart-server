@@ -14,11 +14,14 @@ WORKDIR /app
 # Copy pubspec files first for better layer caching
 COPY secureguard-server/pubspec.* ./
 
-# Get dependencies
+# Get dependencies (initial fetch for layer caching)
 RUN dart pub get
 
 # Copy the rest of the source code
 COPY secureguard-server/ ./
+
+# Re-run pub get to ensure dependencies are properly resolved
+RUN dart pub get --offline || dart pub get
 
 # Compile to native executable
 RUN dart compile exe bin/server.dart -o server

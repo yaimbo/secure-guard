@@ -8,6 +8,7 @@
 
 pub mod auth;
 pub mod ipc;
+pub mod persistence;
 pub mod routes;
 
 use std::sync::Arc;
