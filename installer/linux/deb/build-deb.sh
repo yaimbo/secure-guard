@@ -6,6 +6,7 @@ set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 INSTALLER_DIR="$(dirname "$SCRIPT_DIR")"
+PROJECT_ROOT="$(dirname "$(dirname "$INSTALLER_DIR")")"
 BUILD_DIR="$INSTALLER_DIR/build"
 
 VERSION="${1:-1.0.0}"
@@ -63,16 +64,18 @@ cp "$INSTALLER_DIR/secureguard.service" "$PKG_ROOT/etc/systemd/system/"
 log_info "Copying desktop file..."
 cp "$INSTALLER_DIR/shared/secureguard.desktop" "$PKG_ROOT/usr/share/applications/"
 
-# Copy icons (if they exist)
-if [ -d "$INSTALLER_DIR/../secureguard_client/assets/icons" ]; then
-    log_info "Copying icons..."
-    # Use the connected icon as the app icon
-    for size in 48 128 256; do
-        if [ -f "$INSTALLER_DIR/../secureguard_client/assets/icons/icon_connected.png" ]; then
-            cp "$INSTALLER_DIR/../secureguard_client/assets/icons/icon_connected.png" \
-               "$PKG_ROOT/usr/share/icons/hicolor/${size}x${size}/apps/secureguard.png"
-        fi
-    done
+# Copy app icons from macOS asset catalog (properly sized)
+ICON_SOURCE="$PROJECT_ROOT/secureguard_client/macos/Runner/Assets.xcassets/AppIcon.appiconset"
+if [ -d "$ICON_SOURCE" ]; then
+    log_info "Copying app icons..."
+    # Use closest available sizes from the asset catalog
+    cp "$ICON_SOURCE/app_icon_128.png" "$PKG_ROOT/usr/share/icons/hicolor/48x48/apps/secureguard.png"
+    cp "$ICON_SOURCE/app_icon_128.png" "$PKG_ROOT/usr/share/icons/hicolor/128x128/apps/secureguard.png"
+    cp "$ICON_SOURCE/app_icon_256.png" "$PKG_ROOT/usr/share/icons/hicolor/256x256/apps/secureguard.png"
+else
+    echo "ERROR: App icons not found at $ICON_SOURCE"
+    echo "Icons are required for desktop integration. Ensure the Flutter client has been built."
+    exit 1
 fi
 
 # Generate control file

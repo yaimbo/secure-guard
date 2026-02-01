@@ -6,6 +6,7 @@ set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 INSTALLER_DIR="$(dirname "$SCRIPT_DIR")"
+PROJECT_ROOT="$(dirname "$(dirname "$INSTALLER_DIR")")"
 BUILD_DIR="$INSTALLER_DIR/build"
 
 VERSION="${1:-1.0.0}"
@@ -47,10 +48,17 @@ cp "$INSTALLER_DIR/secureguard.service" "$SOURCE_DIR/"
 # Copy desktop file
 cp "$INSTALLER_DIR/shared/secureguard.desktop" "$SOURCE_DIR/"
 
-# Copy icons
-if [ -d "$INSTALLER_DIR/../secureguard_client/assets/icons" ]; then
+# Copy app icons from macOS asset catalog (properly sized)
+ICON_SOURCE="$PROJECT_ROOT/secureguard_client/macos/Runner/Assets.xcassets/AppIcon.appiconset"
+if [ -d "$ICON_SOURCE" ]; then
     mkdir -p "$SOURCE_DIR/icons"
-    cp "$INSTALLER_DIR/../secureguard_client/assets/icons/icon_connected.png" "$SOURCE_DIR/icons/secureguard.png" 2>/dev/null || true
+    cp "$ICON_SOURCE/app_icon_128.png" "$SOURCE_DIR/icons/secureguard-48.png"
+    cp "$ICON_SOURCE/app_icon_128.png" "$SOURCE_DIR/icons/secureguard-128.png"
+    cp "$ICON_SOURCE/app_icon_256.png" "$SOURCE_DIR/icons/secureguard-256.png"
+else
+    echo "ERROR: App icons not found at $ICON_SOURCE"
+    echo "Icons are required for desktop integration. Ensure the Flutter client has been built."
+    exit 1
 fi
 
 # Create tarball

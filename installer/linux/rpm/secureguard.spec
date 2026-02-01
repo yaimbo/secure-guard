@@ -48,12 +48,10 @@ install -m 644 secureguard.service %{buildroot}/etc/systemd/system/
 # Install desktop file
 install -m 644 secureguard.desktop %{buildroot}/usr/share/applications/
 
-# Install icons
-if [ -f icons/secureguard.png ]; then
-    for size in 48 128 256; do
-        install -m 644 icons/secureguard.png %{buildroot}/usr/share/icons/hicolor/${size}x${size}/apps/
-    done
-fi
+# Install icons (properly sized - guaranteed to exist by build-rpm.sh)
+install -m 644 icons/secureguard-48.png %{buildroot}/usr/share/icons/hicolor/48x48/apps/secureguard.png
+install -m 644 icons/secureguard-128.png %{buildroot}/usr/share/icons/hicolor/128x128/apps/secureguard.png
+install -m 644 icons/secureguard-256.png %{buildroot}/usr/share/icons/hicolor/256x256/apps/secureguard.png
 
 %pre
 # Pre-installation: Stop existing service
@@ -126,6 +124,9 @@ fi
 /opt/secureguard/
 %config /etc/systemd/system/secureguard.service
 /usr/share/applications/secureguard.desktop
+/usr/share/icons/hicolor/48x48/apps/secureguard.png
+/usr/share/icons/hicolor/128x128/apps/secureguard.png
+/usr/share/icons/hicolor/256x256/apps/secureguard.png
 %dir %attr(700, root, root) /var/lib/secureguard
 %dir %attr(750, root, secureguard) /var/run/secureguard
 %dir %attr(750, root, secureguard) /var/log/secureguard
