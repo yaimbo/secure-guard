@@ -26,7 +26,7 @@ BLUE='\033[0;34m'
 NC='\033[0m' # No Color
 
 # Configuration
-REGISTRY="${DOCKER_REGISTRY:-yaimbo}"
+REGISTRY="${DOCKER_REGISTRY:-minnowvpn}"
 IMAGES=(
     "api:Dockerfile.dart-server"
     "console:Dockerfile.flutter-console"

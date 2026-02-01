@@ -92,7 +92,7 @@ services:
   # Dart REST API Server
   # ===========================================================================
   dart-server:
-    image: yaimbo/api:${VERSION:-latest}
+    image: minnowvpn/api:${VERSION:-latest}
     container_name: secureguard-api
     secrets:
       - db_password
@@ -141,7 +141,7 @@ services:
   # Flutter Web Management Console
   # ===========================================================================
   flutter-console:
-    image: yaimbo/console:${VERSION:-latest}
+    image: minnowvpn/console:${VERSION:-latest}
     container_name: secureguard-console
     networks:
       - secureguard
@@ -165,7 +165,7 @@ services:
   # Rust WireGuard VPN Daemon
   # ===========================================================================
   vpn-daemon:
-    image: yaimbo/vpn:${VERSION:-latest}
+    image: minnowvpn/vpn:${VERSION:-latest}
     container_name: secureguard-vpn
     command: ["secureguard", "--daemon", "--http-port", "51821"]
     # Host networking required for TUN device and routing table access
