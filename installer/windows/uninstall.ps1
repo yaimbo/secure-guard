@@ -50,6 +50,23 @@ if ($All) {
     $Logs = $true
 }
 
+# Stop Flutter desktop app if running
+function Stop-SecureGuardApp {
+    Write-Host "[INFO] Checking for running SecureGuard app..." -ForegroundColor Green
+
+    # Try various possible process names for the Flutter app
+    $processNames = @("SecureGuard", "secureguard_client", "secureguard")
+
+    foreach ($procName in $processNames) {
+        $procs = Get-Process -Name $procName -ErrorAction SilentlyContinue
+        if ($procs) {
+            Write-Host "[INFO] Stopping $procName..." -ForegroundColor Green
+            $procs | Stop-Process -Force -ErrorAction SilentlyContinue
+            Start-Sleep -Seconds 1
+        }
+    }
+}
+
 # Stop and remove service
 function Remove-SecureGuardService {
     Write-Host "[INFO] Checking for service..." -ForegroundColor Green
@@ -102,6 +119,23 @@ function Remove-StartMenuShortcut {
     }
 }
 
+# Remove Desktop shortcuts (for all users and current user)
+function Remove-DesktopShortcuts {
+    $shortcuts = @(
+        "$env:PUBLIC\Desktop\SecureGuard VPN.lnk",
+        "$env:USERPROFILE\Desktop\SecureGuard VPN.lnk",
+        "$env:PUBLIC\Desktop\SecureGuard.lnk",
+        "$env:USERPROFILE\Desktop\SecureGuard.lnk"
+    )
+
+    foreach ($shortcut in $shortcuts) {
+        if (Test-Path $shortcut) {
+            Write-Host "[INFO] Removing desktop shortcut: $shortcut" -ForegroundColor Green
+            Remove-Item -Path $shortcut -Force
+        }
+    }
+}
+
 # Remove URL scheme registration
 function Remove-UrlScheme {
     $regPath = "HKCR:\secureguard"
@@ -132,8 +166,10 @@ function Show-CompletionMessage {
 
 # Main uninstallation flow
 try {
+    Stop-SecureGuardApp
     Remove-SecureGuardService
     Remove-StartMenuShortcut
+    Remove-DesktopShortcuts
     Remove-UrlScheme
     Remove-InstallDirectory
     Remove-DataDirectory

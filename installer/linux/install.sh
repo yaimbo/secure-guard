@@ -243,6 +243,29 @@ install_binary() {
     log_info "Binary installed and verified (SHA256: ${dest_hash:0:16}...)"
 }
 
+# Install uninstall script (for in-app uninstall feature)
+install_uninstall_script() {
+    local script_source="$SCRIPT_DIR/uninstall.sh"
+    local app_dir="/opt/secureguard"
+    local script_dest="$app_dir/uninstall.sh"
+
+    if [ -f "$script_source" ]; then
+        log_info "Installing uninstall script..."
+
+        # Create app directory if it doesn't exist
+        mkdir -p "$app_dir"
+
+        # Copy and set permissions
+        cp "$script_source" "$script_dest"
+        chown root:root "$script_dest"
+        chmod 755 "$script_dest"
+
+        log_info "Uninstall script installed to $script_dest"
+    else
+        log_warn "Uninstall script not found at $script_source"
+    fi
+}
+
 # Set capabilities
 set_capabilities() {
     log_info "Setting capabilities..."
@@ -373,6 +396,7 @@ main() {
     create_secureguard_group
     create_directories
     install_binary "$binary_path"
+    install_uninstall_script
     set_capabilities
     install_service
     start_service

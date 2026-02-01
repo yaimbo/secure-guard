@@ -208,6 +208,20 @@ function Install-Binary {
     return $destPath
 }
 
+# Install uninstall script (for in-app uninstall feature)
+function Install-UninstallScript {
+    $scriptSource = Join-Path $PSScriptRoot "uninstall.ps1"
+    $scriptDest = "$InstallDir\uninstall.ps1"
+
+    if (Test-Path $scriptSource) {
+        Write-Info "Installing uninstall script..."
+        Copy-Item -Path $scriptSource -Destination $scriptDest -Force
+        Write-Info "Uninstall script installed to $scriptDest"
+    } else {
+        Write-Warn "Uninstall script not found at $scriptSource"
+    }
+}
+
 # Create Windows Service
 function New-VpnService {
     param([string]$BinaryPath)
@@ -374,6 +388,7 @@ function Main {
     New-Directories
 
     $installedBinary = Install-Binary -SourcePath $binary
+    Install-UninstallScript
     New-VpnService -BinaryPath $installedBinary
     Set-FirewallRules
 

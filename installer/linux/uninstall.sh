@@ -85,6 +85,22 @@ while [[ $# -gt 0 ]]; do
     esac
 done
 
+# Stop Flutter desktop app if running
+stop_app() {
+    log_info "Checking for running SecureGuard app..."
+
+    # Kill any running SecureGuard GUI processes
+    if pkill -f "secureguard_client" 2>/dev/null; then
+        log_info "Stopped secureguard_client"
+        sleep 1
+    fi
+
+    if pkill -f "SecureGuard" 2>/dev/null; then
+        log_info "Stopped SecureGuard"
+        sleep 1
+    fi
+}
+
 # Stop and disable service
 stop_service() {
     if systemctl is-active --quiet "$SERVICE_NAME" 2>/dev/null; then
@@ -141,6 +157,15 @@ remove_client() {
         log_info "Removing desktop file..."
         rm -f "$DESKTOP_FILE"
     fi
+
+    # Also check for user-specific desktop entries
+    for user_home in /home/*; do
+        local user_desktop="$user_home/.local/share/applications/secureguard.desktop"
+        if [ -f "$user_desktop" ]; then
+            log_info "Removing user desktop entry: $user_desktop"
+            rm -f "$user_desktop"
+        fi
+    done
 
     # Remove icons
     for size in 48 128 256; do
@@ -230,6 +255,7 @@ print_completion() {
 
 # Main uninstallation flow
 main() {
+    stop_app
     stop_service
     remove_service
     remove_daemon_binary
