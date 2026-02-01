@@ -203,8 +203,12 @@ create_directories() {
     mkdir -p "$RUN_DIR"
     mkdir -p "$LOG_DIR"
 
-    # Set permissions
-    chmod 700 "$DATA_DIR"
+    # Data directory: root:secureguard, 750
+    # Stores persistent connection state for auto-reconnect on boot
+    chown root:$SECUREGUARD_GROUP "$DATA_DIR"
+    chmod 750 "$DATA_DIR"
+
+    # Log directory
     chmod 750 "$LOG_DIR"
 
     # Token directory: root:secureguard, 750

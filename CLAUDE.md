@@ -150,10 +150,11 @@ This is a WireGuard-compatible VPN client/server implementing the Noise IKpsk2 h
 - **server.rs** - Server event loop: multi-peer support, incoming handshake handling (responder mode)
 
 - **daemon/** - Daemon mode for service/REST API control
-  - `mod.rs` - DaemonService with HTTP server (axum)
+  - `mod.rs` - DaemonService with HTTP server (axum), auto-connect on startup
   - `ipc.rs` - Message types and DTOs (reused from JSON-RPC)
   - `auth.rs` - Token generation and Bearer auth middleware
   - `routes.rs` - REST API route handlers
+  - `persistence.rs` - Connection state persistence for auto-reconnect on reboot
 
 ### CLI Usage
 
@@ -216,6 +217,7 @@ The Flutter desktop client connects to the client port. The Dart REST server con
 - `status_changed` - Connection state changes
 - `config_updated` - Config update succeeded (includes vpn_ip, server_endpoint)
 - `config_update_failed` - Config update failed (includes error, rolled_back)
+- `auto_connect_retry` - Auto-reconnect attempt status (includes attempt, status, next_retry_secs, error)
 
 **SSE Event Types (Server Mode):**
 - `server_status_changed` - Server state changes
@@ -281,6 +283,17 @@ sudo ./uninstall.sh --all    # Remove everything including app, data, logs
 4. **Stale Route Cleanup**: Uses a persistent state file (`/var/run/secureguard_routes.json` on Unix, `C:\ProgramData\SecureGuard\routes.json` on Windows) to track routes added during a session. On startup, if the state file exists and the recorded interface no longer exists, the exact routes from the file are cleaned up. This deterministic approach avoids the fragility of parsing routing tables.
 
 5. **Graceful Shutdown**: Handles both Ctrl+C (SIGINT) and SIGTERM signals. On shutdown, all routes added during the session are removed and the state file is deleted to prevent orphaned routes.
+
+6. **Auto-Reconnect on Boot**: The daemon persists connection state to enable automatic reconnection after system reboot. When the daemon starts, it checks for a state file and auto-connects if `desired_state` is `connected`. The auto-reconnect uses infinite retry with exponential backoff (5s → 10s → 30s → 60s, then 60s forever) to handle network unavailability at boot. Retries only stop when: (1) connection succeeds, or (2) user explicitly disconnects via the API.
+
+   **State file locations:**
+   - Unix: `/var/lib/secureguard/connection-state.json` (permissions: `root:secureguard 0640`)
+   - Windows: `C:\ProgramData\SecureGuard\connection-state.json`
+
+   **State persistence triggers:**
+   - `POST /connect` - Saves state BEFORE connecting (ensures config survives crash during connect)
+   - `POST /disconnect` - Sets `desired_state=disconnected` (prevents auto-reconnect)
+   - `PUT /config` - Updates stored config (auto-reconnect uses new config after reboot)
 
 ### Debug Binaries
 

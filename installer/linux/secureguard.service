@@ -108,8 +108,9 @@ RestrictNamespaces=yes
 WorkingDirectory=/var/lib/secureguard
 RuntimeDirectory=secureguard
 RuntimeDirectoryMode=0755
+# State directory for persistent connection state (auto-reconnect on boot)
 StateDirectory=secureguard
-StateDirectoryMode=0700
+StateDirectoryMode=0750
 LogsDirectory=secureguard
 LogsDirectoryMode=0750
 

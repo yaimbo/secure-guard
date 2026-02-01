@@ -116,9 +116,11 @@ Section "SecureGuard VPN Service" SecMain
     CreateDirectory "$COMMONPROGRAMDATA\SecureGuard"
     CreateDirectory "$COMMONPROGRAMDATA\SecureGuard\logs"
 
-    ; Set permissions on data directory (SYSTEM and Administrators only)
+    ; Set permissions on data directory
+    ; - SYSTEM and Administrators: Full Control (for daemon and admin management)
+    ; - Users: Read access (for Flutter client to read auth token)
     DetailPrint "Setting directory permissions..."
-    nsExec::ExecToLog 'icacls "$COMMONPROGRAMDATA\SecureGuard" /inheritance:r /grant:r "SYSTEM:(OI)(CI)F" /grant:r "Administrators:(OI)(CI)F"'
+    nsExec::ExecToLog 'icacls "$COMMONPROGRAMDATA\SecureGuard" /inheritance:r /grant:r "SYSTEM:(OI)(CI)F" /grant:r "Administrators:(OI)(CI)F" /grant:r "Users:(OI)(CI)R"'
 
     ; Create the Windows Service
     DetailPrint "Creating Windows Service..."

@@ -46,7 +46,7 @@ stop_existing_service() {
     log "Existing service cleanup completed"
 }
 
-# Clean up old token file so daemon creates fresh one with correct permissions
+# Clean up old files so daemon creates fresh ones with correct permissions
 cleanup_old_files() {
     log "Cleaning up old files..."
 
@@ -54,6 +54,13 @@ cleanup_old_files() {
     if [ -f "/var/run/secureguard/auth-token" ]; then
         rm -f "/var/run/secureguard/auth-token"
         log "Removed old auth token"
+    fi
+
+    # Remove old connection state file on upgrade (ensures clean state)
+    # After upgrade, daemon starts disconnected until user connects again
+    if [ -f "/var/lib/secureguard/connection-state.json" ]; then
+        rm -f "/var/lib/secureguard/connection-state.json"
+        log "Removed old connection state file (clean upgrade)"
     fi
 
     log "Cleanup completed"

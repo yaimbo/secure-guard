@@ -20,6 +20,7 @@ use tokio_stream::wrappers::BroadcastStream;
 use tokio_stream::StreamExt;
 
 use super::ipc::*;
+use super::persistence::{self, ConnectionStateFile, DesiredState};
 use super::{DaemonState, VpnMode};
 use crate::protocol::session::PeerManager;
 use crate::{WireGuardClient, WireGuardConfig, WireGuardServer};
@@ -209,6 +210,22 @@ pub async fn handle_connect(
 
     let config_for_storage = config.clone();
 
+    // PERSIST STATE: Save state BEFORE connecting (so crash during connect still has config)
+    // This enables auto-reconnect on daemon restart
+    let state_file = ConnectionStateFile {
+        schema_version: 1,
+        desired_state: DesiredState::Connected,
+        config: Some(request.config.clone()),
+        vpn_ip: Some(vpn_ip.clone()),
+        server_endpoint: Some(server_endpoint.clone()),
+        last_connected_at: None, // Will be set on successful connection
+        last_updated_at: persistence::iso_now(),
+        retry_count: 0,
+    };
+    if let Err(e) = persistence::save_connection_state(&state_file) {
+        tracing::warn!("Failed to persist connection state: {} (auto-reconnect may not work)", e);
+    }
+
     // Create client
     match WireGuardClient::new(config, Some(traffic_stats)).await {
         Ok(client) => {
@@ -229,6 +246,11 @@ pub async fn handle_connect(
             }
 
             send_status_notification(&state).await;
+
+            // PERSIST STATE: Update last_connected_at on successful connection
+            if let Err(e) = persistence::update_last_connected() {
+                tracing::warn!("Failed to update last_connected_at: {}", e);
+            }
 
             // Spawn client task
             spawn_client_task(client, shutdown_rx, state.daemon_state.clone(), state.status_tx.clone());
@@ -279,6 +301,12 @@ pub async fn handle_disconnect(
         let _ = shutdown_tx.send(true);
     }
     drop(s);
+
+    // PERSIST STATE: Set desired_state to disconnected (keeps config for quick reconnect)
+    // This prevents auto-reconnect on daemon restart
+    if let Err(e) = persistence::update_desired_state(DesiredState::Disconnected) {
+        tracing::warn!("Failed to update desired state: {}", e);
+    }
 
     send_status_notification(&state).await;
     tokio::time::sleep(tokio::time::Duration::from_millis(100)).await;
@@ -468,6 +496,22 @@ pub async fn handle_update_config(
             });
             let _ = state.status_tx.send(serde_json::to_string(&notification).unwrap());
 
+            // PERSIST STATE: Update stored config for auto-reconnect on reboot
+            // This ensures reboots use the NEW config, not the old one
+            let state_file = ConnectionStateFile {
+                schema_version: 1,
+                desired_state: DesiredState::Connected,
+                config: Some(request.config.clone()),
+                vpn_ip: Some(new_vpn_ip.clone()),
+                server_endpoint: Some(new_endpoint.clone()),
+                last_connected_at: Some(persistence::iso_now()),
+                last_updated_at: persistence::iso_now(),
+                retry_count: 0,
+            };
+            if let Err(e) = persistence::save_connection_state(&state_file) {
+                tracing::warn!("Failed to persist updated config: {} (auto-reconnect may use old config)", e);
+            }
+
             // Start the client run loop in background
             spawn_client_task(client, shutdown_rx, state.daemon_state.clone(), state.status_tx.clone());
 
@@ -520,6 +564,9 @@ pub async fn handle_update_config(
                         }
 
                         send_status_notification(&state).await;
+
+                        // NOTE: We don't update the state file here - it already has the old (working) config
+                        // from the original connect. On reboot, auto-connect will use that config.
 
                         // Send rolled_back notification
                         let notification = serde_json::json!({

@@ -57,8 +57,10 @@ create_directories() {
     mkdir -p "$DATA_DIR"
     mkdir -p "$TOKEN_DIR"
 
-    # Set permissions on data directory (owner only)
-    chmod 700 "$DATA_DIR"
+    # Set permissions on data directory (root:secureguard, 750)
+    # Stores persistent connection state for auto-reconnect on boot
+    chown root:$SECUREGUARD_GROUP "$DATA_DIR"
+    chmod 750 "$DATA_DIR"
 
     # Set permissions on token directory (root:secureguard, 750)
     chown root:$SECUREGUARD_GROUP "$TOKEN_DIR"
