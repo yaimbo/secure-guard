@@ -10,7 +10,7 @@ Conflicts=shutdown.target
 
 [Service]
 Type=simple
-ExecStart=/usr/local/bin/secureguard-service --daemon --socket /var/run/secureguard/secureguard.sock
+ExecStart=/usr/local/bin/secureguard-service --daemon
 ExecReload=/bin/kill -HUP $MAINPID
 ExecStop=/bin/kill -TERM $MAINPID
 

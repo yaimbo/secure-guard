@@ -1,0 +1,31 @@
+#!/bin/bash
+# SecureGuard VPN - Pre-installation script
+# Stops existing service and cleans up old files
+
+set -e
+
+SERVICE_NAME="secureguard"
+RUN_DIR="/var/run/secureguard"
+
+echo "SecureGuard: Pre-installation cleanup..."
+
+# Stop existing service if running
+if systemctl is-active --quiet "$SERVICE_NAME" 2>/dev/null; then
+    echo "Stopping existing SecureGuard service..."
+    systemctl stop "$SERVICE_NAME" || true
+    sleep 2
+fi
+
+# Disable service if enabled
+if systemctl is-enabled --quiet "$SERVICE_NAME" 2>/dev/null; then
+    systemctl disable "$SERVICE_NAME" || true
+fi
+
+# Remove old auth token (daemon will create new one on startup)
+if [ -f "$RUN_DIR/auth-token" ]; then
+    echo "Removing old auth token..."
+    rm -f "$RUN_DIR/auth-token"
+fi
+
+echo "Pre-installation cleanup complete."
+exit 0

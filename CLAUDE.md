@@ -230,7 +230,8 @@ The Flutter desktop client connects to the client port. The Dart REST server con
 - macOS: `installer/macos/install.sh` (LaunchDaemon manual install)
 - macOS: `installer/macos/build-dmg.sh` (unified PKG installer)
 - macOS: `installer/macos/uninstall.sh` (CLI uninstall, also bundled in PKG for in-app use)
-- Linux: `installer/linux/install.sh` (systemd)
+- Linux: `installer/linux/install.sh` (systemd manual install)
+- Linux: `installer/linux/build-package.sh` (.deb/.rpm packages via Docker)
 - Linux: `installer/linux/uninstall.sh` (CLI uninstall)
 - Windows: `installer/windows/install.ps1` (Windows Service)
 - Windows: `installer/windows/uninstall.ps1` (PowerShell uninstall)
@@ -278,6 +279,51 @@ To uninstall:
 cd installer/macos
 sudo ./uninstall.sh          # Remove service only
 sudo ./uninstall.sh --all    # Remove everything including app, data, logs
+```
+
+**Linux Installer Build:**
+
+Prerequisites (native build):
+- Rust toolchain
+- Flutter SDK
+- `dpkg-deb` (for .deb packages)
+- `rpmbuild` (for .rpm packages)
+
+Build packages using Docker (works from macOS/Windows):
+```bash
+cd installer/linux
+./build-package.sh 1.0.0                           # Build native arch, both formats
+./build-package.sh 1.0.0 --arch=aarch64            # Build ARM64
+./build-package.sh 1.0.0 --arch=x86_64             # Build x86_64
+./build-package.sh 1.0.0 --format=deb              # Build .deb only
+./build-package.sh 1.0.0 --format=rpm              # Build .rpm only
+./build-package.sh 1.0.0 --docker                  # Force Docker build
+```
+
+Output: `installer/linux/build/secureguard_<VERSION>_<ARCH>.deb` and/or `secureguard-<VERSION>-1.<ARCH>.rpm`
+
+The packages include:
+- VPN daemon service at `/usr/local/bin/secureguard-service`
+- Flutter client at `/opt/secureguard/secureguard_client`
+- Symlink `/usr/local/bin/secureguard` -> client
+- systemd service file at `/etc/systemd/system/secureguard.service`
+- Desktop file for app menu integration
+- preinst/postinst scripts (create group, set permissions, start service)
+
+To test installation in Docker:
+```bash
+./installer/linux/docker-test.sh debian    # Test .deb on Debian
+./installer/linux/docker-test.sh fedora    # Test .rpm on Fedora
+```
+
+To install:
+```bash
+# Debian/Ubuntu
+sudo dpkg -i secureguard_1.0.0_arm64.deb
+sudo apt-get install -f  # Fix dependencies if needed
+
+# Fedora/RHEL
+sudo rpm -i secureguard-1.0.0-1.aarch64.rpm
 ```
 
 ### Key Implementation Details

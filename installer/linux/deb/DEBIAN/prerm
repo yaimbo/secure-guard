@@ -1,0 +1,25 @@
+#!/bin/bash
+# SecureGuard VPN - Pre-removal script
+# Stops and disables the service before package removal
+
+set -e
+
+SERVICE_NAME="secureguard"
+
+echo "SecureGuard: Preparing for removal..."
+
+# Stop the service
+if systemctl is-active --quiet "$SERVICE_NAME" 2>/dev/null; then
+    echo "Stopping SecureGuard service..."
+    systemctl stop "$SERVICE_NAME" || true
+    sleep 2
+fi
+
+# Disable the service
+if systemctl is-enabled --quiet "$SERVICE_NAME" 2>/dev/null; then
+    echo "Disabling SecureGuard service..."
+    systemctl disable "$SERVICE_NAME" || true
+fi
+
+echo "Pre-removal complete."
+exit 0

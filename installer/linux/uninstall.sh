@@ -1,6 +1,6 @@
 #!/bin/bash
-# SecureGuard VPN Service Uninstaller for Linux
-# This script removes the daemon service and cleans up
+# SecureGuard VPN Uninstaller for Linux
+# This script removes the daemon service, client app, and cleans up
 
 set -euo pipefail
 
@@ -11,7 +11,9 @@ SYSTEMD_DIR="/etc/systemd/system"
 DATA_DIR="/var/lib/secureguard"
 RUN_DIR="/var/run/secureguard"
 LOG_DIR="/var/log/secureguard"
-SOCKET_PATH="$RUN_DIR/secureguard.sock"
+CLIENT_DIR="/opt/secureguard"
+DESKTOP_FILE="/usr/share/applications/secureguard.desktop"
+SECUREGUARD_GROUP="secureguard"
 
 # Colors for output
 RED='\033[0;31m'
@@ -26,9 +28,9 @@ log_error() { echo -e "${RED}[ERROR]${NC} $1"; }
 
 # Print banner
 echo ""
-echo "╔═══════════════════════════════════════════════════════════╗"
-echo "║       SecureGuard VPN Service Uninstaller for Linux       ║"
-echo "╚═══════════════════════════════════════════════════════════╝"
+echo "=============================================================="
+echo "          SecureGuard VPN Uninstaller for Linux              "
+echo "=============================================================="
 echo ""
 
 # Check for root privileges
@@ -41,12 +43,14 @@ fi
 # Parse arguments
 REMOVE_DATA=false
 REMOVE_LOGS=false
+REMOVE_CLIENT=true  # Default: remove client with daemon
 
 while [[ $# -gt 0 ]]; do
     case $1 in
         --all)
             REMOVE_DATA=true
             REMOVE_LOGS=true
+            REMOVE_CLIENT=true
             shift
             ;;
         --data)
@@ -57,14 +61,21 @@ while [[ $# -gt 0 ]]; do
             REMOVE_LOGS=true
             shift
             ;;
+        --daemon-only)
+            REMOVE_CLIENT=false
+            shift
+            ;;
         -h|--help)
             echo "Usage: sudo $0 [OPTIONS]"
             echo ""
             echo "Options:"
-            echo "  --all     Remove everything including data and logs"
-            echo "  --data    Remove data directory (/var/lib/secureguard)"
-            echo "  --logs    Remove log directory (/var/log/secureguard)"
-            echo "  -h, --help  Show this help message"
+            echo "  --all          Remove everything including data and logs"
+            echo "  --data         Remove data directory (/var/lib/secureguard)"
+            echo "  --logs         Remove log directory (/var/log/secureguard)"
+            echo "  --daemon-only  Only remove daemon, keep client app"
+            echo "  -h, --help     Show this help message"
+            echo ""
+            echo "By default, removes both daemon and client but preserves data/logs."
             exit 0
             ;;
         *)
@@ -99,21 +110,60 @@ remove_service() {
     fi
 }
 
-# Remove binary
-remove_binary() {
+# Remove daemon binary
+remove_daemon_binary() {
     if [ -f "$INSTALL_DIR/secureguard-service" ]; then
-        log_info "Removing binary..."
+        log_info "Removing daemon binary..."
         rm -f "$INSTALL_DIR/secureguard-service"
     fi
 }
 
-# Remove socket and runtime directory
-remove_runtime() {
-    if [ -S "$SOCKET_PATH" ]; then
-        log_info "Removing socket..."
-        rm -f "$SOCKET_PATH"
+# Remove client application
+remove_client() {
+    if [ "$REMOVE_CLIENT" = false ]; then
+        return
     fi
 
+    # Remove client symlink
+    if [ -L "$INSTALL_DIR/secureguard" ]; then
+        log_info "Removing client symlink..."
+        rm -f "$INSTALL_DIR/secureguard"
+    fi
+
+    # Remove client application directory
+    if [ -d "$CLIENT_DIR" ]; then
+        log_info "Removing client application..."
+        rm -rf "$CLIENT_DIR"
+    fi
+
+    # Remove desktop file
+    if [ -f "$DESKTOP_FILE" ]; then
+        log_info "Removing desktop file..."
+        rm -f "$DESKTOP_FILE"
+    fi
+
+    # Remove icons
+    for size in 48 128 256; do
+        local icon_path="/usr/share/icons/hicolor/${size}x${size}/apps/secureguard.png"
+        if [ -f "$icon_path" ]; then
+            rm -f "$icon_path"
+        fi
+    done
+    log_info "Removed icons"
+
+    # Update desktop database
+    if command -v update-desktop-database &>/dev/null; then
+        update-desktop-database /usr/share/applications 2>/dev/null || true
+    fi
+
+    # Update icon cache
+    if command -v gtk-update-icon-cache &>/dev/null; then
+        gtk-update-icon-cache -f -t /usr/share/icons/hicolor 2>/dev/null || true
+    fi
+}
+
+# Remove runtime directory
+remove_runtime() {
     if [ -d "$RUN_DIR" ]; then
         log_info "Removing runtime directory..."
         rm -rf "$RUN_DIR"
@@ -136,12 +186,29 @@ remove_logs() {
     fi
 }
 
+# Remove group if empty
+remove_group() {
+    if [ "$REMOVE_DATA" = true ]; then
+        if getent group "$SECUREGUARD_GROUP" > /dev/null 2>&1; then
+            # Check if any users are still in the group
+            local group_members
+            group_members=$(getent group "$SECUREGUARD_GROUP" | cut -d: -f4)
+            if [ -z "$group_members" ]; then
+                log_info "Removing $SECUREGUARD_GROUP group..."
+                groupdel "$SECUREGUARD_GROUP" 2>/dev/null || true
+            else
+                log_info "Group $SECUREGUARD_GROUP still has members, keeping it"
+            fi
+        fi
+    fi
+}
+
 # Print completion message
 print_completion() {
     echo ""
-    echo "╔═══════════════════════════════════════════════════════════╗"
-    echo "║           Uninstallation Complete Successfully!           ║"
-    echo "╚═══════════════════════════════════════════════════════════╝"
+    echo "=============================================================="
+    echo "           Uninstallation Complete Successfully!              "
+    echo "=============================================================="
     echo ""
 
     if [ "$REMOVE_DATA" = false ] && [ -d "$DATA_DIR" ]; then
@@ -165,10 +232,12 @@ print_completion() {
 main() {
     stop_service
     remove_service
-    remove_binary
+    remove_daemon_binary
+    remove_client
     remove_runtime
     remove_data
     remove_logs
+    remove_group
     print_completion
 }
 

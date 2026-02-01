@@ -1,0 +1,131 @@
+#!/bin/bash
+# SecureGuard VPN - Post-installation script
+# Sets up directories, permissions, group, and starts the service
+
+set -e
+
+SERVICE_NAME="secureguard"
+SECUREGUARD_GROUP="secureguard"
+DATA_DIR="/var/lib/secureguard"
+RUN_DIR="/var/run/secureguard"
+LOG_DIR="/var/log/secureguard"
+
+echo "SecureGuard: Running post-installation setup..."
+
+# ============================================================================
+# Create secureguard group for token access
+# ============================================================================
+echo "Setting up secureguard group..."
+
+if ! getent group "$SECUREGUARD_GROUP" > /dev/null 2>&1; then
+    echo "Creating group: $SECUREGUARD_GROUP"
+    groupadd -f "$SECUREGUARD_GROUP"
+fi
+
+# Add the user who ran the installation to the group
+# This allows them to access the auth token without sudo
+if [ -n "${SUDO_USER:-}" ] && [ "$SUDO_USER" != "root" ]; then
+    if ! id -nG "$SUDO_USER" 2>/dev/null | grep -qw "$SECUREGUARD_GROUP"; then
+        echo "Adding user $SUDO_USER to $SECUREGUARD_GROUP group"
+        usermod -aG "$SECUREGUARD_GROUP" "$SUDO_USER"
+    fi
+fi
+
+# ============================================================================
+# Create directories with proper permissions
+# ============================================================================
+echo "Creating directories..."
+
+# Data directory (private to daemon)
+mkdir -p "$DATA_DIR"
+chmod 700 "$DATA_DIR"
+
+# Runtime directory (for auth token)
+mkdir -p "$RUN_DIR"
+chown root:$SECUREGUARD_GROUP "$RUN_DIR"
+chmod 750 "$RUN_DIR"
+
+# Log directory
+mkdir -p "$LOG_DIR"
+chown root:$SECUREGUARD_GROUP "$LOG_DIR"
+chmod 750 "$LOG_DIR"
+
+# ============================================================================
+# Set binary capabilities (optional, systemd also grants these)
+# ============================================================================
+if command -v setcap &>/dev/null; then
+    echo "Setting capabilities on daemon binary..."
+    setcap cap_net_admin,cap_net_raw,cap_net_bind_service=eip /usr/local/bin/secureguard-service 2>/dev/null || true
+fi
+
+# ============================================================================
+# Reload systemd and enable service (if systemd is running)
+# ============================================================================
+if pidof systemd &>/dev/null; then
+    echo "Configuring systemd service..."
+
+    systemctl daemon-reload
+    systemctl enable "$SERVICE_NAME"
+
+    # ============================================================================
+    # Start the service
+    # ============================================================================
+    echo "Starting SecureGuard service..."
+
+    systemctl start "$SERVICE_NAME"
+
+    # Wait a moment for service to start
+    sleep 2
+
+    # Verify service is running
+    if systemctl is-active --quiet "$SERVICE_NAME"; then
+        echo "SecureGuard service started successfully."
+    else
+        echo "Warning: Service may not have started correctly."
+        echo "Check status with: sudo systemctl status secureguard"
+    fi
+else
+    echo "Note: systemd not detected. Service will start on next boot."
+    echo "You can manually start the daemon with: /usr/local/bin/secureguard-service --daemon"
+fi
+
+# ============================================================================
+# Update desktop database
+# ============================================================================
+if command -v update-desktop-database &>/dev/null; then
+    echo "Updating desktop database..."
+    update-desktop-database /usr/share/applications 2>/dev/null || true
+fi
+
+# Update icon cache
+if command -v gtk-update-icon-cache &>/dev/null; then
+    echo "Updating icon cache..."
+    gtk-update-icon-cache -f -t /usr/share/icons/hicolor 2>/dev/null || true
+fi
+
+# ============================================================================
+# Print completion message
+# ============================================================================
+echo ""
+echo "=============================================================="
+echo "          SecureGuard VPN installed successfully!             "
+echo "=============================================================="
+echo ""
+echo "The VPN daemon is running as a system service."
+echo ""
+echo "To launch the GUI:"
+echo "  - Open 'SecureGuard VPN' from your application menu"
+echo "  - Or run: secureguard"
+echo ""
+echo "Service commands:"
+echo "  sudo systemctl status secureguard   # Check status"
+echo "  sudo systemctl restart secureguard  # Restart service"
+echo "  sudo journalctl -u secureguard -f   # View logs"
+echo ""
+if [ -n "${SUDO_USER:-}" ] && [ "$SUDO_USER" != "root" ]; then
+    echo "Note: You may need to log out and back in for group"
+    echo "membership changes to take effect."
+    echo ""
+fi
+
+exit 0

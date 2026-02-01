@@ -5,34 +5,13 @@
 //! to control VPN connections.
 //!
 //! Authentication is provided via Bearer token stored in a protected file.
-//!
-//! ## Auto-Reconnect on Startup
-//!
-//! The daemon persists connection state to `/var/lib/secureguard/connection-state.json`
-//! (Unix) or `C:\ProgramData\SecureGuard\connection-state.json` (Windows).
-//!
-//! On startup, if the state file shows `desired_state: connected`, the daemon
-//! automatically attempts to reconnect using the stored config. This ensures
-//! the VPN reconnects after system reboot without user intervention.
-//!
-//! The auto-reconnect uses infinite retry with exponential backoff:
-//! - Retry intervals: 5s → 10s → 30s → 60s → 60s → 60s...
-//! - Retries continue FOREVER until either:
-//!   1. Connection succeeds
-//!   2. User explicitly disconnects (sets desired_state=disconnected)
 
 pub mod auth;
 pub mod ipc;
-pub mod persistence;
 pub mod routes;
 
-use std::path::PathBuf;
 use std::sync::Arc;
-use std::time::Duration;
-use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
 use tokio::sync::{broadcast, mpsc, watch, Mutex};
-
-use persistence::DesiredState;
 
 use base64::{engine::general_purpose::STANDARD as BASE64, Engine};
 use ipnet::IpNet;
@@ -46,22 +25,6 @@ use ipc::*;
 
 // Re-export TrafficStats from protocol layer for backwards compatibility
 pub use crate::protocol::session::TrafficStats;
-
-/// Default socket path for Unix systems (client mode daemon)
-#[cfg(unix)]
-pub const DEFAULT_SOCKET_PATH: &str = "/var/run/secureguard.sock";
-
-/// Default socket path for server mode daemon (allows running both modes simultaneously)
-#[cfg(unix)]
-pub const DEFAULT_SERVER_SOCKET_PATH: &str = "/var/run/secureguard-server.sock";
-
-/// Default pipe name for Windows (client mode daemon)
-#[cfg(windows)]
-pub const DEFAULT_PIPE_NAME: &str = r"\\.\pipe\secureguard";
-
-/// Default pipe name for server mode daemon on Windows
-#[cfg(windows)]
-pub const DEFAULT_SERVER_PIPE_NAME: &str = r"\\.\pipe\secureguard-server";
 
 // ============================================================================
 // VPN Mode and State Types
@@ -89,9 +52,8 @@ pub enum VpnMode {
     },
 }
 
-/// Daemon service that manages VPN connections via IPC
+/// Daemon service that manages VPN connections via HTTP REST API
 pub struct DaemonService {
-    socket_path: PathBuf,
     state: Arc<Mutex<DaemonState>>,
     status_tx: broadcast::Sender<String>,
 }
@@ -126,90 +88,12 @@ impl Default for DaemonState {
 
 impl DaemonService {
     /// Create a new daemon service
-    pub fn new(socket_path: Option<PathBuf>) -> Self {
-        let path = socket_path.unwrap_or_else(|| {
-            #[cfg(unix)]
-            {
-                PathBuf::from(DEFAULT_SOCKET_PATH)
-            }
-            #[cfg(windows)]
-            {
-                PathBuf::from(DEFAULT_PIPE_NAME)
-            }
-        });
-
+    pub fn new() -> Self {
         let (status_tx, _) = broadcast::channel(16);
 
         Self {
-            socket_path: path,
             state: Arc::new(Mutex::new(DaemonState::default())),
             status_tx,
-        }
-    }
-
-    /// Run the daemon service
-    #[cfg(unix)]
-    pub async fn run(&self) -> Result<(), SecureGuardError> {
-        use tokio::net::UnixListener;
-
-        // Remove existing socket file if present
-        if self.socket_path.exists() {
-            std::fs::remove_file(&self.socket_path).map_err(|e| {
-                SecureGuardError::Config(ConfigError::ParseError {
-                    line: 0,
-                    message: format!("Failed to remove existing socket: {}", e),
-                })
-            })?;
-        }
-
-        // Create parent directory if needed
-        if let Some(parent) = self.socket_path.parent() {
-            if !parent.exists() {
-                std::fs::create_dir_all(parent).map_err(|e| {
-                    SecureGuardError::Config(ConfigError::ParseError {
-                        line: 0,
-                        message: format!("Failed to create socket directory: {}", e),
-                    })
-                })?;
-            }
-        }
-
-        let listener = UnixListener::bind(&self.socket_path).map_err(|e| {
-            SecureGuardError::Config(ConfigError::ParseError {
-                line: 0,
-                message: format!("Failed to bind socket at {:?}: {}", self.socket_path, e),
-            })
-        })?;
-
-        // Set socket permissions (allow all users to connect)
-        #[cfg(unix)]
-        {
-            use std::os::unix::fs::PermissionsExt;
-            std::fs::set_permissions(&self.socket_path, std::fs::Permissions::from_mode(0o666))
-                .ok();
-        }
-
-        tracing::info!("Daemon listening on {:?}", self.socket_path);
-
-        loop {
-            match listener.accept().await {
-                Ok((stream, _)) => {
-                    let state = Arc::clone(&self.state);
-                    let status_rx = self.status_tx.subscribe();
-                    let status_tx = self.status_tx.clone();
-
-                    tokio::spawn(async move {
-                        if let Err(e) =
-                            Self::handle_client(stream, state, status_tx, status_rx).await
-                        {
-                            tracing::error!("Client handler error: {}", e);
-                        }
-                    });
-                }
-                Err(e) => {
-                    tracing::error!("Failed to accept connection: {}", e);
-                }
-            }
         }
     }
 
@@ -236,10 +120,6 @@ impl DaemonService {
 
         // In debug mode, also log the token for testing (remove in production)
         tracing::debug!("Auth token (for testing): {}", token);
-
-        // Auto-connect if state file shows desired_state=connected
-        // This runs AFTER token is written so clients can monitor the connection
-        self.attempt_auto_connect().await;
 
         // Create auth state
         let auth_state = auth::AuthState::new(token);
@@ -298,112 +178,7 @@ impl DaemonService {
         Ok(())
     }
 
-    /// Attempt auto-connect based on persisted connection state
-    ///
-    /// Checks the state file and if `desired_state` is `Connected` with a valid config,
-    /// spawns a background task to reconnect with infinite retry.
-    async fn attempt_auto_connect(&self) {
-        let state_file = match persistence::load_connection_state() {
-            Some(s) => s,
-            None => {
-                tracing::info!("No connection state file found - starting in disconnected state");
-                return;
-            }
-        };
-
-        // Only auto-connect if user wanted to be connected
-        if state_file.desired_state != DesiredState::Connected {
-            tracing::info!("Desired state is 'disconnected' - not auto-connecting");
-            return;
-        }
-
-        // Must have config to connect
-        let config_str = match state_file.config {
-            Some(c) => c,
-            None => {
-                tracing::warn!("Desired state is 'connected' but no config found - cannot auto-connect");
-                return;
-            }
-        };
-
-        tracing::info!(
-            "Auto-connecting based on persisted state (last connected: {:?})",
-            state_file.last_connected_at
-        );
-
-        // Spawn auto-connect task with infinite retry
-        let daemon_state = Arc::clone(&self.state);
-        let status_tx = self.status_tx.clone();
-
-        tokio::spawn(async move {
-            auto_connect_with_retry(config_str, daemon_state, status_tx).await;
-        });
-    }
-
-    /// Handle a single client connection (legacy Unix socket method)
-    #[cfg(unix)]
-    async fn handle_client(
-        stream: tokio::net::UnixStream,
-        state: Arc<Mutex<DaemonState>>,
-        status_tx: broadcast::Sender<String>,
-        mut status_rx: broadcast::Receiver<String>,
-    ) -> Result<(), SecureGuardError> {
-        let (reader, mut writer) = stream.into_split();
-        let mut reader = BufReader::new(reader);
-        let mut line = String::new();
-
-        loop {
-            tokio::select! {
-                // Handle incoming requests
-                result = reader.read_line(&mut line) => {
-                    match result {
-                        Ok(0) => {
-                            // Client disconnected
-                            tracing::debug!("Client disconnected");
-                            break;
-                        }
-                        Ok(_) => {
-                            let response = Self::process_request(&line, &state, &status_tx).await;
-                            let response_json = serde_json::to_string(&response)
-                                .unwrap_or_else(|_| r#"{"jsonrpc":"2.0","error":{"code":-32603,"message":"Serialization error"},"id":null}"#.to_string());
-
-                            if let Err(e) = writer.write_all(response_json.as_bytes()).await {
-                                tracing::error!("Failed to write response: {}", e);
-                                break;
-                            }
-                            if let Err(e) = writer.write_all(b"\n").await {
-                                tracing::error!("Failed to write newline: {}", e);
-                                break;
-                            }
-                            line.clear();
-                        }
-                        Err(e) => {
-                            tracing::error!("Read error: {}", e);
-                            break;
-                        }
-                    }
-                }
-
-                // Forward status notifications to client
-                notification = status_rx.recv() => {
-                    if let Ok(notification) = notification {
-                        if let Err(e) = writer.write_all(notification.as_bytes()).await {
-                            tracing::error!("Failed to write notification: {}", e);
-                            break;
-                        }
-                        if let Err(e) = writer.write_all(b"\n").await {
-                            tracing::error!("Failed to write newline: {}", e);
-                            break;
-                        }
-                    }
-                }
-            }
-        }
-
-        Ok(())
-    }
-
-    /// Process a JSON-RPC request
+    /// Process a JSON-RPC request (used internally by handlers)
     async fn process_request(
         request_str: &str,
         state: &Arc<Mutex<DaemonState>>,
@@ -1746,12 +1521,6 @@ impl DaemonService {
         // Give background task time to clean up
         tokio::time::sleep(tokio::time::Duration::from_millis(200)).await;
 
-        // Remove socket file
-        #[cfg(unix)]
-        if self.socket_path.exists() {
-            std::fs::remove_file(&self.socket_path).ok();
-        }
-
         Ok(())
     }
 }
@@ -1763,375 +1532,4 @@ fn chrono_now() -> String {
         .duration_since(UNIX_EPOCH)
         .unwrap_or_default();
     format!("{}s since epoch", duration.as_secs())
-}
-
-// ============================================================================
-// Auto-Reconnect Logic
-// ============================================================================
-
-/// Retry backoff intervals in seconds - caps at 60s, retries FOREVER
-const RETRY_BACKOFF: &[u64] = &[5, 10, 30, 60];
-
-/// Auto-connect with infinite retry and exponential backoff
-///
-/// This function runs forever (or until user disconnects) trying to establish
-/// a VPN connection. It's designed to handle:
-/// - Network unavailable at boot
-/// - Server temporarily down
-/// - DNS resolution delays
-///
-/// The retry loop ONLY stops when:
-/// 1. Connection succeeds
-/// 2. User explicitly disconnects (desired_state changes to Disconnected)
-async fn auto_connect_with_retry(
-    config_str: String,
-    daemon_state: Arc<Mutex<DaemonState>>,
-    status_tx: broadcast::Sender<String>,
-) {
-    let mut attempt: u32 = 0;
-
-    loop {
-        tracing::info!("Auto-connect attempt #{}", attempt + 1);
-
-        // Broadcast retry status via SSE
-        let notification = serde_json::json!({
-            "jsonrpc": "2.0",
-            "method": "auto_connect_retry",
-            "params": {
-                "attempt": attempt + 1,
-                "status": "connecting"
-            }
-        });
-        let _ = status_tx.send(serde_json::to_string(&notification).unwrap_or_default());
-
-        // Attempt connection
-        match attempt_auto_connection(&config_str, &daemon_state, &status_tx).await {
-            Ok(()) => {
-                tracing::info!("Auto-connect successful after {} attempts", attempt + 1);
-
-                // Update state file with success
-                if let Some(mut persisted) = persistence::load_connection_state() {
-                    persisted.last_connected_at = Some(persistence::iso_now());
-                    persisted.retry_count = 0;
-                    persisted.last_updated_at = persistence::iso_now();
-                    let _ = persistence::save_connection_state(&persisted);
-                }
-
-                return; // SUCCESS - exit retry loop
-            }
-            Err(e) => {
-                tracing::warn!("Auto-connect attempt #{} failed: {}", attempt + 1, e);
-
-                // CRITICAL: Check if user manually disconnected during retry
-                if let Some(persisted) = persistence::load_connection_state() {
-                    if persisted.desired_state == DesiredState::Disconnected {
-                        tracing::info!("User disconnected - stopping auto-connect retry");
-                        return; // User cancelled - stop retrying
-                    }
-                }
-
-                // Calculate backoff delay (caps at 60 seconds)
-                let delay_idx = (attempt as usize).min(RETRY_BACKOFF.len() - 1);
-                let delay_secs = RETRY_BACKOFF[delay_idx];
-
-                tracing::info!("Retrying in {} seconds...", delay_secs);
-
-                // Broadcast retry status with wait info
-                let notification = serde_json::json!({
-                    "jsonrpc": "2.0",
-                    "method": "auto_connect_retry",
-                    "params": {
-                        "attempt": attempt + 1,
-                        "status": "waiting",
-                        "next_retry_secs": delay_secs,
-                        "error": e.to_string()
-                    }
-                });
-                let _ = status_tx.send(serde_json::to_string(&notification).unwrap_or_default());
-
-                // Update retry count in state file
-                if let Some(mut persisted) = persistence::load_connection_state() {
-                    persisted.retry_count = attempt + 1;
-                    persisted.last_updated_at = persistence::iso_now();
-                    let _ = persistence::save_connection_state(&persisted);
-                }
-
-                tokio::time::sleep(Duration::from_secs(delay_secs)).await;
-                attempt += 1;
-
-                // NO MAXIMUM - loop continues forever until success or user disconnect
-            }
-        }
-    }
-}
-
-/// Attempt a single auto-connect
-///
-/// This is similar to handle_connect but designed for auto-reconnect:
-/// - Doesn't fail if already connecting (idempotent)
-/// - Updates state appropriately for auto-reconnect scenario
-async fn attempt_auto_connection(
-    config_str: &str,
-    daemon_state: &Arc<Mutex<DaemonState>>,
-    status_tx: &broadcast::Sender<String>,
-) -> Result<(), SecureGuardError> {
-    // Check if already connected or connecting
-    {
-        let s = daemon_state.lock().await;
-        match s.connection_state {
-            ConnectionState::Connected => {
-                tracing::debug!("Already connected - auto-connect successful");
-                return Ok(());
-            }
-            ConnectionState::Connecting => {
-                tracing::debug!("Already connecting - waiting for existing attempt");
-                return Err(SecureGuardError::Config(crate::error::ConfigError::ParseError {
-                    line: 0,
-                    message: "Connection already in progress".to_string(),
-                }));
-            }
-            _ => {}
-        }
-    }
-
-    // Update state to connecting
-    {
-        let mut s = daemon_state.lock().await;
-        s.connection_state = ConnectionState::Connecting;
-        s.error_message = None;
-    }
-
-    // Send status notification
-    send_auto_connect_status(daemon_state, status_tx, ConnectionState::Connecting).await;
-
-    // Parse config
-    let config = WireGuardConfig::from_string(config_str).map_err(|e| {
-        // Reset state on parse error
-        let daemon_state = Arc::clone(daemon_state);
-        let error_msg = format!("Invalid config: {}", e);
-        tokio::spawn(async move {
-            let mut s = daemon_state.lock().await;
-            s.connection_state = ConnectionState::Error;
-            s.error_message = Some(error_msg);
-        });
-        e
-    })?;
-
-    // Extract connection info
-    let server_endpoint = config
-        .peers
-        .first()
-        .and_then(|p| p.endpoint.as_ref())
-        .map(|e| e.to_string())
-        .unwrap_or_default();
-
-    let vpn_ip = config
-        .interface
-        .address
-        .first()
-        .map(|a| a.to_string())
-        .unwrap_or_default();
-
-    // Get traffic stats
-    let traffic_stats = {
-        let s = daemon_state.lock().await;
-        Arc::clone(&s.traffic_stats)
-    };
-
-    let config_for_storage = config.clone();
-
-    // Create and start client
-    match WireGuardClient::new(config, Some(traffic_stats)).await {
-        Ok(client) => {
-            let (shutdown_tx, shutdown_rx) = watch::channel(false);
-
-            {
-                let mut s = daemon_state.lock().await;
-                s.connection_state = ConnectionState::Connected;
-                s.mode = Some(VpnMode::Client {
-                    vpn_ip: vpn_ip.clone(),
-                    server_endpoint: server_endpoint.clone(),
-                    current_config: config_for_storage,
-                    previous_config: None,
-                });
-                s.started_at = Some(chrono_now());
-                s.traffic_stats.reset();
-                s.shutdown_tx = Some(shutdown_tx);
-            }
-
-            // Send status notification
-            send_auto_connect_status(daemon_state, status_tx, ConnectionState::Connected).await;
-
-            // Spawn client task
-            DaemonService::spawn_client_task(
-                client,
-                shutdown_rx,
-                Arc::clone(daemon_state),
-                status_tx.clone(),
-            );
-
-            Ok(())
-        }
-        Err(e) => {
-            let mut s = daemon_state.lock().await;
-            s.connection_state = ConnectionState::Error;
-            s.error_message = Some(format!("{}", e));
-            drop(s);
-
-            send_auto_connect_status(daemon_state, status_tx, ConnectionState::Error).await;
-
-            Err(e)
-        }
-    }
-}
-
-/// Send status notification during auto-connect
-async fn send_auto_connect_status(
-    daemon_state: &Arc<Mutex<DaemonState>>,
-    status_tx: &broadcast::Sender<String>,
-    state: ConnectionState,
-) {
-    let s = daemon_state.lock().await;
-
-    let (vpn_ip, server_endpoint) = match &s.mode {
-        Some(VpnMode::Client { vpn_ip, server_endpoint, .. }) => {
-            (Some(vpn_ip.clone()), Some(server_endpoint.clone()))
-        }
-        _ => (None, None),
-    };
-
-    let notification = serde_json::json!({
-        "jsonrpc": "2.0",
-        "method": "status_changed",
-        "params": {
-            "state": state,
-            "vpn_ip": vpn_ip,
-            "server_endpoint": server_endpoint,
-            "connected_at": s.started_at,
-            "bytes_sent": s.traffic_stats.get_sent(),
-            "bytes_received": s.traffic_stats.get_received(),
-        }
-    });
-
-    let _ = status_tx.send(serde_json::to_string(&notification).unwrap_or_default());
-}
-
-#[cfg(windows)]
-impl DaemonService {
-    /// Run the daemon service on Windows (named pipe)
-    pub async fn run(&self) -> Result<(), SecureGuardError> {
-        use tokio::net::windows::named_pipe::ServerOptions;
-
-        let pipe_name = self.socket_path.to_string_lossy();
-
-        tracing::info!("Daemon listening on {}", pipe_name);
-
-        // Create first pipe instance
-        let mut server = ServerOptions::new()
-            .first_pipe_instance(true)
-            .create(&*pipe_name)
-            .map_err(|e| {
-                SecureGuardError::Config(ConfigError::ParseError {
-                    line: 0,
-                    message: format!("Failed to create named pipe {}: {}", pipe_name, e),
-                })
-            })?;
-
-        loop {
-            // Wait for a client to connect
-            if let Err(e) = server.connect().await {
-                tracing::error!("Failed to accept connection: {}", e);
-                continue;
-            }
-
-            tracing::debug!("Client connected to named pipe");
-
-            // Create a new pipe instance for the next client before handling this one
-            let new_server = ServerOptions::new()
-                .create(&*pipe_name)
-                .map_err(|e| {
-                    SecureGuardError::Config(ConfigError::ParseError {
-                        line: 0,
-                        message: format!("Failed to create new pipe instance: {}", e),
-                    })
-                })?;
-
-            // Move the connected pipe to the handler, use new server for next iteration
-            let connected_pipe = std::mem::replace(&mut server, new_server);
-
-            let state = Arc::clone(&self.state);
-            let status_rx = self.status_tx.subscribe();
-            let status_tx = self.status_tx.clone();
-
-            tokio::spawn(async move {
-                if let Err(e) =
-                    Self::handle_client_windows(connected_pipe, state, status_tx, status_rx).await
-                {
-                    tracing::error!("Client handler error: {}", e);
-                }
-            });
-        }
-    }
-
-    /// Handle a single client connection on Windows
-    async fn handle_client_windows(
-        pipe: tokio::net::windows::named_pipe::NamedPipeServer,
-        state: Arc<Mutex<DaemonState>>,
-        status_tx: broadcast::Sender<String>,
-        mut status_rx: broadcast::Receiver<String>,
-    ) -> Result<(), SecureGuardError> {
-        let (reader, mut writer) = tokio::io::split(pipe);
-        let mut reader = BufReader::new(reader);
-        let mut line = String::new();
-
-        loop {
-            tokio::select! {
-                // Handle incoming requests
-                result = reader.read_line(&mut line) => {
-                    match result {
-                        Ok(0) => {
-                            // Client disconnected
-                            tracing::debug!("Client disconnected");
-                            break;
-                        }
-                        Ok(_) => {
-                            let response = Self::process_request(&line, &state, &status_tx).await;
-                            let response_json = serde_json::to_string(&response)
-                                .unwrap_or_else(|_| r#"{"jsonrpc":"2.0","error":{"code":-32603,"message":"Serialization error"},"id":null}"#.to_string());
-
-                            if let Err(e) = writer.write_all(response_json.as_bytes()).await {
-                                tracing::error!("Failed to write response: {}", e);
-                                break;
-                            }
-                            if let Err(e) = writer.write_all(b"\n").await {
-                                tracing::error!("Failed to write newline: {}", e);
-                                break;
-                            }
-                            line.clear();
-                        }
-                        Err(e) => {
-                            tracing::error!("Read error: {}", e);
-                            break;
-                        }
-                    }
-                }
-
-                // Forward status notifications to client
-                notification = status_rx.recv() => {
-                    if let Ok(notification) = notification {
-                        if let Err(e) = writer.write_all(notification.as_bytes()).await {
-                            tracing::error!("Failed to write notification: {}", e);
-                            break;
-                        }
-                        if let Err(e) = writer.write_all(b"\n").await {
-                            tracing::error!("Failed to write newline: {}", e);
-                            break;
-                        }
-                    }
-                }
-            }
-        }
-
-        Ok(())
-    }
 }

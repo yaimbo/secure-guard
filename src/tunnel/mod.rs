@@ -742,9 +742,10 @@ async fn add_route_platform(device: &str, network: &Ipv4Net) -> Result<(), Secur
 }
 
 /// Platform-specific route removal
-async fn remove_route_platform(_device: &str, network: &Ipv4Net) -> Result<(), SecureGuardError> {
+async fn remove_route_platform(device: &str, network: &Ipv4Net) -> Result<(), SecureGuardError> {
     #[cfg(target_os = "macos")]
     {
+        let _ = device; // Device not needed for macOS route removal
         let status = Command::new("route")
             .args(["-n", "delete", "-net", &network.to_string()])
             .status()

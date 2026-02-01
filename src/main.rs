@@ -45,10 +45,6 @@ struct Args {
     #[arg(long, conflicts_with_all = ["server", "client"])]
     daemon: bool,
 
-    /// Socket path for daemon mode (default: /var/run/secureguard.sock)
-    #[arg(long, requires = "daemon")]
-    socket: Option<PathBuf>,
-
     /// HTTP port for daemon REST API (default: 51820 for client, 51821 for server)
     #[arg(long, requires = "daemon")]
     http_port: Option<u16>,
@@ -121,7 +117,7 @@ async fn run(args: Args) -> Result<(), SecureGuardError> {
 async fn run_daemon(args: Args) -> Result<(), SecureGuardError> {
     tracing::info!("SecureGuard Daemon starting (REST API mode)...");
 
-    let daemon = DaemonService::new(args.socket);
+    let daemon = DaemonService::new();
 
     // Default port: 51820 for client mode
     let port = args.http_port.unwrap_or(51820);
