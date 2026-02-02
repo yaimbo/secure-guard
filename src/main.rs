@@ -1,4 +1,4 @@
-//! SecureGuard CLI - WireGuard VPN Client/Server
+//! MinnowVPN CLI - WireGuard VPN Client/Server
 //!
 //! A proof-of-concept WireGuard implementation that can operate as either
 //! a client (initiator) or server (responder) using standard WireGuard
@@ -10,8 +10,8 @@ use std::process::ExitCode;
 use clap::Parser;
 use tracing_subscriber::{fmt, EnvFilter};
 
-use secureguard_poc::error::{ConfigError, NetworkError, ProtocolError, TunnelError};
-use secureguard_poc::{DaemonService, SecureGuardError, WireGuardClient, WireGuardConfig, WireGuardServer};
+use minnowvpn::error::{ConfigError, NetworkError, ProtocolError, TunnelError};
+use minnowvpn::{DaemonService, MinnowVpnError, WireGuardClient, WireGuardConfig, WireGuardServer};
 
 /// Operating mode for direct VPN connection
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -20,9 +20,9 @@ enum Mode {
     Server,
 }
 
-/// SecureGuard - WireGuard VPN Client/Server
+/// MinnowVPN - WireGuard VPN Client/Server
 #[derive(Parser, Debug)]
-#[command(name = "secureguard-poc")]
+#[command(name = "minnowvpn")]
 #[command(author, version, about, long_about = None)]
 struct Args {
     /// Path to WireGuard configuration file (required for --client/--server modes)
@@ -49,7 +49,7 @@ struct Args {
     #[arg(long, requires = "daemon")]
     http_port: Option<u16>,
 
-    /// Path to write the auth token file (default: /var/run/secureguard/auth-token)
+    /// Path to write the auth token file (default: /var/run/minnowvpn/auth-token)
     #[arg(long, requires = "daemon")]
     token_path: Option<PathBuf>,
 }
@@ -80,7 +80,7 @@ async fn main() -> ExitCode {
     }
 }
 
-async fn run(args: Args) -> Result<(), SecureGuardError> {
+async fn run(args: Args) -> Result<(), MinnowVpnError> {
     // Check if running in daemon mode
     if args.daemon {
         return run_daemon(args).await;
@@ -101,12 +101,12 @@ async fn run(args: Args) -> Result<(), SecureGuardError> {
 
     match mode {
         Mode::Client => {
-            tracing::info!("SecureGuard WireGuard Client starting...");
+            tracing::info!("MinnowVPN WireGuard Client starting...");
             let mut client = WireGuardClient::new(config, None).await?;
             run_with_cleanup_client(&mut client).await
         }
         Mode::Server => {
-            tracing::info!("SecureGuard WireGuard Server starting...");
+            tracing::info!("MinnowVPN WireGuard Server starting...");
             let mut server = WireGuardServer::new(config).await?;
             run_with_cleanup_server(&mut server).await
         }
@@ -114,8 +114,8 @@ async fn run(args: Args) -> Result<(), SecureGuardError> {
 }
 
 /// Run in daemon mode (REST API service for Flutter UI)
-async fn run_daemon(args: Args) -> Result<(), SecureGuardError> {
-    tracing::info!("SecureGuard Daemon starting (REST API mode)...");
+async fn run_daemon(args: Args) -> Result<(), MinnowVpnError> {
+    tracing::info!("MinnowVPN Daemon starting (REST API mode)...");
 
     let daemon = DaemonService::new();
 
@@ -138,7 +138,7 @@ async fn run_daemon(args: Args) -> Result<(), SecureGuardError> {
 }
 
 /// Determine operating mode from args and config
-fn determine_mode(args: &Args, config: &WireGuardConfig) -> Result<Mode, SecureGuardError> {
+fn determine_mode(args: &Args, config: &WireGuardConfig) -> Result<Mode, MinnowVpnError> {
     // Explicit flags take precedence
     if args.server {
         return Ok(Mode::Server);
@@ -162,7 +162,7 @@ fn determine_mode(args: &Args, config: &WireGuardConfig) -> Result<Mode, SecureG
         Ok(Mode::Client)
     } else {
         // Ambiguous - require explicit flag
-        Err(SecureGuardError::Config(ConfigError::ParseError {
+        Err(MinnowVpnError::Config(ConfigError::ParseError {
             line: 0,
             message: "Cannot determine mode. Use --server or --client flag.".to_string(),
         }))
@@ -170,7 +170,7 @@ fn determine_mode(args: &Args, config: &WireGuardConfig) -> Result<Mode, SecureG
 }
 
 /// Run the client with graceful shutdown on Ctrl+C or SIGTERM
-async fn run_with_cleanup_client(client: &mut WireGuardClient) -> Result<(), SecureGuardError> {
+async fn run_with_cleanup_client(client: &mut WireGuardClient) -> Result<(), MinnowVpnError> {
     let ctrl_c = tokio::signal::ctrl_c();
 
     #[cfg(unix)]
@@ -202,7 +202,7 @@ async fn run_with_cleanup_client(client: &mut WireGuardClient) -> Result<(), Sec
 }
 
 /// Run the server with graceful shutdown on Ctrl+C or SIGTERM
-async fn run_with_cleanup_server(server: &mut WireGuardServer) -> Result<(), SecureGuardError> {
+async fn run_with_cleanup_server(server: &mut WireGuardServer) -> Result<(), MinnowVpnError> {
     let ctrl_c = tokio::signal::ctrl_c();
 
     #[cfg(unix)]
@@ -234,17 +234,17 @@ async fn run_with_cleanup_server(server: &mut WireGuardServer) -> Result<(), Sec
 }
 
 /// Get user-friendly error message
-fn user_message(error: &SecureGuardError) -> String {
+fn user_message(error: &MinnowVpnError) -> String {
     match error {
-        SecureGuardError::Tunnel(TunnelError::InsufficientPrivileges { .. }) => {
+        MinnowVpnError::Tunnel(TunnelError::InsufficientPrivileges { .. }) => {
             #[cfg(target_os = "linux")]
             return "Insufficient privileges. Run with sudo or grant CAP_NET_ADMIN:\n  \
-                    sudo setcap cap_net_admin=eip ./secureguard-poc\n  \
-                    Or run: sudo ./secureguard-poc -c config.conf".to_string();
+                    sudo setcap cap_net_admin=eip ./minnowvpn\n  \
+                    Or run: sudo ./minnowvpn -c config.conf".to_string();
 
             #[cfg(target_os = "macos")]
             return "Insufficient privileges. Run with sudo:\n  \
-                    sudo ./secureguard-poc -c config.conf".to_string();
+                    sudo ./minnowvpn -c config.conf".to_string();
 
             #[cfg(target_os = "windows")]
             return "Insufficient privileges. Run as Administrator.".to_string();
@@ -253,27 +253,27 @@ fn user_message(error: &SecureGuardError) -> String {
             return format!("{}", error);
         }
 
-        SecureGuardError::Config(ConfigError::FileNotFound { path }) => {
+        MinnowVpnError::Config(ConfigError::FileNotFound { path }) => {
             format!("Configuration file not found: {}\n  \
                     Check the path and try again.", path)
         }
 
-        SecureGuardError::Config(ConfigError::InvalidKey { field }) => {
+        MinnowVpnError::Config(ConfigError::InvalidKey { field }) => {
             format!("Invalid {} in configuration.\n  \
                     Expected 32-byte base64-encoded key.", field)
         }
 
-        SecureGuardError::Network(NetworkError::ConnectionRefused { endpoint }) => {
+        MinnowVpnError::Network(NetworkError::ConnectionRefused { endpoint }) => {
             format!("Connection refused by {}.\n  \
                     Check that the WireGuard server is running and accessible.", endpoint)
         }
 
-        SecureGuardError::Protocol(ProtocolError::HandshakeTimeout { seconds }) => {
+        MinnowVpnError::Protocol(ProtocolError::HandshakeTimeout { seconds }) => {
             format!("Handshake timed out after {}s.\n  \
                     Check network connectivity and firewall rules for UDP.", seconds)
         }
 
-        SecureGuardError::Protocol(ProtocolError::MacVerificationFailed) => {
+        MinnowVpnError::Protocol(ProtocolError::MacVerificationFailed) => {
             "MAC verification failed.\n  \
              The peer's public key may be incorrect.".to_string()
         }
@@ -283,15 +283,15 @@ fn user_message(error: &SecureGuardError) -> String {
 }
 
 /// Get exit code for error
-fn exit_code(error: &SecureGuardError) -> ExitCode {
+fn exit_code(error: &MinnowVpnError) -> ExitCode {
     match error {
-        SecureGuardError::Config(_) => ExitCode::from(1),
-        SecureGuardError::Tunnel(TunnelError::InsufficientPrivileges { .. }) => {
+        MinnowVpnError::Config(_) => ExitCode::from(1),
+        MinnowVpnError::Tunnel(TunnelError::InsufficientPrivileges { .. }) => {
             ExitCode::from(2)
         }
-        SecureGuardError::Network(_) => ExitCode::from(3),
-        SecureGuardError::Protocol(_) => ExitCode::from(4),
-        SecureGuardError::Crypto(_) => ExitCode::from(5),
+        MinnowVpnError::Network(_) => ExitCode::from(3),
+        MinnowVpnError::Protocol(_) => ExitCode::from(4),
+        MinnowVpnError::Crypto(_) => ExitCode::from(5),
         _ => ExitCode::from(255),
     }
 }

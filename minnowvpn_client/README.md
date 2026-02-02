@@ -1,4 +1,4 @@
-# secureguard_client
+# minnowvpn_client
 
 A new Flutter project.
 

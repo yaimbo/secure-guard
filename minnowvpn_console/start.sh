@@ -7,7 +7,7 @@ set -e
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_ROOT="$(dirname "$SCRIPT_DIR")"
-SERVER_DIR="$PROJECT_ROOT/secureguard-server"
+SERVER_DIR="$PROJECT_ROOT/minnowvpn-server"
 CONSOLE_DIR="$SCRIPT_DIR"
 
 # Colors for output
@@ -51,10 +51,10 @@ kill_port 8080
 kill_port 5001
 
 # Kill any flutter run processes for this project
-kill_by_pattern "flutter.*secureguard_console"
+kill_by_pattern "flutter.*minnowvpn_console"
 
 # Kill any dart server processes for this project
-kill_by_pattern "dart.*secureguard-server"
+kill_by_pattern "dart.*minnowvpn-server"
 
 echo -e "${GREEN}Existing services stopped.${NC}"
 
@@ -88,10 +88,10 @@ if [ ! -d ".dart_tool" ]; then
 fi
 
 # Start server in background
-dart run bin/server.dart > /tmp/secureguard-server.log 2>&1 &
+dart run bin/server.dart > /tmp/minnowvpn-server.log 2>&1 &
 SERVER_PID=$!
 echo -e "${GREEN}API server started (PID: $SERVER_PID)${NC}"
-echo "Server logs: /tmp/secureguard-server.log"
+echo "Server logs: /tmp/minnowvpn-server.log"
 
 # Wait for server to be ready
 echo "Waiting for API server to be ready..."
@@ -103,12 +103,12 @@ for i in {1..30}; do
     # Check if server process is still running
     if ! kill -0 $SERVER_PID 2>/dev/null; then
         echo -e "${RED}Error: Server process died. Check logs:${NC}"
-        tail -20 /tmp/secureguard-server.log
+        tail -20 /tmp/minnowvpn-server.log
         exit 1
     fi
     if [ $i -eq 30 ]; then
         echo -e "${RED}Error: Server failed to start within 30 seconds${NC}"
-        tail -20 /tmp/secureguard-server.log
+        tail -20 /tmp/minnowvpn-server.log
         exit 1
     fi
     sleep 1

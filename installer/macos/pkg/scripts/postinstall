@@ -1,19 +1,19 @@
 #!/bin/bash
-# SecureGuard VPN Service - Postinstall Script
+# MinnowVPN VPN Service - Postinstall Script
 # Installs and starts the VPN daemon service
 
 set -e
 
 # Configuration
-SERVICE_NAME="com.secureguard.vpn-service"
+SERVICE_NAME="com.minnowvpn.vpn-service"
 HELPER_TOOLS_DIR="/Library/PrivilegedHelperTools"
 LAUNCH_DAEMONS_DIR="/Library/LaunchDaemons"
-APPLICATION_SUPPORT_DIR="/Library/Application Support/SecureGuard"
+APPLICATION_SUPPORT_DIR="/Library/Application Support/MinnowVPN"
 LOG_DIR="/var/log"
-DATA_DIR="/var/lib/secureguard"
-TOKEN_DIR="/var/run/secureguard"
-SECUREGUARD_GROUP="secureguard"
-SECUREGUARD_GID=1100
+DATA_DIR="/var/lib/minnowvpn"
+TOKEN_DIR="/var/run/minnowvpn"
+MINNOWVPN_GROUP="minnowvpn"
+MINNOWVPN_GID=1100
 HTTP_PORT=51820
 
 # Log to installer log
@@ -21,29 +21,29 @@ log() {
     echo "[MinnowVPN Postinstall] $1"
 }
 
-# Create secureguard group for token access
-create_secureguard_group() {
-    log "Setting up secureguard group..."
+# Create minnowvpn group for token access
+create_minnowvpn_group() {
+    log "Setting up minnowvpn group..."
 
     # Check if group exists
-    if ! dscl . -read /Groups/$SECUREGUARD_GROUP &>/dev/null; then
-        log "Creating group: $SECUREGUARD_GROUP"
-        dscl . -create /Groups/$SECUREGUARD_GROUP
-        dscl . -create /Groups/$SECUREGUARD_GROUP PrimaryGroupID $SECUREGUARD_GID
-        dscl . -create /Groups/$SECUREGUARD_GROUP RealName "MinnowVPN Users"
+    if ! dscl . -read /Groups/$MINNOWVPN_GROUP &>/dev/null; then
+        log "Creating group: $MINNOWVPN_GROUP"
+        dscl . -create /Groups/$MINNOWVPN_GROUP
+        dscl . -create /Groups/$MINNOWVPN_GROUP PrimaryGroupID $MINNOWVPN_GID
+        dscl . -create /Groups/$MINNOWVPN_GROUP RealName "MinnowVPN Users"
     else
-        log "Group $SECUREGUARD_GROUP already exists"
+        log "Group $MINNOWVPN_GROUP already exists"
     fi
 
     # Add the console user to the group
     local console_user
     console_user=$(stat -f '%Su' /dev/console 2>/dev/null || echo "")
     if [ -n "$console_user" ] && [ "$console_user" != "root" ]; then
-        if ! dscl . -read /Groups/$SECUREGUARD_GROUP GroupMembership 2>/dev/null | grep -q "$console_user"; then
-            log "Adding user $console_user to $SECUREGUARD_GROUP group"
-            dscl . -append /Groups/$SECUREGUARD_GROUP GroupMembership "$console_user"
+        if ! dscl . -read /Groups/$MINNOWVPN_GROUP GroupMembership 2>/dev/null | grep -q "$console_user"; then
+            log "Adding user $console_user to $MINNOWVPN_GROUP group"
+            dscl . -append /Groups/$MINNOWVPN_GROUP GroupMembership "$console_user"
         else
-            log "User $console_user already in $SECUREGUARD_GROUP group"
+            log "User $console_user already in $MINNOWVPN_GROUP group"
         fi
     fi
 }
@@ -57,19 +57,19 @@ create_directories() {
     mkdir -p "$DATA_DIR"
     mkdir -p "$TOKEN_DIR"
 
-    # Set permissions on data directory (root:secureguard, 750)
+    # Set permissions on data directory (root:minnowvpn, 750)
     # Stores persistent connection state for auto-reconnect on boot
-    chown root:$SECUREGUARD_GROUP "$DATA_DIR"
+    chown root:$MINNOWVPN_GROUP "$DATA_DIR"
     chmod 750 "$DATA_DIR"
 
-    # Set permissions on token directory (root:secureguard, 750)
-    chown root:$SECUREGUARD_GROUP "$TOKEN_DIR"
+    # Set permissions on token directory (root:minnowvpn, 750)
+    chown root:$MINNOWVPN_GROUP "$TOKEN_DIR"
     chmod 750 "$TOKEN_DIR"
 }
 
 # Set binary permissions
 setup_binary() {
-    local binary_path="$HELPER_TOOLS_DIR/secureguard-service"
+    local binary_path="$HELPER_TOOLS_DIR/minnowvpn-service"
 
     log "Setting up binary permissions..."
 
@@ -105,11 +105,11 @@ setup_plist() {
 setup_logging() {
     log "Setting up logging..."
 
-    touch "$LOG_DIR/secureguard.log"
-    touch "$LOG_DIR/secureguard.error.log"
+    touch "$LOG_DIR/minnowvpn.log"
+    touch "$LOG_DIR/minnowvpn.error.log"
 
-    chmod 640 "$LOG_DIR/secureguard.log" "$LOG_DIR/secureguard.error.log"
-    chown root:wheel "$LOG_DIR/secureguard.log" "$LOG_DIR/secureguard.error.log"
+    chmod 640 "$LOG_DIR/minnowvpn.log" "$LOG_DIR/minnowvpn.error.log"
+    chown root:wheel "$LOG_DIR/minnowvpn.log" "$LOG_DIR/minnowvpn.error.log"
 }
 
 # Set up uninstall script permissions
@@ -171,7 +171,7 @@ verify_service() {
 main() {
     log "Starting postinstall..."
 
-    create_secureguard_group
+    create_minnowvpn_group
     create_directories
     setup_binary
     setup_plist

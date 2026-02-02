@@ -89,13 +89,13 @@ BEGIN
     BEGIN
         BLOCK "040904e4"
         BEGIN
-            VALUE "CompanyName", "com.secureguard" "\0"
-            VALUE "FileDescription", "secureguard_client" "\0"
+            VALUE "CompanyName", "com.minnowvpn" "\0"
+            VALUE "FileDescription", "MinnowVPN" "\0"
             VALUE "FileVersion", VERSION_AS_STRING "\0"
-            VALUE "InternalName", "secureguard_client" "\0"
-            VALUE "LegalCopyright", "Copyright (C) 2026 com.secureguard. All rights reserved." "\0"
-            VALUE "OriginalFilename", "secureguard_client.exe" "\0"
-            VALUE "ProductName", "secureguard_client" "\0"
+            VALUE "InternalName", "minnowvpn_client" "\0"
+            VALUE "LegalCopyright", "Copyright (C) 2026 com.minnowvpn. All rights reserved." "\0"
+            VALUE "OriginalFilename", "minnowvpn_client.exe" "\0"
+            VALUE "ProductName", "MinnowVPN" "\0"
             VALUE "ProductVersion", VERSION_AS_STRING "\0"
         END
     END

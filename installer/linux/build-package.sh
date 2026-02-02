@@ -1,5 +1,5 @@
 #!/bin/bash
-# SecureGuard VPN - Linux Package Builder
+# MinnowVPN VPN - Linux Package Builder
 # Builds both Rust daemon and Flutter client, then creates .deb and/or .rpm packages
 # Automatically uses Docker when not running on Linux
 
@@ -9,7 +9,7 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_ROOT="$(dirname "$(dirname "$SCRIPT_DIR")")"
 BUILD_DIR="$SCRIPT_DIR/build"
-FLUTTER_PROJECT="$PROJECT_ROOT/secureguard_client"
+FLUTTER_PROJECT="$PROJECT_ROOT/minnowvpn_client"
 
 # Version (can be overridden via argument)
 VERSION="${1:-1.0.0}"
@@ -142,7 +142,7 @@ docker_build() {
         --build-arg VERSION="$VERSION" \
         --build-arg TARGET_FORMAT="$TARGET_FORMAT" \
         -f "$SCRIPT_DIR/Dockerfile.build" \
-        -t secureguard-linux-builder:latest \
+        -t minnowvpn-linux-builder:latest \
         "$PROJECT_ROOT"
 
     # Extract packages from the built image
@@ -152,7 +152,7 @@ docker_build() {
 
     # Create temporary container and copy build artifacts
     local container_id
-    container_id=$(docker create --platform "$docker_platform" secureguard-linux-builder:latest)
+    container_id=$(docker create --platform "$docker_platform" minnowvpn-linux-builder:latest)
 
     # Copy packages
     docker cp "$container_id:/build/installer/linux/build/." "$BUILD_DIR/" 2>/dev/null || {
@@ -246,7 +246,7 @@ build_rust_binary() {
     if [ "$TARGET_ARCH" = "$native_arch" ]; then
         log_info "Building native binary..."
         cargo build --release
-        cp "$PROJECT_ROOT/target/release/secureguard-poc" "$BUILD_DIR/secureguard-service"
+        cp "$PROJECT_ROOT/target/release/minnowvpn" "$BUILD_DIR/minnowvpn-service"
     else
         log_info "Cross-compiling for $rust_target..."
 
@@ -256,10 +256,10 @@ build_rust_binary() {
         fi
 
         cargo build --release --target "$rust_target"
-        cp "$PROJECT_ROOT/target/$rust_target/release/secureguard-poc" "$BUILD_DIR/secureguard-service"
+        cp "$PROJECT_ROOT/target/$rust_target/release/minnowvpn" "$BUILD_DIR/minnowvpn-service"
     fi
 
-    file "$BUILD_DIR/secureguard-service"
+    file "$BUILD_DIR/minnowvpn-service"
     log_info "Rust daemon built successfully"
 }
 
@@ -344,13 +344,13 @@ print_summary() {
 
     if [ "$TARGET_FORMAT" = "deb" ] || [ "$TARGET_FORMAT" = "all" ]; then
         echo "To install on Debian/Ubuntu:"
-        echo "  sudo dpkg -i $BUILD_DIR/secureguard_${VERSION}_*.deb"
+        echo "  sudo dpkg -i $BUILD_DIR/minnowvpn_${VERSION}_*.deb"
         echo ""
     fi
 
     if [ "$TARGET_FORMAT" = "rpm" ] || [ "$TARGET_FORMAT" = "all" ]; then
         echo "To install on Fedora/RHEL:"
-        echo "  sudo rpm -i $BUILD_DIR/secureguard-${VERSION}-1.*.rpm"
+        echo "  sudo rpm -i $BUILD_DIR/minnowvpn-${VERSION}-1.*.rpm"
         echo ""
     fi
 

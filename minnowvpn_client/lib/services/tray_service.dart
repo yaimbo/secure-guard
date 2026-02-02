@@ -6,7 +6,7 @@ import 'package:window_manager/window_manager.dart';
 
 import 'ipc_client.dart';
 
-/// System tray service for SecureGuard VPN
+/// System tray service for MinnowVPN VPN
 class TrayService with TrayListener {
   static final TrayService _instance = TrayService._();
   static TrayService get instance => _instance;

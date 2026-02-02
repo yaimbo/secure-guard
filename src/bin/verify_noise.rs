@@ -1,7 +1,7 @@
 //! Verify Noise protocol initialization against known values
 
-use secureguard_poc::crypto::blake2s;
-use secureguard_poc::protocol::handshake::InitiatorHandshake;
+use minnowvpn::crypto::blake2s;
+use minnowvpn::protocol::handshake::InitiatorHandshake;
 use base64::{engine::general_purpose::STANDARD as BASE64, Engine};
 
 fn main() {

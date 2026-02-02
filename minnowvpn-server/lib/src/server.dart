@@ -34,9 +34,9 @@ import 'repositories/email_settings_repository.dart';
 import 'repositories/log_repository.dart';
 import 'repositories/server_config_repository.dart';
 
-class SecureGuardServer {
+class MinnowVpnServer {
   final ServerConfig config;
-  final _log = Logger('SecureGuardServer');
+  final _log = Logger('MinnowVpnServer');
 
   HttpServer? _server;
   Database? _database;
@@ -45,7 +45,7 @@ class SecureGuardServer {
   EmailService? _emailService;
   EmailQueueService? _emailQueueService;
 
-  SecureGuardServer(this.config);
+  MinnowVpnServer(this.config);
 
   Future<void> start() async {
     // Initialize database

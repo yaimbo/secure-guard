@@ -1,8 +1,8 @@
 [package]
-name = "secureguard-poc"
+name = "minnowvpn"
 version = "0.1.0"
 edition = "2021"
-description = "WireGuard-compatible VPN client proof of concept"
+description = "MinnowVPN - WireGuard-compatible VPN"
 license = "Proprietary"
 
 [dependencies]

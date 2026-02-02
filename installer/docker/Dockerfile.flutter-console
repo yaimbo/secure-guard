@@ -12,13 +12,13 @@ FROM --platform=$BUILDPLATFORM ghcr.io/cirruslabs/flutter:stable AS build
 WORKDIR /app
 
 # Copy pubspec files first for better layer caching
-COPY secureguard_console/pubspec.* ./
+COPY minnowvpn_console/pubspec.* ./
 
 # Get dependencies
 RUN flutter pub get
 
 # Copy the rest of the source code
-COPY secureguard_console/ ./
+COPY minnowvpn_console/ ./
 
 # Build web release
 # API_URL is set to /api/v1 since Caddy proxies this path

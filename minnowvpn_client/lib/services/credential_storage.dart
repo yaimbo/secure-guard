@@ -9,7 +9,7 @@ import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 /// - Windows: Windows Credential Store (WinCrypt)
 /// - Linux: libsecret (GNOME Keyring/KWallet)
 class CredentialStorage {
-  static const _keyPrefix = 'secureguard_';
+  static const _keyPrefix = 'minnowvpn_';
 
   // Key names
   static const _deviceTokenKey = '${_keyPrefix}device_token';

@@ -9,14 +9,14 @@ class UninstallResult {
   UninstallResult.failure(this.error) : success = false;
 }
 
-/// Service to handle platform-specific uninstallation of SecureGuard
+/// Service to handle platform-specific uninstallation of MinnowVPN
 class UninstallService {
   /// Platform-specific uninstall script paths
   static const _macOSScriptPath =
-      '/Library/Application Support/SecureGuard/uninstall.sh';
+      '/Library/Application Support/MinnowVPN/uninstall.sh';
   static const _windowsScriptPath =
-      r'C:\Program Files\SecureGuard\uninstall.ps1';
-  static const _linuxScriptPath = '/opt/secureguard/uninstall.sh';
+      r'C:\Program Files\MinnowVPN\uninstall.ps1';
+  static const _linuxScriptPath = '/opt/minnowvpn/uninstall.sh';
 
   /// Check if the uninstall script exists for the current platform
   static Future<bool> isUninstallAvailable() async {

@@ -17,7 +17,7 @@ use tokio::time::{interval, Interval};
 
 use crate::config::WireGuardConfig;
 use crate::crypto::x25519;
-use crate::error::{ConfigError, NetworkError, ProtocolError, SecureGuardError};
+use crate::error::{ConfigError, NetworkError, ProtocolError, MinnowVpnError};
 use crate::protocol::{
     verify_initiation_mac1, HandshakeInitiation, MessageType, PeerManager, ResponderHandshake,
     Session, TrafficStats, TransportHeader,
@@ -104,20 +104,20 @@ pub struct WireGuardServer {
 
 impl WireGuardServer {
     /// Create a new WireGuard server
-    pub async fn new(config: WireGuardConfig) -> Result<Self, SecureGuardError> {
+    pub async fn new(config: WireGuardConfig) -> Result<Self, MinnowVpnError> {
         // Clean up any stale routes from crashed previous sessions
         RouteManager::cleanup_stale_routes();
 
         // Get ListenPort (required for server mode)
         let listen_port = config.interface.listen_port.ok_or_else(|| {
-            SecureGuardError::Config(ConfigError::MissingField {
+            MinnowVpnError::Config(ConfigError::MissingField {
                 field: "ListenPort".to_string(),
             })
         })?;
 
         // Parse our interface address
         let our_address = config.interface.address.first().ok_or_else(|| {
-            SecureGuardError::Config(ConfigError::MissingField {
+            MinnowVpnError::Config(ConfigError::MissingField {
                 field: "Address".to_string(),
             })
         })?;
@@ -192,20 +192,20 @@ impl WireGuardServer {
         peer_update_rx: mpsc::Receiver<PeerUpdate>,
         peer_event_tx: mpsc::Sender<PeerEvent>,
         traffic_stats: Arc<TrafficStats>,
-    ) -> Result<Self, SecureGuardError> {
+    ) -> Result<Self, MinnowVpnError> {
         // Clean up any stale routes from crashed previous sessions
         RouteManager::cleanup_stale_routes();
 
         // Get ListenPort (required for server mode)
         let listen_port = config.interface.listen_port.ok_or_else(|| {
-            SecureGuardError::Config(ConfigError::MissingField {
+            MinnowVpnError::Config(ConfigError::MissingField {
                 field: "ListenPort".to_string(),
             })
         })?;
 
         // Parse our interface address
         let our_address = config.interface.address.first().ok_or_else(|| {
-            SecureGuardError::Config(ConfigError::MissingField {
+            MinnowVpnError::Config(ConfigError::MissingField {
                 field: "Address".to_string(),
             })
         })?;
@@ -266,7 +266,7 @@ impl WireGuardServer {
     }
 
     /// Run the server (main event loop)
-    pub async fn run(&mut self) -> Result<(), SecureGuardError> {
+    pub async fn run(&mut self) -> Result<(), MinnowVpnError> {
         // Set up routes for peers' allowed IPs
         self.setup_routes().await?;
 
@@ -275,7 +275,7 @@ impl WireGuardServer {
     }
 
     /// Set up routes for all peers' allowed IPs
-    async fn setup_routes(&mut self) -> Result<(), SecureGuardError> {
+    async fn setup_routes(&mut self) -> Result<(), MinnowVpnError> {
         for peer in &self.config.peers {
             for network in &peer.allowed_ips {
                 if let ipnet::IpNet::V4(v4net) = network {
@@ -289,7 +289,7 @@ impl WireGuardServer {
     }
 
     /// Main event loop
-    async fn event_loop(&mut self) -> Result<(), SecureGuardError> {
+    async fn event_loop(&mut self) -> Result<(), MinnowVpnError> {
         let mut tun_buf = [0u8; BUFFER_SIZE];
         let mut udp_buf = [0u8; BUFFER_SIZE];
 
@@ -406,7 +406,7 @@ impl WireGuardServer {
         &mut self,
         packet: &[u8],
         from: SocketAddr,
-    ) -> Result<(), SecureGuardError> {
+    ) -> Result<(), MinnowVpnError> {
         if packet.is_empty() {
             return Ok(());
         }
@@ -429,7 +429,7 @@ impl WireGuardServer {
         &mut self,
         packet: &[u8],
         from: SocketAddr,
-    ) -> Result<(), SecureGuardError> {
+    ) -> Result<(), MinnowVpnError> {
         // 1. Parse initiation
         let initiation = HandshakeInitiation::from_bytes(packet)?;
 
@@ -547,7 +547,7 @@ impl WireGuardServer {
         &mut self,
         packet: &[u8],
         from: SocketAddr,
-    ) -> Result<(), SecureGuardError> {
+    ) -> Result<(), MinnowVpnError> {
         let header = TransportHeader::from_bytes(packet)?;
 
         if let Some(ref shared) = self.shared_peers {
@@ -622,7 +622,7 @@ impl WireGuardServer {
     }
 
     /// Handle outgoing packet from TUN (needs routing to correct peer)
-    async fn handle_tun_packet(&mut self, packet: &[u8]) -> Result<(), SecureGuardError> {
+    async fn handle_tun_packet(&mut self, packet: &[u8]) -> Result<(), MinnowVpnError> {
         // Parse destination IP from packet
         let dest_ip = parse_ipv4_dest(packet)?;
 
@@ -688,7 +688,7 @@ impl WireGuardServer {
     }
 
     /// Clean up routes on shutdown
-    pub async fn cleanup(&mut self) -> Result<(), SecureGuardError> {
+    pub async fn cleanup(&mut self) -> Result<(), MinnowVpnError> {
         tracing::info!("Server cleaning up routes...");
         self.routes.cleanup().await?;
         tracing::info!("Server cleanup complete");
@@ -705,7 +705,7 @@ impl WireGuardServer {
         public_key: [u8; 32],
         psk: Option<[u8; 32]>,
         allowed_ips: Vec<IpNet>,
-    ) -> Result<(), SecureGuardError> {
+    ) -> Result<(), MinnowVpnError> {
         tracing::info!("Adding peer dynamically: {}", BASE64.encode(&public_key[..8]));
 
         // Add routes for the new peer's allowed IPs
@@ -738,7 +738,7 @@ impl WireGuardServer {
     }
 
     /// Handle removing a peer dynamically (daemon mode)
-    async fn handle_remove_peer(&mut self, public_key: [u8; 32]) -> Result<(), SecureGuardError> {
+    async fn handle_remove_peer(&mut self, public_key: [u8; 32]) -> Result<(), MinnowVpnError> {
         tracing::info!("Removing peer: {}", BASE64.encode(&public_key[..8]));
 
         let removed = if let Some(ref shared) = self.shared_peers {
@@ -792,7 +792,7 @@ impl WireGuardServer {
 }
 
 /// Parse destination IPv4 address from an IP packet
-fn parse_ipv4_dest(packet: &[u8]) -> Result<Ipv4Addr, SecureGuardError> {
+fn parse_ipv4_dest(packet: &[u8]) -> Result<Ipv4Addr, MinnowVpnError> {
     if packet.len() < 20 {
         return Err(ProtocolError::InvalidMessageLength {
             expected: 20,

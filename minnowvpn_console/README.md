@@ -1,4 +1,4 @@
-# secureguard_console
+# minnowvpn_console
 
 A new Flutter project.
 

@@ -4,7 +4,7 @@ import 'package:flutter/material.dart';
 
 import '../services/uninstall_service.dart';
 
-/// Shows a confirmation dialog for uninstalling SecureGuard
+/// Shows a confirmation dialog for uninstalling MinnowVPN
 /// Returns true if uninstall was successful, false otherwise
 Future<bool> showUninstallDialog(BuildContext context) async {
   final result = await showDialog<bool>(

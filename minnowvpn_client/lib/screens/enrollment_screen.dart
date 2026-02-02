@@ -12,7 +12,7 @@ import 'manual_config_screen.dart';
 /// Screen for device enrollment via enrollment code
 ///
 /// Supports two modes:
-/// 1. Deep link: Server URL and code pre-filled from secureguard:// URL
+/// 1. Deep link: Server URL and code pre-filled from minnowvpn:// URL
 /// 2. Manual: User enters server domain and enrollment code
 class EnrollmentScreen extends ConsumerStatefulWidget {
   final String? initialServerUrl;

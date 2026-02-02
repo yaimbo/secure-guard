@@ -198,8 +198,8 @@ class UpdateService {
   Future<DownloadResult> downloadUpdate(UpdateInfo updateInfo) async {
     try {
       // Create temp directory for download
-      final tempDir = await Directory.systemTemp.createTemp('secureguard_update_');
-      final downloadPath = '${tempDir.path}/secureguard_update';
+      final tempDir = await Directory.systemTemp.createTemp('minnowvpn_update_');
+      final downloadPath = '${tempDir.path}/minnowvpn_update';
       final downloadFile = File(downloadPath);
 
       // Download the file
@@ -272,7 +272,7 @@ class UpdateService {
     }
 
     // 2. Copy binary with admin privileges using osascript
-    final targetPath = '/Library/PrivilegedHelperTools/secureguard-service';
+    final targetPath = '/Library/PrivilegedHelperTools/minnowvpn-service';
     final script = '''
       do shell script "cp '$downloadPath' '$targetPath' && chmod 755 '$targetPath'" with administrator privileges
     ''';
@@ -283,7 +283,7 @@ class UpdateService {
     }
 
     // 3. Restart the daemon using launchctl
-    await Process.run('launchctl', ['kickstart', '-k', 'system/com.secureguard.vpn-service']);
+    await Process.run('launchctl', ['kickstart', '-k', 'system/com.minnowvpn.vpn-service']);
 
     // 4. Wait for daemon to restart
     await Future.delayed(const Duration(seconds: 2));
@@ -308,11 +308,11 @@ class UpdateService {
     }
 
     // 2. Copy binary and restart service with pkexec
-    final targetPath = '/usr/local/bin/secureguard-service';
+    final targetPath = '/usr/local/bin/minnowvpn-service';
     final result = await Process.run('pkexec', [
       'sh',
       '-c',
-      "cp '$downloadPath' '$targetPath' && chmod 755 '$targetPath' && systemctl restart secureguard",
+      "cp '$downloadPath' '$targetPath' && chmod 755 '$targetPath' && systemctl restart minnowvpn",
     ]);
 
     if (result.exitCode != 0) {
@@ -342,11 +342,11 @@ class UpdateService {
     }
 
     // 2. Stop service, copy binary, start service using elevated PowerShell
-    final targetPath = r'C:\Program Files\SecureGuard\secureguard-service.exe';
+    final targetPath = r'C:\Program Files\MinnowVPN\minnowvpn-service.exe';
     final psScript = '''
-      Stop-Service SecureGuardVPN -ErrorAction SilentlyContinue;
+      Stop-Service MinnowVPNVPN -ErrorAction SilentlyContinue;
       Copy-Item '$downloadPath' '$targetPath' -Force;
-      Start-Service SecureGuardVPN
+      Start-Service MinnowVPNVPN
     ''';
 
     final result = await Process.run('powershell', [

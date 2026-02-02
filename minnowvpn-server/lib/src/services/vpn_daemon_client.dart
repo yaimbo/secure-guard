@@ -4,7 +4,7 @@ import 'dart:io';
 
 import 'package:http/http.dart' as http;
 
-/// Client for communicating with the SecureGuard Rust daemon via HTTP REST API.
+/// Client for communicating with the MinnowVPN Rust daemon via HTTP REST API.
 ///
 /// This client enables the Dart REST API server to dynamically manage VPN peers
 /// by sending HTTP requests to the Rust daemon's REST API.
@@ -15,8 +15,8 @@ import 'package:http/http.dart' as http;
 ///
 /// **Authentication:**
 /// Uses Bearer token authentication. The token is read from a protected file:
-/// - Unix: `/var/run/secureguard/auth-token`
-/// - Windows: `C:\ProgramData\SecureGuard\auth-token`
+/// - Unix: `/var/run/minnowvpn/auth-token`
+/// - Windows: `C:\ProgramData\MinnowVPN\auth-token`
 ///
 /// Example usage:
 /// ```dart
@@ -36,9 +36,9 @@ class VpnDaemonClient {
   /// Token file path (platform-specific)
   static String get tokenFilePath {
     if (Platform.isWindows) {
-      return r'C:\ProgramData\SecureGuard\auth-token';
+      return r'C:\ProgramData\MinnowVPN\auth-token';
     }
-    return '/var/run/secureguard/auth-token';
+    return '/var/run/minnowvpn/auth-token';
   }
 
   final String host;

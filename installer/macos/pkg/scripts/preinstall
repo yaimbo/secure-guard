@@ -1,10 +1,10 @@
 #!/bin/bash
-# SecureGuard VPN Service - Preinstall Script
+# MinnowVPN VPN Service - Preinstall Script
 # Runs before package installation to validate environment and stop existing service
 
 set -e
 
-SERVICE_NAME="com.secureguard.vpn-service"
+SERVICE_NAME="com.minnowvpn.vpn-service"
 MIN_MACOS_VERSION="10.15"
 
 # Log to installer log
@@ -37,8 +37,8 @@ stop_existing_service() {
     fi
 
     # Kill any lingering processes
-    pkill -9 -f "secureguard-service" 2>/dev/null || true
-    pkill -9 -f "secureguard-poc" 2>/dev/null || true
+    pkill -9 -f "minnowvpn-service" 2>/dev/null || true
+    pkill -9 -f "minnowvpn" 2>/dev/null || true
 
     # Wait for processes to die and ports to be released
     sleep 2
@@ -51,15 +51,15 @@ cleanup_old_files() {
     log "Cleaning up old files..."
 
     # Remove old token file (daemon will create new one with correct permissions)
-    if [ -f "/var/run/secureguard/auth-token" ]; then
-        rm -f "/var/run/secureguard/auth-token"
+    if [ -f "/var/run/minnowvpn/auth-token" ]; then
+        rm -f "/var/run/minnowvpn/auth-token"
         log "Removed old auth token"
     fi
 
     # Remove old connection state file on upgrade (ensures clean state)
     # After upgrade, daemon starts disconnected until user connects again
-    if [ -f "/var/lib/secureguard/connection-state.json" ]; then
-        rm -f "/var/lib/secureguard/connection-state.json"
+    if [ -f "/var/lib/minnowvpn/connection-state.json" ]; then
+        rm -f "/var/lib/minnowvpn/connection-state.json"
         log "Removed old connection state file (clean upgrade)"
     fi
 

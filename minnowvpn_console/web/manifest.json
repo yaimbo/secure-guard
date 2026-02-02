@@ -1,6 +1,6 @@
 {
-    "name": "secureguard_console",
-    "short_name": "secureguard_console",
+    "name": "MinnowVPN Console",
+    "short_name": "MinnowVPN",
     "start_url": ".",
     "display": "standalone",
     "background_color": "#0175C2",

@@ -1,0 +1,15 @@
+Windows Registry Editor Version 5.00
+
+; MinnowVPN URL Scheme Registration
+; Run this file or use the install script to register the minnowvpn:// URL scheme
+
+[HKEY_CLASSES_ROOT\minnowvpn]
+@="URL:MinnowVPN Protocol"
+"URL Protocol"=""
+
+[HKEY_CLASSES_ROOT\minnowvpn\shell]
+
+[HKEY_CLASSES_ROOT\minnowvpn\shell\open]
+
+[HKEY_CLASSES_ROOT\minnowvpn\shell\open\command]
+@="\"C:\\Program Files\\MinnowVPN\\minnowvpn_client.exe\" \"%1\""

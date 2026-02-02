@@ -32,7 +32,7 @@ IMAGES=(
     "console:Dockerfile.flutter-console"
     "vpn:Dockerfile.vpn-daemon"
 )
-BUILDER_NAME="secureguard-builder"
+BUILDER_NAME="minnowvpn-builder"
 
 # Show help
 show_help() {

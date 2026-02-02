@@ -27,7 +27,7 @@ secrets:
     file: ./secrets/grafana_admin_password.txt
 
 networks:
-  secureguard:
+  minnowvpn:
     driver: bridge
 
 services:
@@ -36,19 +36,19 @@ services:
   # ===========================================================================
   postgres:
     image: postgres:15-alpine
-    container_name: secureguard-postgres
+    container_name: minnowvpn-postgres
     secrets:
       - db_password
     environment:
-      POSTGRES_DB: secureguard
-      POSTGRES_USER: secureguard
+      POSTGRES_DB: minnowvpn
+      POSTGRES_USER: minnowvpn
       POSTGRES_PASSWORD_FILE: /run/secrets/db_password
     volumes:
       - postgres_data:/var/lib/postgresql/data
     networks:
-      - secureguard
+      - minnowvpn
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U secureguard -d secureguard"]
+      test: ["CMD-SHELL", "pg_isready -U minnowvpn -d minnowvpn"]
       interval: 5s
       timeout: 5s
       retries: 10
@@ -64,7 +64,7 @@ services:
   # ===========================================================================
   redis:
     image: redis:7-alpine
-    container_name: secureguard-redis
+    container_name: minnowvpn-redis
     secrets:
       - redis_password
     command: >
@@ -75,7 +75,7 @@ services:
     volumes:
       - redis_data:/data
     networks:
-      - secureguard
+      - minnowvpn
     healthcheck:
       test: ["CMD-SHELL", "redis-cli --no-auth-warning -a $$(cat /run/secrets/redis_password) ping | grep PONG"]
       interval: 5s
@@ -93,7 +93,7 @@ services:
   # ===========================================================================
   dart-server:
     image: minnowvpn/api:${VERSION:-latest}
-    container_name: secureguard-api
+    container_name: minnowvpn-api
     secrets:
       - db_password
       - redis_password
@@ -104,8 +104,8 @@ services:
       PORT: "8080"
       DB_HOST: postgres
       DB_PORT: "5432"
-      DB_NAME: secureguard
-      DB_USER: secureguard
+      DB_NAME: minnowvpn
+      DB_USER: minnowvpn
       DB_PASSWORD_FILE: /run/secrets/db_password
       REDIS_HOST: redis
       REDIS_PORT: "6379"
@@ -117,7 +117,7 @@ services:
     volumes:
       - server_logs:/app/logs
     networks:
-      - secureguard
+      - minnowvpn
     depends_on:
       postgres:
         condition: service_healthy
@@ -142,9 +142,9 @@ services:
   # ===========================================================================
   flutter-console:
     image: minnowvpn/console:${VERSION:-latest}
-    container_name: secureguard-console
+    container_name: minnowvpn-console
     networks:
-      - secureguard
+      - minnowvpn
     depends_on:
       dart-server:
         condition: service_healthy
@@ -166,8 +166,8 @@ services:
   # ===========================================================================
   vpn-daemon:
     image: minnowvpn/vpn:${VERSION:-latest}
-    container_name: secureguard-vpn
-    command: ["secureguard", "--daemon", "--http-port", "51821"]
+    container_name: minnowvpn-vpn
+    command: ["minnowvpn", "--daemon", "--http-port", "51821"]
     # Host networking required for TUN device and routing table access
     network_mode: host
     cap_add:
@@ -179,8 +179,8 @@ services:
     devices:
       - /dev/net/tun:/dev/net/tun
     volumes:
-      - vpn_state:/var/lib/secureguard
-      - vpn_run:/var/run/secureguard
+      - vpn_state:/var/lib/minnowvpn
+      - vpn_run:/var/run/minnowvpn
     environment:
       # VPN daemon connects to dart-server on host network
       DART_SERVER_URL: http://127.0.0.1:8080
@@ -203,7 +203,7 @@ services:
   # ===========================================================================
   caddy:
     image: caddy:2-alpine
-    container_name: secureguard-caddy
+    container_name: minnowvpn-caddy
     ports:
       - "${HTTP_PORT:-80}:80"
       - "${HTTPS_PORT:-443}:443"
@@ -218,7 +218,7 @@ services:
       - caddy_config:/config
       - caddy_logs:/var/log/caddy
     networks:
-      - secureguard
+      - minnowvpn
     depends_on:
       dart-server:
         condition: service_healthy
@@ -240,7 +240,7 @@ services:
   # ===========================================================================
   watchtower:
     image: containrrr/watchtower:latest
-    container_name: secureguard-watchtower
+    container_name: minnowvpn-watchtower
     environment:
       # Cron schedule: daily at 4am UTC
       WATCHTOWER_SCHEDULE: ${WATCHTOWER_SCHEDULE:-0 0 4 * * *}
@@ -268,7 +268,7 @@ services:
   # ===========================================================================
   fail2ban:
     image: crazymax/fail2ban:latest
-    container_name: secureguard-fail2ban
+    container_name: minnowvpn-fail2ban
     network_mode: host
     cap_add:
       - NET_ADMIN
@@ -294,7 +294,7 @@ services:
   # Prometheus - Metrics Collection
   prometheus:
     image: prom/prometheus:latest
-    container_name: secureguard-prometheus
+    container_name: minnowvpn-prometheus
     profiles: ["monitoring"]
     volumes:
       - ./config/prometheus.yml:/etc/prometheus/prometheus.yml:ro
@@ -307,7 +307,7 @@ services:
       - '--web.console.libraries=/usr/share/prometheus/console_libraries'
       - '--web.console.templates=/usr/share/prometheus/consoles'
     networks:
-      - secureguard
+      - minnowvpn
     healthcheck:
       test: ["CMD", "wget", "-q", "--spider", "http://localhost:9090/-/healthy"]
       interval: 10s
@@ -324,7 +324,7 @@ services:
   # Grafana - Dashboard & Visualization
   grafana:
     image: grafana/grafana:latest
-    container_name: secureguard-grafana
+    container_name: minnowvpn-grafana
     profiles: ["monitoring"]
     secrets:
       - grafana_admin_password
@@ -339,7 +339,7 @@ services:
       - grafana_data:/var/lib/grafana
       - ./config/grafana/provisioning:/etc/grafana/provisioning:ro
     networks:
-      - secureguard
+      - minnowvpn
     depends_on:
       - prometheus
     healthcheck:
@@ -358,7 +358,7 @@ services:
   # Node Exporter - Host System Metrics
   node-exporter:
     image: prom/node-exporter:latest
-    container_name: secureguard-node-exporter
+    container_name: minnowvpn-node-exporter
     profiles: ["monitoring"]
     command:
       - '--path.rootfs=/host'
@@ -368,7 +368,7 @@ services:
     volumes:
       - /:/host:ro,rslave
     networks:
-      - secureguard
+      - minnowvpn
     pid: host
     restart: unless-stopped
     deploy:
@@ -379,7 +379,7 @@ services:
   # Redis Exporter - Redis Metrics
   redis-exporter:
     image: oliver006/redis_exporter:latest
-    container_name: secureguard-redis-exporter
+    container_name: minnowvpn-redis-exporter
     profiles: ["monitoring"]
     secrets:
       - redis_password
@@ -388,7 +388,7 @@ services:
     command:
       - '--redis.password-file=/run/secrets/redis_password'
     networks:
-      - secureguard
+      - minnowvpn
     depends_on:
       redis:
         condition: service_healthy
@@ -401,16 +401,16 @@ services:
   # Postgres Exporter - PostgreSQL Metrics
   postgres-exporter:
     image: prometheuscommunity/postgres-exporter:latest
-    container_name: secureguard-postgres-exporter
+    container_name: minnowvpn-postgres-exporter
     profiles: ["monitoring"]
     secrets:
       - db_password
     environment:
-      DATA_SOURCE_URI: postgres:5432/secureguard?sslmode=disable
-      DATA_SOURCE_USER: secureguard
+      DATA_SOURCE_URI: postgres:5432/minnowvpn?sslmode=disable
+      DATA_SOURCE_USER: minnowvpn
       DATA_SOURCE_PASS_FILE: /run/secrets/db_password
     networks:
-      - secureguard
+      - minnowvpn
     depends_on:
       postgres:
         condition: service_healthy

@@ -1,10 +1,10 @@
-//! Error types for SecureGuard WireGuard client
+//! Error types for MinnowVPN WireGuard client
 
 use thiserror::Error;
 
-/// Main error type for SecureGuard
+/// Main error type for MinnowVPN
 #[derive(Error, Debug)]
-pub enum SecureGuardError {
+pub enum MinnowVpnError {
     /// Configuration errors
     #[error("Config error: {0}")]
     Config(#[from] ConfigError),
@@ -171,18 +171,18 @@ pub enum TunnelError {
     WintunLoadFailed { reason: String },
 }
 
-impl SecureGuardError {
+impl MinnowVpnError {
     /// Get a user-friendly error message with suggested action
     pub fn user_message(&self) -> String {
         match self {
             Self::Tunnel(TunnelError::InsufficientPrivileges { .. }) => {
                 #[cfg(target_os = "linux")]
                 return "Insufficient privileges. Run with sudo or grant CAP_NET_ADMIN:\n  \
-                        sudo setcap cap_net_admin=eip ./secureguard-poc"
+                        sudo setcap cap_net_admin=eip ./minnowvpn"
                     .to_string();
                 #[cfg(target_os = "macos")]
                 return "Insufficient privileges. Run with sudo:\n  \
-                        sudo ./secureguard-poc -c config.conf"
+                        sudo ./minnowvpn -c config.conf"
                     .to_string();
                 #[cfg(target_os = "windows")]
                 return "Insufficient privileges. Run as Administrator.".to_string();
@@ -265,5 +265,5 @@ impl SecureGuardError {
     }
 }
 
-/// Result type alias for SecureGuard operations
-pub type Result<T> = std::result::Result<T, SecureGuardError>;
+/// Result type alias for MinnowVPN operations
+pub type Result<T> = std::result::Result<T, MinnowVpnError>;

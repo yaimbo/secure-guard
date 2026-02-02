@@ -1,5 +1,5 @@
 #!/bin/bash
-# SecureGuard VPN - macOS Installer Builder
+# MinnowVPN VPN - macOS Installer Builder
 # Builds both Rust daemon and Flutter app, then creates a unified PKG installer
 
 set -euo pipefail
@@ -8,7 +8,7 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_ROOT="$(dirname "$(dirname "$SCRIPT_DIR")")"
 BUILD_DIR="$SCRIPT_DIR/build"
-FLUTTER_PROJECT="$PROJECT_ROOT/secureguard_client"
+FLUTTER_PROJECT="$PROJECT_ROOT/minnowvpn_client"
 
 # Version (can be overridden via argument)
 VERSION="${1:-1.0.0}"
@@ -97,9 +97,9 @@ build_rust_binary() {
 
         # Create universal binary with lipo
         lipo -create \
-            "$PROJECT_ROOT/target/x86_64-apple-darwin/release/secureguard-poc" \
-            "$PROJECT_ROOT/target/aarch64-apple-darwin/release/secureguard-poc" \
-            -output "$BUILD_DIR/secureguard-service"
+            "$PROJECT_ROOT/target/x86_64-apple-darwin/release/minnowvpn" \
+            "$PROJECT_ROOT/target/aarch64-apple-darwin/release/minnowvpn" \
+            -output "$BUILD_DIR/minnowvpn-service"
 
         log_info "Universal binary created"
     else
@@ -108,13 +108,13 @@ build_rust_binary() {
         echo "  rustup target add x86_64-apple-darwin aarch64-apple-darwin"
 
         cargo build --release
-        cp "$PROJECT_ROOT/target/release/secureguard-poc" "$BUILD_DIR/secureguard-service"
+        cp "$PROJECT_ROOT/target/release/minnowvpn" "$BUILD_DIR/minnowvpn-service"
 
         log_info "Native binary created"
     fi
 
     # Verify binary
-    file "$BUILD_DIR/secureguard-service"
+    file "$BUILD_DIR/minnowvpn-service"
 }
 
 # Build Flutter macOS app

@@ -33,7 +33,7 @@ COPY src/ ./src/
 
 # Build the actual binary
 RUN cargo build --release && \
-    cp target/release/secureguard-poc /secureguard
+    cp target/release/minnowvpn /minnowvpn
 
 # -----------------------------------------------------------------------------
 # Stage 2: Create minimal runtime image
@@ -52,14 +52,14 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     && apt-get clean
 
 # Create directories for state and runtime
-RUN mkdir -p /var/lib/secureguard /var/run/secureguard \
-    && chmod 755 /var/lib/secureguard /var/run/secureguard
+RUN mkdir -p /var/lib/minnowvpn /var/run/minnowvpn \
+    && chmod 755 /var/lib/minnowvpn /var/run/minnowvpn
 
 # Copy compiled binary
-COPY --from=build /secureguard /usr/local/bin/secureguard
+COPY --from=build /minnowvpn /usr/local/bin/minnowvpn
 
 # Make it executable
-RUN chmod +x /usr/local/bin/secureguard
+RUN chmod +x /usr/local/bin/minnowvpn
 
 # Expose ports
 # UDP 51820 - WireGuard protocol
@@ -76,4 +76,4 @@ LABEL com.centurylinklabs.watchtower.enable="true"
 # Run daemon in server mode
 # --daemon: Run as HTTP REST API service
 # --http-port 51821: HTTP API port (VPN uses 51820)
-CMD ["secureguard", "--daemon", "--http-port", "51821"]
+CMD ["minnowvpn", "--daemon", "--http-port", "51821"]

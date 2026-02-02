@@ -3,8 +3,8 @@
 //! Uses test vectors from wireguard-go and boringtun to verify our implementation.
 
 use base64::{engine::general_purpose::STANDARD as BASE64, Engine};
-use secureguard_poc::crypto::{blake2s, x25519, aead};
-use secureguard_poc::crypto::noise::HandshakeState;
+use minnowvpn::crypto::{blake2s, x25519, aead};
+use minnowvpn::crypto::noise::HandshakeState;
 
 fn main() {
     println!("=== WireGuard Test Vector Verification ===\n");

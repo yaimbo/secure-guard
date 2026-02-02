@@ -10,8 +10,8 @@
 	<true/>
 	<key>com.apple.security.temporary-exception.files.absolute-path.read-only</key>
 	<array>
-		<string>/var/run/secureguard/</string>
-		<string>/private/var/run/secureguard/</string>
+		<string>/var/run/minnowvpn/</string>
+		<string>/private/var/run/minnowvpn/</string>
 	</array>
 </dict>
 </plist>

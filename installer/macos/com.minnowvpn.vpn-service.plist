@@ -4,12 +4,12 @@
 <dict>
     <!-- Unique identifier for the service -->
     <key>Label</key>
-    <string>com.secureguard.vpn-service</string>
+    <string>com.minnowvpn.vpn-service</string>
 
     <!-- Program and arguments -->
     <key>ProgramArguments</key>
     <array>
-        <string>/Library/PrivilegedHelperTools/secureguard-service</string>
+        <string>/Library/PrivilegedHelperTools/minnowvpn-service</string>
         <string>--daemon</string>
     </array>
 
@@ -34,13 +34,13 @@
 
     <!-- Standard output/error logging -->
     <key>StandardOutPath</key>
-    <string>/var/log/secureguard.log</string>
+    <string>/var/log/minnowvpn.log</string>
     <key>StandardErrorPath</key>
-    <string>/var/log/secureguard.error.log</string>
+    <string>/var/log/minnowvpn.error.log</string>
 
     <!-- Working directory -->
     <key>WorkingDirectory</key>
-    <string>/var/lib/secureguard</string>
+    <string>/var/lib/minnowvpn</string>
 
     <!-- Run as root (required for TUN device creation) -->
     <key>UserName</key>
@@ -78,7 +78,7 @@
     <!-- Enable sandbox (requires sandbox profile) -->
     <!-- Note: Uncomment when sandbox profile is tested and verified -->
     <!-- <key>SandboxProfile</key> -->
-    <!-- <string>/Library/Application Support/SecureGuard/com.secureguard.vpn-service.sb</string> -->
+    <!-- <string>/Library/Application Support/MinnowVPN/com.minnowvpn.vpn-service.sb</string> -->
 
     <!-- Soft resource limits -->
     <key>SoftResourceLimits</key>
@@ -105,7 +105,7 @@
     <!-- Enable mach service for on-demand activation -->
     <key>MachServices</key>
     <dict>
-        <key>com.secureguard.vpn-service</key>
+        <key>com.minnowvpn.vpn-service</key>
         <true/>
     </dict>
 

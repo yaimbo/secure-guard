@@ -3,24 +3,24 @@ version: '3.8'
 services:
   postgres:
     image: postgres:15-alpine
-    container_name: secureguard-postgres
+    container_name: minnowvpn-postgres
     environment:
-      POSTGRES_USER: secureguard
-      POSTGRES_PASSWORD: secureguard
-      POSTGRES_DB: secureguard
+      POSTGRES_USER: minnowvpn
+      POSTGRES_PASSWORD: minnowvpn
+      POSTGRES_DB: minnowvpn
     ports:
       - "5432:5432"
     volumes:
       - postgres_data:/var/lib/postgresql/data
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U secureguard"]
+      test: ["CMD-SHELL", "pg_isready -U minnowvpn"]
       interval: 5s
       timeout: 5s
       retries: 5
 
   redis:
     image: redis:7-alpine
-    container_name: secureguard-redis
+    container_name: minnowvpn-redis
     ports:
       - "6379:6379"
     volumes:

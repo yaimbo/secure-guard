@@ -3,7 +3,7 @@ import 'dart:io';
 import 'package:args/args.dart';
 import 'package:dotenv/dotenv.dart';
 import 'package:logging/logging.dart';
-import 'package:secureguard_server/server.dart';
+import 'package:minnowvpn_server/server.dart';
 
 IOSink? _logFile;
 
@@ -72,7 +72,7 @@ Future<void> main(List<String> args) async {
     port: port,
     dbHost: env['DB_HOST'] ?? 'localhost',
     dbPort: int.parse(env['DB_PORT'] ?? '5432'),
-    dbName: env['DB_NAME'] ?? 'secureguard',
+    dbName: env['DB_NAME'] ?? 'minnowvpn',
     dbUser: env['DB_USER'] ?? 'postgres',
     dbPassword: env['DB_PASSWORD'] ?? '',
     redisHost: env['REDIS_HOST'] ?? 'localhost',
@@ -88,7 +88,7 @@ Future<void> main(List<String> args) async {
   log.info('Database: ${config.dbHost}:${config.dbPort}/${config.dbName}');
 
   try {
-    final server = SecureGuardServer(config);
+    final server = MinnowVpnServer(config);
     await server.start();
 
     log.info('Server running at http://${config.host}:${config.port}');

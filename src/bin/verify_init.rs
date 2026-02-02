@@ -1,6 +1,6 @@
 //! Verify initial chain key and hash match boringtun
 
-use secureguard_poc::crypto::{blake2s, noise};
+use minnowvpn::crypto::{blake2s, noise};
 
 fn main() {
     println!("=== Verifying Initial Constants ===\n");

@@ -16,7 +16,7 @@ Before installing, build the release binary:
 cargo build --release
 ```
 
-The binary will be at `target/release/secureguard-poc` (or `secureguard-poc.exe` on Windows).
+The binary will be at `target/release/minnowvpn` (or `minnowvpn.exe` on Windows).
 
 ## macOS Installation
 
@@ -28,10 +28,10 @@ sudo ./install.sh
 ```
 
 The installer will:
-- Install binary to `/Library/PrivilegedHelperTools/secureguard-service`
+- Install binary to `/Library/PrivilegedHelperTools/minnowvpn-service`
 - Install LaunchDaemon plist to `/Library/LaunchDaemons/`
-- Create data directory at `/var/lib/secureguard`
-- Create IPC socket at `/var/run/secureguard.sock`
+- Create data directory at `/var/lib/minnowvpn`
+- Create IPC socket at `/var/run/minnowvpn.sock`
 - Start the service automatically
 
 ### Uninstall
@@ -46,16 +46,16 @@ sudo ./uninstall.sh --all    # Removes everything
 
 ```bash
 # Check status
-sudo launchctl list | grep secureguard
+sudo launchctl list | grep minnowvpn
 
 # Stop service
-sudo launchctl bootout system/com.secureguard.vpn-service
+sudo launchctl bootout system/com.minnowvpn.vpn-service
 
 # Start service
-sudo launchctl bootstrap system /Library/LaunchDaemons/com.secureguard.vpn-service.plist
+sudo launchctl bootstrap system /Library/LaunchDaemons/com.minnowvpn.vpn-service.plist
 
 # View logs
-tail -f /var/log/secureguard.log
+tail -f /var/log/minnowvpn.log
 ```
 
 ### Security Features
@@ -76,11 +76,11 @@ sudo ./install.sh
 ```
 
 The installer will:
-- Install binary to `/usr/local/bin/secureguard-service`
-- Install systemd unit to `/etc/systemd/system/secureguard.service`
+- Install binary to `/usr/local/bin/minnowvpn-service`
+- Install systemd unit to `/etc/systemd/system/minnowvpn.service`
 - Set required capabilities (CAP_NET_ADMIN, CAP_NET_RAW)
-- Create data directory at `/var/lib/secureguard`
-- Create IPC socket at `/var/run/secureguard/secureguard.sock`
+- Create data directory at `/var/lib/minnowvpn`
+- Create IPC socket at `/var/run/minnowvpn/minnowvpn.sock`
 - Enable and start the service
 
 ### Uninstall
@@ -95,19 +95,19 @@ sudo ./uninstall.sh --all    # Removes everything
 
 ```bash
 # Check status
-sudo systemctl status secureguard
+sudo systemctl status minnowvpn
 
 # Stop service
-sudo systemctl stop secureguard
+sudo systemctl stop minnowvpn
 
 # Start service
-sudo systemctl start secureguard
+sudo systemctl start minnowvpn
 
 # Restart service
-sudo systemctl restart secureguard
+sudo systemctl restart minnowvpn
 
 # View logs
-sudo journalctl -u secureguard -f
+sudo journalctl -u minnowvpn -f
 ```
 
 ### Security Features (systemd hardening)
@@ -134,7 +134,7 @@ cd installer\windows
 Or specify a custom binary path:
 
 ```powershell
-.\install.ps1 -BinaryPath "C:\path\to\secureguard-service.exe"
+.\install.ps1 -BinaryPath "C:\path\to\minnowvpn-service.exe"
 ```
 
 ### PowerShell Uninstall
@@ -149,7 +149,7 @@ Build the installer (requires NSIS 3.0+):
 
 ```bash
 cd installer/windows
-makensis secureguard.nsi
+makensis minnowvpn.nsi
 ```
 
 This creates `MinnowVPN-1.0.0-Setup.exe` which can be distributed.
@@ -158,16 +158,16 @@ This creates `MinnowVPN-1.0.0-Setup.exe` which can be distributed.
 
 ```powershell
 # Check status
-Get-Service SecureGuardVPN
+Get-Service MinnowVPN
 
 # Stop service
-Stop-Service SecureGuardVPN
+Stop-Service MinnowVPN
 
 # Start service
-Start-Service SecureGuardVPN
+Start-Service MinnowVPN
 
 # View logs (Event Viewer)
-Get-EventLog -LogName Application -Source SecureGuardVPN
+Get-EventLog -LogName Application -Source MinnowVPN
 ```
 
 ### Security Features
@@ -183,9 +183,9 @@ The daemon creates an IPC socket for communication with the desktop client:
 
 | Platform | Socket Path |
 |----------|-------------|
-| macOS | `/var/run/secureguard.sock` |
-| Linux | `/var/run/secureguard/secureguard.sock` |
-| Windows | `\\.\pipe\secureguard` |
+| macOS | `/var/run/minnowvpn.sock` |
+| Linux | `/var/run/minnowvpn/minnowvpn.sock` |
+| Windows | `\\.\pipe\minnowvpn` |
 
 The socket uses JSON-RPC 2.0 protocol. See the main README for protocol details.
 
@@ -195,42 +195,42 @@ The socket uses JSON-RPC 2.0 protocol. See the main README for protocol details.
 
 ```bash
 # Check if service is loaded
-sudo launchctl list | grep secureguard
+sudo launchctl list | grep minnowvpn
 
 # Check error log
-cat /var/log/secureguard.error.log
+cat /var/log/minnowvpn.error.log
 
 # Check system log
-log show --predicate 'subsystem == "com.secureguard"' --last 1h
+log show --predicate 'subsystem == "com.minnowvpn"' --last 1h
 ```
 
 ### Linux
 
 ```bash
 # Check service status
-sudo systemctl status secureguard
+sudo systemctl status minnowvpn
 
 # Check journal logs
-sudo journalctl -u secureguard -n 100
+sudo journalctl -u minnowvpn -n 100
 
 # Check if socket exists
-ls -la /var/run/secureguard/
+ls -la /var/run/minnowvpn/
 
 # Verify capabilities
-getcap /usr/local/bin/secureguard-service
+getcap /usr/local/bin/minnowvpn-service
 ```
 
 ### Windows
 
 ```powershell
 # Check service status
-sc query SecureGuardVPN
+sc query MinnowVPN
 
 # Check Event Viewer
-Get-EventLog -LogName Application -Source SecureGuardVPN -Newest 20
+Get-EventLog -LogName Application -Source MinnowVPN -Newest 20
 
 # Check if pipe exists
-[System.IO.Directory]::GetFiles("\\.\pipe\") | Where-Object { $_ -like "*secureguard*" }
+[System.IO.Directory]::GetFiles("\\.\pipe\") | Where-Object { $_ -like "*minnowvpn*" }
 ```
 
 ## Building Cross-Platform Binaries
@@ -244,9 +244,9 @@ cargo build --release
 # macOS Universal (Intel + Apple Silicon)
 cargo build --release --target x86_64-apple-darwin
 cargo build --release --target aarch64-apple-darwin
-lipo -create target/x86_64-apple-darwin/release/secureguard-poc \
-     target/aarch64-apple-darwin/release/secureguard-poc \
-     -output secureguard-service-macos-universal
+lipo -create target/x86_64-apple-darwin/release/minnowvpn \
+     target/aarch64-apple-darwin/release/minnowvpn \
+     -output minnowvpn-service-macos-universal
 
 # Linux x86_64 (using cross or native)
 cargo build --release --target x86_64-unknown-linux-gnu

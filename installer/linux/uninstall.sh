@@ -1,19 +1,19 @@
 #!/bin/bash
-# SecureGuard VPN Uninstaller for Linux
+# MinnowVPN VPN Uninstaller for Linux
 # This script removes the daemon service, client app, and cleans up
 
 set -euo pipefail
 
 # Configuration
-SERVICE_NAME="secureguard"
+SERVICE_NAME="minnowvpn"
 INSTALL_DIR="/usr/local/bin"
 SYSTEMD_DIR="/etc/systemd/system"
-DATA_DIR="/var/lib/secureguard"
-RUN_DIR="/var/run/secureguard"
-LOG_DIR="/var/log/secureguard"
-CLIENT_DIR="/opt/secureguard"
-DESKTOP_FILE="/usr/share/applications/secureguard.desktop"
-SECUREGUARD_GROUP="secureguard"
+DATA_DIR="/var/lib/minnowvpn"
+RUN_DIR="/var/run/minnowvpn"
+LOG_DIR="/var/log/minnowvpn"
+CLIENT_DIR="/opt/minnowvpn"
+DESKTOP_FILE="/usr/share/applications/minnowvpn.desktop"
+MINNOWVPN_GROUP="minnowvpn"
 
 # Colors for output
 RED='\033[0;31m'
@@ -70,8 +70,8 @@ while [[ $# -gt 0 ]]; do
             echo ""
             echo "Options:"
             echo "  --all          Remove everything including data and logs"
-            echo "  --data         Remove data directory (/var/lib/secureguard)"
-            echo "  --logs         Remove log directory (/var/log/secureguard)"
+            echo "  --data         Remove data directory (/var/lib/minnowvpn)"
+            echo "  --logs         Remove log directory (/var/log/minnowvpn)"
             echo "  --daemon-only  Only remove daemon, keep client app"
             echo "  -h, --help     Show this help message"
             echo ""
@@ -89,13 +89,13 @@ done
 stop_app() {
     log_info "Checking for running MinnowVPN app..."
 
-    # Kill any running SecureGuard GUI processes
-    if pkill -f "secureguard_client" 2>/dev/null; then
-        log_info "Stopped secureguard_client"
+    # Kill any running MinnowVPN GUI processes
+    if pkill -f "minnowvpn_client" 2>/dev/null; then
+        log_info "Stopped minnowvpn_client"
         sleep 1
     fi
 
-    if pkill -f "SecureGuard" 2>/dev/null; then
+    if pkill -f "MinnowVPN" 2>/dev/null; then
         log_info "Stopped MinnowVPN"
         sleep 1
     fi
@@ -119,18 +119,18 @@ stop_service() {
 
 # Remove systemd service file
 remove_service() {
-    if [ -f "$SYSTEMD_DIR/secureguard.service" ]; then
+    if [ -f "$SYSTEMD_DIR/minnowvpn.service" ]; then
         log_info "Removing systemd service..."
-        rm -f "$SYSTEMD_DIR/secureguard.service"
+        rm -f "$SYSTEMD_DIR/minnowvpn.service"
         systemctl daemon-reload
     fi
 }
 
 # Remove daemon binary
 remove_daemon_binary() {
-    if [ -f "$INSTALL_DIR/secureguard-service" ]; then
+    if [ -f "$INSTALL_DIR/minnowvpn-service" ]; then
         log_info "Removing daemon binary..."
-        rm -f "$INSTALL_DIR/secureguard-service"
+        rm -f "$INSTALL_DIR/minnowvpn-service"
     fi
 }
 
@@ -141,9 +141,9 @@ remove_client() {
     fi
 
     # Remove client symlink
-    if [ -L "$INSTALL_DIR/secureguard" ]; then
+    if [ -L "$INSTALL_DIR/minnowvpn" ]; then
         log_info "Removing client symlink..."
-        rm -f "$INSTALL_DIR/secureguard"
+        rm -f "$INSTALL_DIR/minnowvpn"
     fi
 
     # Remove client application directory
@@ -160,7 +160,7 @@ remove_client() {
 
     # Also check for user-specific desktop entries
     for user_home in /home/*; do
-        local user_desktop="$user_home/.local/share/applications/secureguard.desktop"
+        local user_desktop="$user_home/.local/share/applications/minnowvpn.desktop"
         if [ -f "$user_desktop" ]; then
             log_info "Removing user desktop entry: $user_desktop"
             rm -f "$user_desktop"
@@ -169,7 +169,7 @@ remove_client() {
 
     # Remove icons
     for size in 48 128 256; do
-        local icon_path="/usr/share/icons/hicolor/${size}x${size}/apps/secureguard.png"
+        local icon_path="/usr/share/icons/hicolor/${size}x${size}/apps/minnowvpn.png"
         if [ -f "$icon_path" ]; then
             rm -f "$icon_path"
         fi
@@ -214,15 +214,15 @@ remove_logs() {
 # Remove group if empty
 remove_group() {
     if [ "$REMOVE_DATA" = true ]; then
-        if getent group "$SECUREGUARD_GROUP" > /dev/null 2>&1; then
+        if getent group "$MINNOWVPN_GROUP" > /dev/null 2>&1; then
             # Check if any users are still in the group
             local group_members
-            group_members=$(getent group "$SECUREGUARD_GROUP" | cut -d: -f4)
+            group_members=$(getent group "$MINNOWVPN_GROUP" | cut -d: -f4)
             if [ -z "$group_members" ]; then
-                log_info "Removing $SECUREGUARD_GROUP group..."
-                groupdel "$SECUREGUARD_GROUP" 2>/dev/null || true
+                log_info "Removing $MINNOWVPN_GROUP group..."
+                groupdel "$MINNOWVPN_GROUP" 2>/dev/null || true
             else
-                log_info "Group $SECUREGUARD_GROUP still has members, keeping it"
+                log_info "Group $MINNOWVPN_GROUP still has members, keeping it"
             fi
         fi
     fi

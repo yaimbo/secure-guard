@@ -3,7 +3,7 @@
 //! Handles encryption and decryption of IP packets using ChaCha20-Poly1305.
 
 use crate::crypto::aead;
-use crate::error::{CryptoError, ProtocolError, SecureGuardError};
+use crate::error::{CryptoError, ProtocolError, MinnowVpnError};
 use crate::protocol::messages::TransportHeader;
 
 /// Maximum counter value before requiring rekey
@@ -25,7 +25,7 @@ pub fn encrypt_packet(
     counter: u64,
     receiver_index: u32,
     plaintext: &[u8],
-) -> Result<Vec<u8>, SecureGuardError> {
+) -> Result<Vec<u8>, MinnowVpnError> {
     if counter >= REJECT_AFTER_MESSAGES {
         return Err(ProtocolError::SessionExpired.into());
     }
@@ -53,7 +53,7 @@ pub fn encrypt_packet(
 pub fn decrypt_packet(
     key: &[u8; 32],
     packet: &[u8],
-) -> Result<(u64, Vec<u8>), SecureGuardError> {
+) -> Result<(u64, Vec<u8>), MinnowVpnError> {
     if packet.len() < TransportHeader::MIN_SIZE {
         return Err(ProtocolError::InvalidMessageLength {
             expected: TransportHeader::MIN_SIZE,
@@ -196,14 +196,14 @@ impl TransportState {
     }
 
     /// Encrypt a packet and increment counter
-    pub fn encrypt(&mut self, receiver_index: u32, plaintext: &[u8]) -> Result<Vec<u8>, SecureGuardError> {
+    pub fn encrypt(&mut self, receiver_index: u32, plaintext: &[u8]) -> Result<Vec<u8>, MinnowVpnError> {
         let counter = self.sending_counter;
         self.sending_counter += 1;
         encrypt_packet(&self.sending_key, counter, receiver_index, plaintext)
     }
 
     /// Decrypt a packet and check for replay
-    pub fn decrypt(&mut self, packet: &[u8]) -> Result<Vec<u8>, SecureGuardError> {
+    pub fn decrypt(&mut self, packet: &[u8]) -> Result<Vec<u8>, MinnowVpnError> {
         let (counter, plaintext) = decrypt_packet(&self.receiving_key, packet)?;
 
         if !self.replay_window.check_and_update(counter) {

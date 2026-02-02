@@ -80,7 +80,7 @@ cargo build --release
 ### 2. Start the Server
 
 ```bash
-cd secureguard-server
+cd minnowvpn-server
 
 # Configure database connection
 cp .env.example .env
@@ -94,21 +94,21 @@ dart run bin/server.dart
 ### 3. Start the Admin Console
 
 ```bash
-cd secureguard_console
+cd minnowvpn_console
 flutter pub get
 flutter run -d chrome --dart-define=API_URL=http://localhost:8080/api/v1
 ```
 
 Or use the convenience script:
 ```bash
-cd secureguard_console
+cd minnowvpn_console
 ./start.sh
 ```
 
 ### 4. Run the Desktop Client
 
 ```bash
-cd secureguard_client
+cd minnowvpn_client
 
 # Start both daemon and Flutter client (recommended)
 ./start.sh
@@ -131,36 +131,36 @@ flutter build macos --release   # or linux, windows
 #### Client Mode (Connect to VPN Server)
 ```bash
 # Auto-detected if peer has Endpoint
-sudo ./target/release/secureguard-poc -c client.conf
+sudo ./target/release/minnowvpn -c client.conf
 
 # Force client mode
-sudo ./target/release/secureguard-poc -c client.conf --client
+sudo ./target/release/minnowvpn -c client.conf --client
 
 # With verbose logging
-sudo ./target/release/secureguard-poc -c client.conf -v
+sudo ./target/release/minnowvpn -c client.conf -v
 ```
 
 #### Server Mode (Accept Incoming Connections)
 ```bash
 # Auto-detected if ListenPort set and no peer Endpoint
-sudo ./target/release/secureguard-poc -c server.conf
+sudo ./target/release/minnowvpn -c server.conf
 
 # Force server mode
-sudo ./target/release/secureguard-poc -c server.conf --server
+sudo ./target/release/minnowvpn -c server.conf --server
 ```
 
 #### Daemon Mode (For UI Control)
 ```bash
 # Run as daemon with default socket
-sudo ./target/release/secureguard-poc --daemon
+sudo ./target/release/minnowvpn --daemon
 
 # Run with custom socket path
-sudo ./target/release/secureguard-poc --daemon --socket /custom/path.sock
+sudo ./target/release/minnowvpn --daemon --socket /custom/path.sock
 ```
 
 ### Daemon IPC Protocol
 
-The daemon accepts JSON-RPC 2.0 commands over Unix socket (`/var/run/secureguard.sock`).
+The daemon accepts JSON-RPC 2.0 commands over Unix socket (`/var/run/minnowvpn.sock`).
 
 **Connect to VPN:**
 ```json
@@ -213,23 +213,23 @@ sudo ./installer/macos/install.sh
 ```
 
 This installs:
-- Binary to `/Library/PrivilegedHelperTools/secureguard-service`
+- Binary to `/Library/PrivilegedHelperTools/minnowvpn-service`
 - LaunchDaemon plist to `/Library/LaunchDaemons/`
-- Logs to `/var/log/secureguard.log`
+- Logs to `/var/log/minnowvpn.log`
 
 **Service commands:**
 ```bash
 # Stop service
-sudo launchctl unload /Library/LaunchDaemons/com.secureguard.vpn-service.plist
+sudo launchctl unload /Library/LaunchDaemons/com.minnowvpn.vpn-service.plist
 
 # Start service
-sudo launchctl load /Library/LaunchDaemons/com.secureguard.vpn-service.plist
+sudo launchctl load /Library/LaunchDaemons/com.minnowvpn.vpn-service.plist
 
 # Check status
-sudo launchctl list | grep secureguard
+sudo launchctl list | grep minnowvpn
 
 # View logs
-tail -f /var/log/secureguard.log
+tail -f /var/log/minnowvpn.log
 ```
 
 ### Linux (systemd)
@@ -243,16 +243,16 @@ sudo ./installer/linux/install.sh
 ```
 
 This installs:
-- Binary to `/usr/local/bin/secureguard-service`
-- systemd unit to `/etc/systemd/system/secureguard.service`
+- Binary to `/usr/local/bin/minnowvpn-service`
+- systemd unit to `/etc/systemd/system/minnowvpn.service`
 - Sets required capabilities (CAP_NET_ADMIN)
 
 **Service commands:**
 ```bash
-sudo systemctl status secureguard
-sudo systemctl stop secureguard
-sudo systemctl start secureguard
-sudo journalctl -u secureguard -f
+sudo systemctl status minnowvpn
+sudo systemctl stop minnowvpn
+sudo systemctl start minnowvpn
+sudo journalctl -u minnowvpn -f
 ```
 
 ## Server API Endpoints
@@ -379,8 +379,8 @@ sudo journalctl -u secureguard -f
 # Database
 DB_HOST=localhost
 DB_PORT=5432
-DB_NAME=secureguard
-DB_USER=secureguard
+DB_NAME=minnowvpn
+DB_USER=minnowvpn
 DB_PASSWORD=your_password
 
 # Redis (for real-time events)
@@ -422,7 +422,7 @@ cargo check
 ### Server (Dart)
 
 ```bash
-cd secureguard-server
+cd minnowvpn-server
 dart pub get
 dart run bin/server.dart
 ```
@@ -430,7 +430,7 @@ dart run bin/server.dart
 ### Console (Flutter Web)
 
 ```bash
-cd secureguard_console
+cd minnowvpn_console
 flutter pub get
 
 # Development
@@ -443,7 +443,7 @@ flutter build web --release
 ### Desktop Client (Flutter)
 
 ```bash
-cd secureguard_client
+cd minnowvpn_client
 flutter pub get
 
 # Development (requires daemon running)
@@ -484,7 +484,7 @@ Events are logged to PostgreSQL and published to Redis for real-time dashboard u
 ## Security Considerations
 
 - The VPN client requires root/administrator privileges to create TUN devices
-- On Linux, you can use capabilities instead of root: `sudo setcap cap_net_admin=eip ./secureguard-poc`
+- On Linux, you can use capabilities instead of root: `sudo setcap cap_net_admin=eip ./minnowvpn`
 - Private keys are encrypted at rest in the database using AES-256
 - JWT tokens expire after 24 hours
 - All API endpoints (except health, setup, and SSO flows) require authentication

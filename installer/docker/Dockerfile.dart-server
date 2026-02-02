@@ -12,13 +12,13 @@ FROM --platform=$BUILDPLATFORM dart:stable AS build
 WORKDIR /app
 
 # Copy pubspec files first for better layer caching
-COPY secureguard-server/pubspec.* ./
+COPY minnowvpn-server/pubspec.* ./
 
 # Get dependencies (initial fetch for layer caching)
 RUN dart pub get
 
 # Copy the rest of the source code
-COPY secureguard-server/ ./
+COPY minnowvpn-server/ ./
 
 # Re-run pub get to ensure dependencies are properly resolved
 RUN dart pub get --offline || dart pub get
@@ -42,10 +42,10 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     && apt-get clean
 
 # Create non-root user
-RUN groupadd -r secureguard && useradd -r -g secureguard secureguard
+RUN groupadd -r minnowvpn && useradd -r -g minnowvpn minnowvpn
 
 # Create directories
-RUN mkdir -p /app/logs && chown -R secureguard:secureguard /app
+RUN mkdir -p /app/logs && chown -R minnowvpn:minnowvpn /app
 
 WORKDIR /app
 
@@ -58,10 +58,10 @@ COPY installer/docker/scripts/docker-entrypoint-server.sh /app/entrypoint.sh
 RUN chmod +x /app/entrypoint.sh
 
 # Set ownership
-RUN chown -R secureguard:secureguard /app
+RUN chown -R minnowvpn:minnowvpn /app
 
 # Switch to non-root user
-USER secureguard
+USER minnowvpn
 
 # Expose API port
 EXPOSE 8080

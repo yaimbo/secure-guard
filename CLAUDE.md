@@ -59,10 +59,10 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 cargo build --release
 
 # Run VPN client (requires root/sudo on macOS, root/CAP_NET_ADMIN on Linux)
-sudo ./target/release/secureguard-poc -c docs/clients/vpn.fronthouse.ai.conf
+sudo ./target/release/minnowvpn -c docs/clients/vpn.fronthouse.ai.conf
 
 # Run with verbose logging
-sudo ./target/release/secureguard-poc -c docs/clients/vpn.fronthouse.ai.conf -v
+sudo ./target/release/minnowvpn -c docs/clients/vpn.fronthouse.ai.conf -v
 
 # Run tests
 cargo test
@@ -74,7 +74,7 @@ cargo test test_name
 cargo check
 
 # Linux: Grant capability instead of running as root
-sudo setcap cap_net_admin=eip ./target/release/secureguard-poc
+sudo setcap cap_net_admin=eip ./target/release/minnowvpn
 
 # macOS: Set up setuid root permissions (run after each build)
 sudo ./setuid.sh
@@ -109,16 +109,16 @@ Test configs are located in `docs/clients/`:
 Example usage:
 ```bash
 # Start local server (in one terminal)
-./target/release/secureguard-poc -c docs/clients/wg0.conf --server -v
+./target/release/minnowvpn -c docs/clients/wg0.conf --server -v
 
 # Start local client (in another terminal)
-./target/release/secureguard-poc -c docs/clients/local-client.conf -v
+./target/release/minnowvpn -c docs/clients/local-client.conf -v
 
 # Test tunnel connectivity
 ping 10.100.0.1  # From client, ping server through tunnel
 
 # Test against official server
-./target/release/secureguard-poc -c docs/clients/vpn.fronthouse.ai.conf
+./target/release/minnowvpn -c docs/clients/vpn.fronthouse.ai.conf
 ```
 
 ## Architecture
@@ -160,22 +160,22 @@ This is a WireGuard-compatible VPN client/server implementing the Noise IKpsk2 h
 
 ```bash
 # Client mode (auto-detected if peer has Endpoint)
-./secureguard-poc -c client.conf
+./minnowvpn -c client.conf
 
 # Server mode (auto-detected if ListenPort set and no peer Endpoint)
-./secureguard-poc -c server.conf
+./minnowvpn -c server.conf
 
 # Force specific mode
-./secureguard-poc -c config.conf --server
-./secureguard-poc -c config.conf --client
+./minnowvpn -c config.conf --server
+./minnowvpn -c config.conf --client
 
 # Daemon mode (for Flutter UI control via REST API)
-sudo ./secureguard-poc --daemon
-sudo ./secureguard-poc --daemon --port 51820
+sudo ./minnowvpn --daemon
+sudo ./minnowvpn --daemon --port 51820
 
 # Run client and server daemons simultaneously (for testing)
-sudo ./secureguard-poc --daemon --port 51820  # Client mode (default)
-sudo ./secureguard-poc --daemon --port 51821  # Server mode (separate port)
+sudo ./minnowvpn --daemon --port 51820  # Client mode (default)
+sudo ./minnowvpn --daemon --port 51821  # Server mode (separate port)
 ```
 
 ### Daemon Mode
@@ -193,8 +193,8 @@ The Flutter desktop client connects to the client port. The Dart REST server con
 - Token is written to a protected file with group-based permissions
 - Clients read token from file and include as `Authorization: Bearer <token>` header
 - Token file paths:
-  - Unix: `/var/run/secureguard/auth-token` (permissions: `root:secureguard 0640`)
-  - Windows: `C:\ProgramData\SecureGuard\auth-token` (ACL: SYSTEM + Administrators full, Users read)
+  - Unix: `/var/run/minnowvpn/auth-token` (permissions: `root:minnowvpn 0640`)
+  - Windows: `C:\ProgramData\MinnowVPN\auth-token` (ACL: SYSTEM + Administrators full, Users read)
 
 **REST API Endpoints (Client Mode):**
 - `POST /api/v1/connect` - Start VPN client (body: `{"config": "<wireguard-config>"}`)
@@ -255,26 +255,26 @@ The build script performs:
 2. Builds Flutter macOS app with `flutter build macos --release`
 3. Creates unified PKG installer via `create-pkg.sh`
 
-Output: `installer/macos/build/SecureGuard-<VERSION>.pkg` (~20MB)
+Output: `installer/macos/build/MinnowVPN-<VERSION>.pkg` (~20MB)
 
 The PKG installer includes:
-- `SecureGuard.app` installed to `/Applications`
-- VPN daemon service at `/Library/PrivilegedHelperTools/secureguard-service`
+- `MinnowVPN.app` installed to `/Applications`
+- VPN daemon service at `/Library/PrivilegedHelperTools/minnowvpn-service`
 - LaunchDaemon plist for auto-start at boot
-- Uninstall script at `/Library/Application Support/SecureGuard/uninstall.sh` (for in-app uninstall)
+- Uninstall script at `/Library/Application Support/MinnowVPN/uninstall.sh` (for in-app uninstall)
 - Preinstall script (stops existing services, cleans old tokens)
-- Postinstall script (creates secureguard group, sets permissions, starts service)
+- Postinstall script (creates minnowvpn group, sets permissions, starts service)
 
 To install the PKG:
 ```bash
 # Double-click the PKG file in Finder, or:
-sudo installer -pkg installer/macos/build/SecureGuard-<VERSION>.pkg -target /
+sudo installer -pkg installer/macos/build/MinnowVPN-<VERSION>.pkg -target /
 ```
 
 To uninstall:
 ```bash
 # Option 1: From the app (recommended for end users)
-# Right-click system tray → "Uninstall SecureGuard..."
+# Right-click system tray → "Uninstall MinnowVPN..."
 
 # Option 2: Command line
 cd installer/macos
@@ -301,13 +301,13 @@ cd installer/linux
 ./build-package.sh 1.0.0 --docker                  # Force Docker build
 ```
 
-Output: `installer/linux/build/secureguard_<VERSION>_<ARCH>.deb` and/or `secureguard-<VERSION>-1.<ARCH>.rpm`
+Output: `installer/linux/build/minnowvpn_<VERSION>_<ARCH>.deb` and/or `minnowvpn-<VERSION>-1.<ARCH>.rpm`
 
 The packages include:
-- VPN daemon service at `/usr/local/bin/secureguard-service`
-- Flutter client at `/opt/secureguard/secureguard_client`
-- Symlink `/usr/local/bin/secureguard` -> client
-- systemd service file at `/etc/systemd/system/secureguard.service`
+- VPN daemon service at `/usr/local/bin/minnowvpn-service`
+- Flutter client at `/opt/minnowvpn/minnowvpn_client`
+- Symlink `/usr/local/bin/minnowvpn` -> client
+- systemd service file at `/etc/systemd/system/minnowvpn.service`
 - Desktop file for app menu integration
 - preinst/postinst scripts (create group, set permissions, start service)
 
@@ -320,11 +320,11 @@ To test installation in Docker:
 To install:
 ```bash
 # Debian/Ubuntu
-sudo dpkg -i secureguard_1.0.0_arm64.deb
+sudo dpkg -i minnowvpn_1.0.0_arm64.deb
 sudo apt-get install -f  # Fix dependencies if needed
 
 # Fedora/RHEL
-sudo rpm -i secureguard-1.0.0-1.aarch64.rpm
+sudo rpm -i minnowvpn-1.0.0-1.aarch64.rpm
 ```
 
 **Docker Deployment:**
@@ -353,9 +353,9 @@ cd installer/docker/scripts
 ```
 
 **Docker Images:**
-- `secureguard/api` - Dart REST API server
-- `secureguard/console` - Flutter web management console
-- `secureguard/vpn` - Rust WireGuard VPN daemon
+- `minnowvpn/api` - Dart REST API server
+- `minnowvpn/console` - Flutter web management console
+- `minnowvpn/vpn` - Rust WireGuard VPN daemon
 
 **Docker Services:**
 - `postgres` - PostgreSQL 15 database
@@ -390,15 +390,15 @@ Sensitive values are stored in `installer/docker/secrets/` (never committed):
 
 3. **Session Rekey**: Sessions automatically rekey after 120 seconds. Old session remains valid during rekey.
 
-4. **Stale Route Cleanup**: Uses a persistent state file (`/var/run/secureguard_routes.json` on Unix, `C:\ProgramData\SecureGuard\routes.json` on Windows) to track routes added during a session. On startup, if the state file exists and the recorded interface no longer exists, the exact routes from the file are cleaned up. This deterministic approach avoids the fragility of parsing routing tables.
+4. **Stale Route Cleanup**: Uses a persistent state file (`/var/run/minnowvpn_routes.json` on Unix, `C:\ProgramData\MinnowVPN\routes.json` on Windows) to track routes added during a session. On startup, if the state file exists and the recorded interface no longer exists, the exact routes from the file are cleaned up. This deterministic approach avoids the fragility of parsing routing tables.
 
 5. **Graceful Shutdown**: Handles both Ctrl+C (SIGINT) and SIGTERM signals. On shutdown, all routes added during the session are removed and the state file is deleted to prevent orphaned routes.
 
 6. **Auto-Reconnect on Boot**: The daemon persists connection state to enable automatic reconnection after system reboot. When the daemon starts, it checks for a state file and auto-connects if `desired_state` is `connected`. The auto-reconnect uses infinite retry with exponential backoff (5s → 10s → 30s → 60s, then 60s forever) to handle network unavailability at boot. Retries only stop when: (1) connection succeeds, or (2) user explicitly disconnects via the API.
 
    **State file locations:**
-   - Unix: `/var/lib/secureguard/connection-state.json` (permissions: `root:secureguard 0640`)
-   - Windows: `C:\ProgramData\SecureGuard\connection-state.json`
+   - Unix: `/var/lib/minnowvpn/connection-state.json` (permissions: `root:minnowvpn 0640`)
+   - Windows: `C:\ProgramData\MinnowVPN\connection-state.json`
 
    **State persistence triggers:**
    - `POST /connect` - Saves state BEFORE connecting (ensures config survives crash during connect)
@@ -411,12 +411,12 @@ Various verification tools in `src/bin/` for testing crypto primitives against k
 
 ## Dart REST API Server
 
-Located in `secureguard-server/`. A Dart server using Shelf for VPN client management.
+Located in `minnowvpn-server/`. A Dart server using Shelf for VPN client management.
 
 ### Setup
 
 ```bash
-cd secureguard-server
+cd minnowvpn-server
 
 # Create .env file with your database settings
 # Required variables: DB_HOST, DB_PORT, DB_NAME, DB_USER, DB_PASSWORD, JWT_SECRET
@@ -615,12 +615,12 @@ dnsServers: parseInetArray(row['dns_servers'], stripCidr: true),
 
 ## Flutter Web Management Console
 
-Located in `secureguard_console/`. A Flutter web admin interface for managing VPN clients.
+Located in `minnowvpn_console/`. A Flutter web admin interface for managing VPN clients.
 
 ### Quick Start
 
 ```bash
-cd secureguard_console
+cd minnowvpn_console
 
 # Start both server and console (recommended)
 ./start.sh
@@ -629,7 +629,7 @@ cd secureguard_console
 ### Manual Build and Run
 
 ```bash
-cd secureguard_console
+cd minnowvpn_console
 
 # Get dependencies
 flutter pub get
@@ -662,7 +662,7 @@ If server is unavailable, shows Connection Error Screen with retry option.
 ### Project Structure
 
 ```
-secureguard_console/lib/
+minnowvpn_console/lib/
 ├── main.dart              # Entry point
 ├── app.dart               # MaterialApp.router setup
 ├── config/
@@ -726,12 +726,12 @@ These settings are configurable in Settings → Enrollment Settings.
 
 ## Flutter Desktop Client
 
-Located in `secureguard_client/`. A Flutter desktop app for end-users to control the VPN connection.
+Located in `minnowvpn_client/`. A Flutter desktop app for end-users to control the VPN connection.
 
 ### Quick Start
 
 ```bash
-cd secureguard_client
+cd minnowvpn_client
 
 # Start both daemon and Flutter client (recommended)
 ./start.sh
@@ -757,7 +757,7 @@ flutter build macos --release
 ### Project Structure
 
 ```
-secureguard_client/lib/
+minnowvpn_client/lib/
 ├── main.dart              # Entry point, service initialization, deep link handling
 ├── screens/
 │   ├── home_screen.dart       # Main VPN control screen
@@ -786,8 +786,8 @@ The client communicates with the Rust daemon via HTTP REST API at `http://127.0.
 
 **Authentication:**
 - Token is read from platform-specific path on startup:
-  - Unix: `/var/run/secureguard/auth-token`
-  - Windows: `C:\ProgramData\SecureGuard\auth-token`
+  - Unix: `/var/run/minnowvpn/auth-token`
+  - Windows: `C:\ProgramData\MinnowVPN\auth-token`
 - Token is sent as `Authorization: Bearer <token>` header with all requests
 
 **REST Endpoints:**
@@ -819,14 +819,14 @@ Binary updates:
 
 The app minimizes to system tray on close:
 - **Icons**: Shield icons in green/gray/amber/red for connection states
-- **Menu**: Connect, Disconnect, Show Window, Uninstall SecureGuard..., Quit
+- **Menu**: Connect, Disconnect, Show Window, Uninstall MinnowVPN..., Quit
 - **Click**: Shows/focuses the main window
 
 ### In-App Uninstallation
 
-Users can uninstall SecureGuard directly from the system tray menu:
+Users can uninstall MinnowVPN directly from the system tray menu:
 
-1. Right-click tray icon → "Uninstall SecureGuard..."
+1. Right-click tray icon → "Uninstall MinnowVPN..."
 2. Confirmation dialog appears explaining what will be removed
 3. User is prompted for admin/root password (platform-specific elevation)
 4. Uninstall script runs with elevated privileges
@@ -836,15 +836,15 @@ Users can uninstall SecureGuard directly from the system tray menu:
 
 | Platform | Elevation Method | Script Location |
 |----------|------------------|-----------------|
-| macOS | `osascript` with administrator privileges | `/Library/Application Support/SecureGuard/uninstall.sh` |
-| Windows | PowerShell `Start-Process -Verb RunAs` (UAC) | `C:\Program Files\SecureGuard\uninstall.ps1` |
-| Linux | `pkexec` (PolicyKit) | `/opt/secureguard/uninstall.sh` |
+| macOS | `osascript` with administrator privileges | `/Library/Application Support/MinnowVPN/uninstall.sh` |
+| Windows | PowerShell `Start-Process -Verb RunAs` (UAC) | `C:\Program Files\MinnowVPN\uninstall.ps1` |
+| Linux | `pkexec` (PolicyKit) | `/opt/minnowvpn/uninstall.sh` |
 
 **Implementation files:**
 - `lib/services/uninstall_service.dart` - Platform-specific uninstall execution
 - `lib/widgets/uninstall_dialog.dart` - Confirmation dialog UI
 
-**Note for Linux installers:** Ensure the uninstall script is installed to `/opt/secureguard/uninstall.sh` for the Flutter app to find it.
+**Note for Linux installers:** Ensure the uninstall script is installed to `/opt/minnowvpn/uninstall.sh` for the Flutter app to find it.
 
 ### Known Limitations (TODOs)
 
@@ -853,17 +853,17 @@ Users can uninstall SecureGuard directly from the system tray menu:
 
 ### Deep Links / URL Scheme
 
-The client supports `secureguard://` deep links for enrollment:
+The client supports `minnowvpn://` deep links for enrollment:
 
 **URL Format:**
 ```
-secureguard://enroll?server=https://vpn.company.com&code=ABCD-1234
+minnowvpn://enroll?server=https://vpn.company.com&code=ABCD-1234
 ```
 
 **Platform Registration:**
 - **macOS**: `macos/Runner/Info.plist` - CFBundleURLTypes
-- **Windows**: `windows/install_url_scheme.ps1` - Registry HKCR\secureguard
-- **Linux**: `linux/secureguard_client.desktop` - MimeType x-scheme-handler/secureguard
+- **Windows**: `windows/install_url_scheme.ps1` - Registry HKCR\minnowvpn
+- **Linux**: `linux/minnowvpn_client.desktop` - MimeType x-scheme-handler/minnowvpn
 
 **Enrollment Screen:**
 - Pre-fills server URL and code from deep link

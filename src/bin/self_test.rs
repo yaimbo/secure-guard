@@ -2,8 +2,8 @@
 //! This simulates what the server does when it receives our handshake
 
 use base64::{engine::general_purpose::STANDARD as BASE64, Engine};
-use secureguard_poc::crypto::{blake2s, x25519, aead, noise};
-use secureguard_poc::protocol::handshake::InitiatorHandshake;
+use minnowvpn::crypto::{blake2s, x25519, aead, noise};
+use minnowvpn::protocol::handshake::InitiatorHandshake;
 
 fn main() {
     println!("=== Self-Test: Decrypt Our Own Handshake ===\n");

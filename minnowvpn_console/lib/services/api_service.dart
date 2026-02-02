@@ -730,7 +730,7 @@ class EnrollmentCode {
   }
 
   /// Extract server URL from deep link
-  /// Deep link format: secureguard://enroll?server=https://example.com&code=XXXX
+  /// Deep link format: minnowvpn://enroll?server=https://example.com&code=XXXX
   String get serverUrl {
     final uri = Uri.parse(deepLink);
     return uri.queryParameters['server'] ?? '';

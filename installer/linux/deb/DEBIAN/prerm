@@ -1,10 +1,10 @@
 #!/bin/bash
-# SecureGuard VPN - Pre-removal script
+# MinnowVPN VPN - Pre-removal script
 # Stops and disables the service before package removal
 
 set -e
 
-SERVICE_NAME="secureguard"
+SERVICE_NAME="minnowvpn"
 
 echo "MinnowVPN: Preparing for removal..."
 

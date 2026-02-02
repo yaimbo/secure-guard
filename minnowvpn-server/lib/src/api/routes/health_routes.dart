@@ -19,7 +19,7 @@ class HealthRoutes {
     return Response.ok(
       jsonEncode({
         'status': 'healthy',
-        'service': 'secureguard-api',
+        'service': 'minnowvpn-api',
         'version': '0.1.0',
         'timestamp': DateTime.now().toUtc().toIso8601String(),
       }),

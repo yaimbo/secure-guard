@@ -1,7 +1,7 @@
 //! Detailed handshake trace with step-by-step comparison
 
 use base64::{engine::general_purpose::STANDARD as BASE64, Engine};
-use secureguard_poc::crypto::{blake2s, x25519, aead, noise};
+use minnowvpn::crypto::{blake2s, x25519, aead, noise};
 
 fn main() {
     println!("=== Detailed Handshake Trace ===\n");

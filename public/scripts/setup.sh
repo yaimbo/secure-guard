@@ -232,7 +232,7 @@ configure_system() {
 
     # Make persistent across reboots
     if [ -d /etc/sysctl.d ]; then
-        cat << EOF | sudo tee /etc/sysctl.d/99-secureguard.conf > /dev/null
+        cat << EOF | sudo tee /etc/sysctl.d/99-minnowvpn.conf > /dev/null
 net.ipv4.ip_forward = 1
 net.ipv4.conf.all.src_valid_mark = 1
 net.ipv6.conf.all.forwarding = 1

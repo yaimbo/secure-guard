@@ -4,8 +4,8 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'config/routes.dart';
 import 'config/theme.dart';
 
-class SecureGuardConsole extends ConsumerWidget {
-  const SecureGuardConsole({super.key});
+class MinnowVpnConsole extends ConsumerWidget {
+  const MinnowVpnConsole({super.key});
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {

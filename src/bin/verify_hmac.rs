@@ -6,7 +6,7 @@
 //! This uses BLAKE2s's native keyed mode, not the standard HMAC construction.
 
 use blake2::{Blake2sMac256, digest::Mac};
-use secureguard_poc::crypto::blake2s;
+use minnowvpn::crypto::blake2s;
 
 fn main() {
     println!("=== HMAC vs BLAKE2s Keyed Mode ===\n");

@@ -7,7 +7,7 @@
 use std::time::Instant;
 
 use crate::crypto::{aead, noise};
-use crate::error::{CryptoError, SecureGuardError};
+use crate::error::{CryptoError, MinnowVpnError};
 use crate::protocol::messages::CookieReply;
 
 /// Cookie validity duration (120 seconds per WireGuard spec)
@@ -67,7 +67,7 @@ impl CookieState {
         reply: &CookieReply,
         our_last_mac1: &[u8; 16],
         peer_public: &[u8; 32],
-    ) -> Result<(), SecureGuardError> {
+    ) -> Result<(), MinnowVpnError> {
         // Derive the cookie decryption key
         // cookie_key = HASH(LABEL_COOKIE || peer_public)
         let key = noise::cookie_key(peer_public);

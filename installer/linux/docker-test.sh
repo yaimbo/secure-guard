@@ -1,5 +1,5 @@
 #!/bin/bash
-# SecureGuard Linux Package Installation Test
+# MinnowVPN Linux Package Installation Test
 # Tests package installation in a clean Docker container
 
 set -euo pipefail
@@ -45,10 +45,10 @@ echo ""
 # Find package to test
 case "$DISTRO" in
     debian|ubuntu)
-        PKG_FILE=$(ls "$BUILD_DIR"/secureguard_*_${ARCH}.deb 2>/dev/null | head -1) || true
+        PKG_FILE=$(ls "$BUILD_DIR"/minnowvpn_*_${ARCH}.deb 2>/dev/null | head -1) || true
         if [ -z "$PKG_FILE" ]; then
             # Try alternate arch names
-            PKG_FILE=$(ls "$BUILD_DIR"/secureguard_*_amd64.deb 2>/dev/null | head -1) || true
+            PKG_FILE=$(ls "$BUILD_DIR"/minnowvpn_*_amd64.deb 2>/dev/null | head -1) || true
         fi
         BASE_IMAGE="debian:bookworm-slim"
         INSTALL_CMD="dpkg -i"
@@ -57,7 +57,7 @@ case "$DISTRO" in
         rpm_arch="$ARCH"
         [ "$ARCH" = "amd64" ] && rpm_arch="x86_64"
         [ "$ARCH" = "arm64" ] && rpm_arch="aarch64"
-        PKG_FILE=$(ls "$BUILD_DIR"/secureguard-*."${rpm_arch}".rpm 2>/dev/null | head -1) || true
+        PKG_FILE=$(ls "$BUILD_DIR"/minnowvpn-*."${rpm_arch}".rpm 2>/dev/null | head -1) || true
         BASE_IMAGE="fedora:latest"
         INSTALL_CMD="rpm -i"
         ;;
@@ -95,18 +95,18 @@ DEBIAN_FRONTEND=noninteractive $INSTALL_CMD /pkg/$PKG_NAME || true
 
 echo ""
 echo "=== Checking installed files ==="
-ls -la /usr/local/bin/secureguard* || echo "No binaries in /usr/local/bin"
-ls -la /opt/secureguard/ || echo "No /opt/secureguard"
-ls -la /etc/systemd/system/secureguard.service || echo "No systemd service"
-ls -la /usr/share/applications/secureguard.desktop || echo "No desktop file"
+ls -la /usr/local/bin/minnowvpn* || echo "No binaries in /usr/local/bin"
+ls -la /opt/minnowvpn/ || echo "No /opt/minnowvpn"
+ls -la /etc/systemd/system/minnowvpn.service || echo "No systemd service"
+ls -la /usr/share/applications/minnowvpn.desktop || echo "No desktop file"
 
 echo ""
 echo "=== Checking daemon binary ==="
-/usr/local/bin/secureguard-service --help || echo "Daemon help failed (may need args)"
+/usr/local/bin/minnowvpn-service --help || echo "Daemon help failed (may need args)"
 
 echo ""
 echo "=== Checking client binary ==="
-file /opt/secureguard/secureguard_client || echo "Client binary not found"
+file /opt/minnowvpn/minnowvpn_client || echo "Client binary not found"
 
 echo ""
 echo "=== Installation Test PASSED ==="

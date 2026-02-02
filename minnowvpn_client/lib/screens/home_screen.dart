@@ -329,7 +329,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
             const SizedBox(width: 8),
             const Expanded(
               child: Text(
-                'VPN service not running. Start with:\nsudo secureguard-poc --daemon',
+                'VPN service not running. Start with:\nsudo minnowvpn --daemon',
                 style: TextStyle(color: Color(0xFF92400E), fontSize: 12),
               ),
             ),

@@ -34,10 +34,10 @@
 			<key>CFBundleTypeRole</key>
 			<string>Viewer</string>
 			<key>CFBundleURLName</key>
-			<string>com.secureguard.client</string>
+			<string>com.minnowvpn.client</string>
 			<key>CFBundleURLSchemes</key>
 			<array>
-				<string>secureguard</string>
+				<string>minnowvpn</string>
 			</array>
 		</dict>
 	</array>

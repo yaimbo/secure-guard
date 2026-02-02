@@ -20,21 +20,21 @@ echo ""
 echo -e "${YELLOW}Stopping any existing instances...${NC}"
 
 # Kill existing Rust daemon
-if pgrep -f "secureguard-poc.*--daemon" > /dev/null 2>&1; then
+if pgrep -f "minnowvpn-poc.*--daemon" > /dev/null 2>&1; then
     echo "  Stopping existing daemon..."
-    sudo pkill -f "secureguard-poc.*--daemon" 2>/dev/null || true
+    sudo pkill -f "minnowvpn-poc.*--daemon" 2>/dev/null || true
     sleep 1
 fi
 
 # Kill existing Flutter client
-if pgrep -f "secureguard_client" > /dev/null 2>&1; then
+if pgrep -f "minnowvpn_client" > /dev/null 2>&1; then
     echo "  Stopping existing Flutter client..."
-    pkill -f "secureguard_client" 2>/dev/null || true
+    pkill -f "minnowvpn_client" 2>/dev/null || true
     sleep 1
 fi
 
 # Check if Rust binary exists
-RUST_BINARY="$PROJECT_ROOT/target/release/secureguard-poc"
+RUST_BINARY="$PROJECT_ROOT/target/release/minnowvpn-poc"
 if [ ! -f "$RUST_BINARY" ]; then
     echo -e "${YELLOW}Rust binary not found. Building...${NC}"
     cd "$PROJECT_ROOT"
@@ -59,7 +59,7 @@ echo "  Daemon started (PID: $DAEMON_PID)"
 # Wait for socket to be available
 echo "  Waiting for daemon socket..."
 for i in {1..10}; do
-    if [ -S /var/run/secureguard.sock ]; then
+    if [ -S /var/run/minnowvpn.sock ]; then
         echo -e "  ${GREEN}Socket ready${NC}"
         break
     fi
@@ -121,7 +121,7 @@ cleanup() {
 
     # Kill daemon
     echo "  Stopping daemon..."
-    sudo pkill -f "secureguard-poc.*--daemon" 2>/dev/null || true
+    sudo pkill -f "minnowvpn-poc.*--daemon" 2>/dev/null || true
 
     echo -e "${GREEN}Done${NC}"
     exit 0

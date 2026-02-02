@@ -1,6 +1,6 @@
 //! Compare our crypto with boringtun's
 
-use secureguard_poc::crypto::blake2s as our_blake2s;
+use minnowvpn::crypto::blake2s as our_blake2s;
 
 fn main() {
     println!("=== Comparing with boringtun ===\n");

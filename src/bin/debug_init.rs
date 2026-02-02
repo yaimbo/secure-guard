@@ -1,6 +1,6 @@
 //! Debug initialization sequence
 
-use secureguard_poc::crypto::{blake2s, noise};
+use minnowvpn::crypto::{blake2s, noise};
 
 fn main() {
     println!("=== Debugging Noise Initialization ===\n");

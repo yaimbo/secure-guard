@@ -3,7 +3,7 @@ import 'dart:io';
 
 import 'package:shared_preferences/shared_preferences.dart';
 
-/// API client for communicating with SecureGuard server
+/// API client for communicating with MinnowVPN server
 class ApiClient {
   static const String _serverUrlKey = 'server_url';
   static const String _deviceTokenKey = 'device_token';

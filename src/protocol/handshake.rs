@@ -5,7 +5,7 @@
 use tai64::Tai64N;
 
 use crate::crypto::{blake2s, noise, x25519};
-use crate::error::{CryptoError, ProtocolError, SecureGuardError};
+use crate::error::{CryptoError, ProtocolError, MinnowVpnError};
 use crate::protocol::messages::{HandshakeInitiation, HandshakeResponse};
 
 /// State for an in-progress handshake (initiator side)
@@ -55,7 +55,7 @@ impl InitiatorHandshake {
     pub fn create_initiation(
         &mut self,
         cookie: Option<&[u8; 16]>,
-    ) -> Result<HandshakeInitiation, SecureGuardError> {
+    ) -> Result<HandshakeInitiation, MinnowVpnError> {
         // Generate ephemeral keypair
         let (ephemeral_private, ephemeral_public) = x25519::generate_keypair();
         self.ephemeral_private = ephemeral_private;
@@ -110,7 +110,7 @@ impl InitiatorHandshake {
     pub fn process_response(
         &mut self,
         response: &HandshakeResponse,
-    ) -> Result<HandshakeResult, SecureGuardError> {
+    ) -> Result<HandshakeResult, MinnowVpnError> {
         // Verify receiver_index matches our sender_index
         if response.receiver_index != self.sender_index {
             return Err(ProtocolError::InvalidSenderIndex {
@@ -212,7 +212,7 @@ impl ResponderHandshake {
     pub fn process_initiation(
         &mut self,
         initiation: &HandshakeInitiation,
-    ) -> Result<[u8; 32], SecureGuardError> {
+    ) -> Result<[u8; 32], MinnowVpnError> {
         // Store initiator's values
         self.initiator_ephemeral = initiation.ephemeral_public;
         self.initiator_index = initiation.sender_index;
@@ -256,7 +256,7 @@ impl ResponderHandshake {
         &mut self,
         psk: Option<[u8; 32]>,
         cookie: Option<&[u8; 16]>,
-    ) -> Result<(HandshakeResponse, HandshakeResult), SecureGuardError> {
+    ) -> Result<(HandshakeResponse, HandshakeResult), MinnowVpnError> {
         let psk = psk.unwrap_or([0u8; 32]);
 
         // Generate ephemeral keypair
@@ -323,7 +323,7 @@ impl ResponderHandshake {
 pub fn verify_initiation_mac1(
     initiation_bytes: &[u8],
     our_public_key: &[u8; 32],
-) -> Result<(), SecureGuardError> {
+) -> Result<(), MinnowVpnError> {
     if initiation_bytes.len() < HandshakeInitiation::SIZE {
         return Err(ProtocolError::InvalidMessageLength {
             expected: HandshakeInitiation::SIZE,
@@ -350,7 +350,7 @@ pub fn verify_initiation_mac1(
 pub fn verify_response_mac1(
     response_bytes: &[u8],
     our_public_key: &[u8; 32],
-) -> Result<(), SecureGuardError> {
+) -> Result<(), MinnowVpnError> {
     if response_bytes.len() < HandshakeResponse::SIZE {
         return Err(ProtocolError::InvalidMessageLength {
             expected: HandshakeResponse::SIZE,

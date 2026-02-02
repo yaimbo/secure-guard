@@ -1,14 +1,14 @@
 #!/bin/bash
-# SecureGuard VPN - Post-removal script
+# MinnowVPN VPN - Post-removal script
 # Cleans up directories and configuration after package removal
 
 set -e
 
-SERVICE_NAME="secureguard"
-SECUREGUARD_GROUP="secureguard"
-DATA_DIR="/var/lib/secureguard"
-RUN_DIR="/var/run/secureguard"
-LOG_DIR="/var/log/secureguard"
+SERVICE_NAME="minnowvpn"
+MINNOWVPN_GROUP="minnowvpn"
+DATA_DIR="/var/lib/minnowvpn"
+RUN_DIR="/var/run/minnowvpn"
+LOG_DIR="/var/log/minnowvpn"
 
 case "$1" in
     purge)
@@ -33,15 +33,15 @@ case "$1" in
         fi
 
         # Remove group if empty (no users left in it)
-        if getent group "$SECUREGUARD_GROUP" > /dev/null 2>&1; then
+        if getent group "$MINNOWVPN_GROUP" > /dev/null 2>&1; then
             # Check if any users are still in the group
             local group_members
-            group_members=$(getent group "$SECUREGUARD_GROUP" | cut -d: -f4)
+            group_members=$(getent group "$MINNOWVPN_GROUP" | cut -d: -f4)
             if [ -z "$group_members" ]; then
-                echo "Removing $SECUREGUARD_GROUP group..."
-                groupdel "$SECUREGUARD_GROUP" 2>/dev/null || true
+                echo "Removing $MINNOWVPN_GROUP group..."
+                groupdel "$MINNOWVPN_GROUP" 2>/dev/null || true
             else
-                echo "Group $SECUREGUARD_GROUP still has members, keeping it."
+                echo "Group $MINNOWVPN_GROUP still has members, keeping it."
             fi
         fi
 

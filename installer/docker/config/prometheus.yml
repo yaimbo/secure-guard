@@ -20,7 +20,7 @@ global:
 
   # Attach these labels to all metrics
   external_labels:
-    cluster: 'secureguard'
+    cluster: 'minnowvpn'
     environment: 'production'
 
 # Alerting configuration (optional - add Alertmanager if needed)
@@ -58,7 +58,7 @@ scrape_configs:
     relabel_configs:
       - source_labels: [__address__]
         target_label: instance
-        replacement: 'secureguard-host'
+        replacement: 'minnowvpn-host'
 
   # ---------------------------------------------------------------------------
   # Redis Exporter - Redis cache metrics
@@ -71,7 +71,7 @@ scrape_configs:
     relabel_configs:
       - source_labels: [__address__]
         target_label: instance
-        replacement: 'secureguard-redis'
+        replacement: 'minnowvpn-redis'
 
   # ---------------------------------------------------------------------------
   # Postgres Exporter - PostgreSQL database metrics
@@ -84,7 +84,7 @@ scrape_configs:
     relabel_configs:
       - source_labels: [__address__]
         target_label: instance
-        replacement: 'secureguard-postgres'
+        replacement: 'minnowvpn-postgres'
 
   # ---------------------------------------------------------------------------
   # Caddy - Web server / reverse proxy metrics
@@ -97,7 +97,7 @@ scrape_configs:
     relabel_configs:
       - source_labels: [__address__]
         target_label: instance
-        replacement: 'secureguard-caddy'
+        replacement: 'minnowvpn-caddy'
 
   # ---------------------------------------------------------------------------
   # Docker containers (if Docker daemon exposes metrics)

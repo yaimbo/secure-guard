@@ -1,11 +1,11 @@
 #!/bin/bash
-# SecureGuard VPN - Pre-installation script
+# MinnowVPN VPN - Pre-installation script
 # Stops existing service and cleans up old files
 
 set -e
 
-SERVICE_NAME="secureguard"
-RUN_DIR="/var/run/secureguard"
+SERVICE_NAME="minnowvpn"
+RUN_DIR="/var/run/minnowvpn"
 
 echo "MinnowVPN: Pre-installation cleanup..."
 

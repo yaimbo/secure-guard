@@ -358,6 +358,6 @@ class ClientService {
   /// Build deep link URL for enrollment
   String _buildDeepLink(String code) {
     final formattedCode = '${code.substring(0, 4)}-${code.substring(4)}';
-    return 'secureguard://enroll?server=https://$serverDomain&code=$formattedCode';
+    return 'minnowvpn://enroll?server=https://$serverDomain&code=$formattedCode';
   }
 }

@@ -13,7 +13,7 @@ Future<void> main() async {
   final db = Database(
     host: env['DB_HOST'] ?? 'localhost',
     port: int.parse(env['DB_PORT'] ?? '5432'),
-    database: env['DB_NAME'] ?? 'secureguard',
+    database: env['DB_NAME'] ?? 'minnowvpn',
     username: env['DB_USER'] ?? 'postgres',
     password: env['DB_PASSWORD'] ?? '',
   );

@@ -1,5 +1,5 @@
 #!/bin/bash
-# SecureGuard VPN - Debian Package Builder
+# MinnowVPN VPN - Debian Package Builder
 # Creates a .deb package from pre-built binaries
 
 set -euo pipefail
@@ -19,7 +19,7 @@ case "$ARCH" in
     *) echo "Unknown architecture: $ARCH"; exit 1 ;;
 esac
 
-PKG_NAME="secureguard_${VERSION}_${DEB_ARCH}"
+PKG_NAME="minnowvpn_${VERSION}_${DEB_ARCH}"
 PKG_ROOT="$BUILD_DIR/$PKG_NAME"
 
 # Colors
@@ -36,7 +36,7 @@ mkdir -p "$PKG_ROOT"
 # Create directory structure
 mkdir -p "$PKG_ROOT/DEBIAN"
 mkdir -p "$PKG_ROOT/usr/local/bin"
-mkdir -p "$PKG_ROOT/opt/secureguard"
+mkdir -p "$PKG_ROOT/opt/minnowvpn"
 mkdir -p "$PKG_ROOT/etc/systemd/system"
 mkdir -p "$PKG_ROOT/usr/share/applications"
 mkdir -p "$PKG_ROOT/usr/share/icons/hicolor/48x48/apps"
@@ -45,33 +45,33 @@ mkdir -p "$PKG_ROOT/usr/share/icons/hicolor/256x256/apps"
 
 # Copy daemon binary
 log_info "Copying daemon binary..."
-cp "$BUILD_DIR/secureguard-service" "$PKG_ROOT/usr/local/bin/"
-chmod 755 "$PKG_ROOT/usr/local/bin/secureguard-service"
+cp "$BUILD_DIR/minnowvpn-service" "$PKG_ROOT/usr/local/bin/"
+chmod 755 "$PKG_ROOT/usr/local/bin/minnowvpn-service"
 
 # Copy Flutter client bundle
 log_info "Copying Flutter client..."
-cp -r "$BUILD_DIR/flutter-bundle"/* "$PKG_ROOT/opt/secureguard/"
-chmod 755 "$PKG_ROOT/opt/secureguard/secureguard_client"
+cp -r "$BUILD_DIR/flutter-bundle"/* "$PKG_ROOT/opt/minnowvpn/"
+chmod 755 "$PKG_ROOT/opt/minnowvpn/minnowvpn_client"
 
 # Create symlink for client in PATH
-ln -sf /opt/secureguard/secureguard_client "$PKG_ROOT/usr/local/bin/secureguard"
+ln -sf /opt/minnowvpn/minnowvpn_client "$PKG_ROOT/usr/local/bin/minnowvpn"
 
 # Copy systemd service file
 log_info "Copying systemd service..."
-cp "$INSTALLER_DIR/secureguard.service" "$PKG_ROOT/etc/systemd/system/"
+cp "$INSTALLER_DIR/minnowvpn.service" "$PKG_ROOT/etc/systemd/system/"
 
 # Copy desktop file
 log_info "Copying desktop file..."
-cp "$INSTALLER_DIR/shared/secureguard.desktop" "$PKG_ROOT/usr/share/applications/"
+cp "$INSTALLER_DIR/shared/minnowvpn.desktop" "$PKG_ROOT/usr/share/applications/"
 
 # Copy app icons from macOS asset catalog (properly sized)
-ICON_SOURCE="$PROJECT_ROOT/secureguard_client/macos/Runner/Assets.xcassets/AppIcon.appiconset"
+ICON_SOURCE="$PROJECT_ROOT/minnowvpn_client/macos/Runner/Assets.xcassets/AppIcon.appiconset"
 if [ -d "$ICON_SOURCE" ]; then
     log_info "Copying app icons..."
     # Use closest available sizes from the asset catalog
-    cp "$ICON_SOURCE/app_icon_128.png" "$PKG_ROOT/usr/share/icons/hicolor/48x48/apps/secureguard.png"
-    cp "$ICON_SOURCE/app_icon_128.png" "$PKG_ROOT/usr/share/icons/hicolor/128x128/apps/secureguard.png"
-    cp "$ICON_SOURCE/app_icon_256.png" "$PKG_ROOT/usr/share/icons/hicolor/256x256/apps/secureguard.png"
+    cp "$ICON_SOURCE/app_icon_128.png" "$PKG_ROOT/usr/share/icons/hicolor/48x48/apps/minnowvpn.png"
+    cp "$ICON_SOURCE/app_icon_128.png" "$PKG_ROOT/usr/share/icons/hicolor/128x128/apps/minnowvpn.png"
+    cp "$ICON_SOURCE/app_icon_256.png" "$PKG_ROOT/usr/share/icons/hicolor/256x256/apps/minnowvpn.png"
 else
     echo "ERROR: App icons not found at $ICON_SOURCE"
     echo "Icons are required for desktop integration. Ensure the Flutter client has been built."
@@ -81,7 +81,7 @@ fi
 # Generate control file
 log_info "Generating control file..."
 cat > "$PKG_ROOT/DEBIAN/control" << EOF
-Package: secureguard
+Package: minnowvpn
 Version: $VERSION
 Section: net
 Priority: optional

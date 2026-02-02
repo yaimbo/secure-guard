@@ -32,9 +32,9 @@ loglevel = INFO
 # =============================================================================
 # Protects admin login endpoint from brute-force attacks
 #
-[secureguard-auth]
+[minnowvpn-auth]
 enabled = true
-filter = secureguard-auth
+filter = minnowvpn-auth
 logpath = /var/log/caddy/access.log
 maxretry = 5
 findtime = 5m
@@ -47,9 +47,9 @@ port = http,https
 # Protects enrollment code redemption from abuse
 # (Higher threshold since legitimate users might mistype codes)
 #
-[secureguard-enrollment]
+[minnowvpn-enrollment]
 enabled = true
-filter = secureguard-enrollment
+filter = minnowvpn-enrollment
 logpath = /var/log/caddy/access.log
 maxretry = 10
 findtime = 1m
@@ -61,9 +61,9 @@ port = http,https
 # =============================================================================
 # General protection against API abuse (too many 4xx errors)
 #
-[secureguard-api]
+[minnowvpn-api]
 enabled = true
-filter = secureguard-api
+filter = minnowvpn-api
 logpath = /var/log/caddy/access.log
 maxretry = 20
 findtime = 1m

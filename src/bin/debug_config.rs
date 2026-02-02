@@ -1,6 +1,6 @@
 //! Debug config loading
 
-use secureguard_poc::config::WireGuardConfig;
+use minnowvpn::config::WireGuardConfig;
 use base64::{engine::general_purpose::STANDARD as BASE64, Engine};
 
 fn main() {
@@ -24,7 +24,7 @@ fn main() {
     println!("  Persistent keepalive: {:?}", config.peers[0].persistent_keepalive);
     
     // Verify by computing our public key
-    let our_public = secureguard_poc::crypto::x25519::public_key(&config.interface.private_key);
+    let our_public = minnowvpn::crypto::x25519::public_key(&config.interface.private_key);
     println!("\nDerived public key: {}", BASE64.encode(&our_public));
     println!("Derived public key hex: {}", hex::encode(&our_public));
 }

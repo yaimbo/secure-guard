@@ -1,7 +1,7 @@
 //! Verify MAC1 key computation
 
 use base64::{engine::general_purpose::STANDARD as BASE64, Engine};
-use secureguard_poc::crypto::blake2s;
+use minnowvpn::crypto::blake2s;
 
 fn main() {
     println!("=== MAC1 Key Verification ===\n");

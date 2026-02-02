@@ -40,7 +40,7 @@ DOCKER_DIR="$(dirname "$SCRIPT_DIR")"
 # Backup settings
 BACKUP_BASE="${1:-$DOCKER_DIR/backups}"
 TIMESTAMP=$(date +%Y%m%d_%H%M%S)
-BACKUP_DIR="$BACKUP_BASE/secureguard_$TIMESTAMP"
+BACKUP_DIR="$BACKUP_BASE/minnowvpn_$TIMESTAMP"
 
 # Docker Compose command
 if docker compose version &> /dev/null; then
@@ -68,10 +68,10 @@ backup_postgres() {
     fi
 
     # Dump database
-    $COMPOSE_CMD exec -T postgres pg_dump -U secureguard -Fc secureguard > "$BACKUP_DIR/postgres.dump"
+    $COMPOSE_CMD exec -T postgres pg_dump -U minnowvpn -Fc minnowvpn > "$BACKUP_DIR/postgres.dump"
 
     # Also create SQL dump for readability
-    $COMPOSE_CMD exec -T postgres pg_dump -U secureguard secureguard | gzip > "$BACKUP_DIR/postgres.sql.gz"
+    $COMPOSE_CMD exec -T postgres pg_dump -U minnowvpn minnowvpn | gzip > "$BACKUP_DIR/postgres.sql.gz"
 
     log_success "PostgreSQL backup complete ($(du -sh "$BACKUP_DIR/postgres.dump" | cut -f1))"
 }
@@ -158,9 +158,9 @@ create_archive() {
     log_info "Creating compressed archive..."
 
     cd "$BACKUP_BASE"
-    ARCHIVE_NAME="secureguard_$TIMESTAMP.tar.gz"
+    ARCHIVE_NAME="minnowvpn_$TIMESTAMP.tar.gz"
 
-    tar -czf "$ARCHIVE_NAME" "secureguard_$TIMESTAMP"
+    tar -czf "$ARCHIVE_NAME" "minnowvpn_$TIMESTAMP"
 
     log_success "Archive created: $BACKUP_BASE/$ARCHIVE_NAME"
     echo ""
@@ -174,11 +174,11 @@ cleanup_old_backups() {
     cd "$BACKUP_BASE"
 
     # Count backups
-    BACKUP_COUNT=$(ls -1 secureguard_*.tar.gz 2>/dev/null | wc -l)
+    BACKUP_COUNT=$(ls -1 minnowvpn_*.tar.gz 2>/dev/null | wc -l)
 
     if [ "$BACKUP_COUNT" -gt 7 ]; then
         # Remove oldest backups
-        ls -1t secureguard_*.tar.gz | tail -n +8 | xargs rm -f
+        ls -1t minnowvpn_*.tar.gz | tail -n +8 | xargs rm -f
         log_success "Removed $(($BACKUP_COUNT - 7)) old backup(s)"
     else
         log_info "No old backups to remove"
@@ -192,7 +192,7 @@ print_summary() {
     echo -e "${GREEN}║                   Backup Complete!                            ║${NC}"
     echo -e "${GREEN}╚═══════════════════════════════════════════════════════════════╝${NC}"
     echo ""
-    echo "Backup location: $BACKUP_BASE/secureguard_$TIMESTAMP.tar.gz"
+    echo "Backup location: $BACKUP_BASE/minnowvpn_$TIMESTAMP.tar.gz"
     echo ""
     echo "Contents:"
     echo "  - postgres.dump      PostgreSQL binary dump"

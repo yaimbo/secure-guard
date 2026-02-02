@@ -1,6 +1,6 @@
 //! Test with fixed keys to compare with other implementations
 
-use secureguard_poc::crypto::{blake2s, x25519, aead, noise};
+use minnowvpn::crypto::{blake2s, x25519, aead, noise};
 
 fn main() {
     println!("=== Deterministic Handshake Test ===\n");

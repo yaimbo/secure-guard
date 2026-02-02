@@ -1,4 +1,4 @@
-;; SecureGuard VPN Service Sandbox Profile
+;; MinnowVPN VPN Service Sandbox Profile
 ;; This profile restricts the daemon to only the capabilities it needs
 
 (version 1)
@@ -8,7 +8,7 @@
 
 ;; Allow basic process operations
 (allow process-fork)
-(allow process-exec* (literal "/Library/PrivilegedHelperTools/secureguard-service"))
+(allow process-exec* (literal "/Library/PrivilegedHelperTools/minnowvpn-service"))
 
 ;; Allow network operations (required for VPN)
 (allow network-outbound)
@@ -26,16 +26,16 @@
 
 ;; Allow IPC socket operations
 (allow file-read* file-write* file-ioctl
-    (literal "/var/run/secureguard.sock"))
+    (literal "/var/run/minnowvpn.sock"))
 
 ;; Allow reading/writing to data directory
 (allow file-read* file-write*
-    (subpath "/var/lib/secureguard"))
+    (subpath "/var/lib/minnowvpn"))
 
 ;; Allow reading/writing logs
 (allow file-read* file-write*
-    (literal "/var/log/secureguard.log")
-    (literal "/var/log/secureguard.error.log"))
+    (literal "/var/log/minnowvpn.log")
+    (literal "/var/log/minnowvpn.error.log"))
 
 ;; Allow reading system configuration
 (allow file-read*

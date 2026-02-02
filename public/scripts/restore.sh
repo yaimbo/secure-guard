@@ -12,7 +12,7 @@
 #
 # Usage:
 #   ./scripts/restore.sh <backup-dir>
-#   ./scripts/restore.sh /path/to/secureguard_20240101_120000.tar.gz
+#   ./scripts/restore.sh /path/to/minnowvpn_20240101_120000.tar.gz
 #
 # WARNING: This will overwrite existing data!
 #
@@ -49,8 +49,8 @@ if [ -z "$1" ]; then
     log_error "Usage: $0 <backup-dir-or-archive>"
     echo ""
     echo "Examples:"
-    echo "  $0 /path/to/secureguard_20240101_120000"
-    echo "  $0 /path/to/secureguard_20240101_120000.tar.gz"
+    echo "  $0 /path/to/minnowvpn_20240101_120000"
+    echo "  $0 /path/to/minnowvpn_20240101_120000.tar.gz"
     exit 1
 fi
 
@@ -145,7 +145,7 @@ start_infrastructure() {
     local max_attempts=30
     local attempt=0
     while [ $attempt -lt $max_attempts ]; do
-        if $COMPOSE_CMD exec -T postgres pg_isready -U secureguard > /dev/null 2>&1; then
+        if $COMPOSE_CMD exec -T postgres pg_isready -U minnowvpn > /dev/null 2>&1; then
             log_success "PostgreSQL is ready"
             break
         fi
@@ -162,15 +162,15 @@ restore_postgres() {
         cd "$DOCKER_DIR"
 
         # Drop and recreate database
-        $COMPOSE_CMD exec -T postgres psql -U secureguard -d postgres -c "DROP DATABASE IF EXISTS secureguard;" 2>/dev/null || true
-        $COMPOSE_CMD exec -T postgres psql -U secureguard -d postgres -c "CREATE DATABASE secureguard;" 2>/dev/null || true
+        $COMPOSE_CMD exec -T postgres psql -U minnowvpn -d postgres -c "DROP DATABASE IF EXISTS minnowvpn;" 2>/dev/null || true
+        $COMPOSE_CMD exec -T postgres psql -U minnowvpn -d postgres -c "CREATE DATABASE minnowvpn;" 2>/dev/null || true
 
         # Restore from binary dump
-        cat "$BACKUP_DIR/postgres.dump" | $COMPOSE_CMD exec -T postgres pg_restore -U secureguard -d secureguard --no-owner --no-privileges 2>/dev/null || {
+        cat "$BACKUP_DIR/postgres.dump" | $COMPOSE_CMD exec -T postgres pg_restore -U minnowvpn -d minnowvpn --no-owner --no-privileges 2>/dev/null || {
             # If binary restore fails, try SQL dump
             if [ -f "$BACKUP_DIR/postgres.sql.gz" ]; then
                 log_warning "Binary restore failed, trying SQL dump..."
-                gunzip -c "$BACKUP_DIR/postgres.sql.gz" | $COMPOSE_CMD exec -T postgres psql -U secureguard -d secureguard
+                gunzip -c "$BACKUP_DIR/postgres.sql.gz" | $COMPOSE_CMD exec -T postgres psql -U minnowvpn -d minnowvpn
             fi
         }
 

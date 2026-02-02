@@ -16,7 +16,7 @@ providers:
     # Folder to store dashboards (empty = General folder)
     folder: 'MinnowVPN'
     # Create folder if it doesn't exist
-    folderUid: 'secureguard'
+    folderUid: 'minnowvpn'
     # Dashboard provider type
     type: file
     # Disable dashboard deletion from UI

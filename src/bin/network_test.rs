@@ -1,8 +1,8 @@
 //! Network test: send handshake and dump raw bytes
 
 use base64::{engine::general_purpose::STANDARD as BASE64, Engine};
-use secureguard_poc::config::WireGuardConfig;
-use secureguard_poc::protocol::handshake::InitiatorHandshake;
+use minnowvpn::config::WireGuardConfig;
+use minnowvpn::protocol::handshake::InitiatorHandshake;
 use std::net::UdpSocket;
 use std::time::Duration;
 
@@ -16,7 +16,7 @@ fn main() {
     let endpoint = peer.endpoint.expect("Peer must have endpoint");
 
     println!("=== Network Test ===\n");
-    println!("Our public key: {}", BASE64.encode(&secureguard_poc::crypto::x25519::public_key(&private_key)));
+    println!("Our public key: {}", BASE64.encode(&minnowvpn::crypto::x25519::public_key(&private_key)));
     println!("Peer public key: {}", BASE64.encode(&peer_public));
     println!("Endpoint: {}", endpoint);
 

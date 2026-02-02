@@ -75,7 +75,7 @@ class VpnStatus {
       state == VpnConnectionState.connecting || state == VpnConnectionState.disconnecting;
 }
 
-/// REST API client for communicating with SecureGuard daemon
+/// REST API client for communicating with MinnowVPN daemon
 ///
 /// Uses HTTP REST API with Bearer token authentication and SSE for real-time notifications.
 class IpcClient {
@@ -85,9 +85,9 @@ class IpcClient {
   /// Token file path (platform-specific)
   static String get tokenFilePath {
     if (Platform.isWindows) {
-      return r'C:\ProgramData\SecureGuard\auth-token';
+      return r'C:\ProgramData\MinnowVPN\auth-token';
     }
-    return '/var/run/secureguard/auth-token';
+    return '/var/run/minnowvpn/auth-token';
   }
 
   final String host;

@@ -8,11 +8,11 @@
     with proper security configuration.
 
 .PARAMETER BinaryPath
-    Path to the secureguard-service.exe binary. If not specified,
+    Path to the minnowvpn-service.exe binary. If not specified,
     searches common locations.
 
 .PARAMETER DataDir
-    Directory for service data. Defaults to C:\ProgramData\SecureGuard
+    Directory for service data. Defaults to C:\ProgramData\MinnowVPN
 
 .PARAMETER Uninstall
     Uninstall the service instead of installing.
@@ -22,7 +22,7 @@
     Installs the service using auto-detected binary location.
 
 .EXAMPLE
-    .\install.ps1 -BinaryPath "C:\path\to\secureguard-service.exe"
+    .\install.ps1 -BinaryPath "C:\path\to\minnowvpn-service.exe"
     Installs the service using the specified binary.
 
 .EXAMPLE
@@ -36,17 +36,17 @@ param(
     [string]$BinaryPath,
 
     [Parameter(Mandatory=$false)]
-    [string]$DataDir = "C:\ProgramData\SecureGuard",
+    [string]$DataDir = "C:\ProgramData\MinnowVPN",
 
     [Parameter(Mandatory=$false)]
     [switch]$Uninstall
 )
 
 # Configuration
-$ServiceName = "SecureGuardVPN"
+$ServiceName = "MinnowVPN"
 $ServiceDisplayName = "MinnowVPN Service"
 $ServiceDescription = "WireGuard-compatible VPN daemon for MinnowVPN"
-$InstallDir = "C:\Program Files\SecureGuard"
+$InstallDir = "C:\Program Files\MinnowVPN"
 $TokenDir = "$DataDir"
 $TokenFile = "$TokenDir\auth-token"
 $HttpPort = 51820
@@ -81,9 +81,9 @@ if (-not (Test-Administrator)) {
 function Find-Binary {
     $locations = @(
         $BinaryPath,
-        "$PSScriptRoot\secureguard-service.exe",
-        "$PSScriptRoot\..\..\target\release\secureguard-poc.exe",
-        "$env:TEMP\secureguard-service.exe"
+        "$PSScriptRoot\minnowvpn-service.exe",
+        "$PSScriptRoot\..\..\target\release\minnowvpn.exe",
+        "$env:TEMP\minnowvpn-service.exe"
     )
 
     foreach ($path in $locations) {
@@ -188,7 +188,7 @@ function New-Directories {
 function Install-Binary {
     param([string]$SourcePath)
 
-    $destPath = "$InstallDir\secureguard-service.exe"
+    $destPath = "$InstallDir\minnowvpn-service.exe"
 
     Write-Info "Installing binary..."
 
@@ -305,7 +305,7 @@ function Write-Success {
     Write-Host ""
     Write-Host "Service Details:"
     Write-Host "  Name:    $ServiceName"
-    Write-Host "  Binary:  $InstallDir\secureguard-service.exe"
+    Write-Host "  Binary:  $InstallDir\minnowvpn-service.exe"
     Write-Host "  API:     http://127.0.0.1:$HttpPort/api/v1"
     Write-Host "  Token:   $TokenFile"
     Write-Host "  Data:    $DataDir"
@@ -337,9 +337,9 @@ function Uninstall-Service {
     Get-NetFirewallRule -DisplayName "MinnowVPN*" -ErrorAction SilentlyContinue | Remove-NetFirewallRule -ErrorAction SilentlyContinue
 
     # Remove binary
-    if (Test-Path "$InstallDir\secureguard-service.exe") {
+    if (Test-Path "$InstallDir\minnowvpn-service.exe") {
         Write-Info "Removing binary..."
-        Remove-Item -Path "$InstallDir\secureguard-service.exe" -Force
+        Remove-Item -Path "$InstallDir\minnowvpn-service.exe" -Force
     }
 
     # Optionally remove install directory if empty
@@ -367,11 +367,11 @@ function Main {
     # Find and verify binary
     $binary = Find-Binary
     if (-not $binary) {
-        Write-Err "Could not find secureguard binary"
+        Write-Err "Could not find minnowvpn binary"
         Write-Host ""
         Write-Host "Please either:"
         Write-Host "  1. Build with: cargo build --release"
-        Write-Host "  2. Specify path: .\install.ps1 -BinaryPath 'C:\path\to\secureguard-service.exe'"
+        Write-Host "  2. Specify path: .\install.ps1 -BinaryPath 'C:\path\to\minnowvpn-service.exe'"
         exit 1
     }
 

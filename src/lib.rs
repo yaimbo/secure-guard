@@ -1,4 +1,4 @@
-//! SecureGuard - WireGuard Protocol Implementation
+//! MinnowVPN - WireGuard Protocol Implementation
 //!
 //! A proof-of-concept WireGuard VPN client/server implementation in Rust.
 //!
@@ -16,7 +16,7 @@
 //! # Usage (Client)
 //!
 //! ```no_run
-//! use secureguard_poc::{WireGuardClient, WireGuardConfig};
+//! use minnowvpn::{WireGuardClient, WireGuardConfig};
 //!
 //! #[tokio::main]
 //! async fn main() -> anyhow::Result<()> {
@@ -30,7 +30,7 @@
 //! # Usage (Server)
 //!
 //! ```no_run
-//! use secureguard_poc::{WireGuardServer, WireGuardConfig};
+//! use minnowvpn::{WireGuardServer, WireGuardConfig};
 //!
 //! #[tokio::main]
 //! async fn main() -> anyhow::Result<()> {
@@ -53,5 +53,5 @@ pub mod tunnel;
 pub use client::WireGuardClient;
 pub use config::WireGuardConfig;
 pub use daemon::DaemonService;
-pub use error::SecureGuardError;
+pub use error::MinnowVpnError;
 pub use server::WireGuardServer;

@@ -23,8 +23,8 @@ MinnowVPN provides a complete VPN solution for organizations, featuring a modern
 
 ```bash
 # 1. Clone this repository
-git clone https://github.com/YOUR_ORG/secureguard.git
-cd secureguard
+git clone https://github.com/YOUR_ORG/minnowvpn.git
+cd minnowvpn
 
 # 2. Run the installer
 ./install.sh
@@ -250,10 +250,10 @@ Restore from a backup:
 
 ```bash
 # From directory
-./scripts/restore.sh backups/secureguard_20240101_120000
+./scripts/restore.sh backups/minnowvpn_20240101_120000
 
 # From archive
-./scripts/restore.sh backups/secureguard_20240101_120000.tar.gz
+./scripts/restore.sh backups/minnowvpn_20240101_120000.tar.gz
 ```
 
 ### Updates
@@ -290,20 +290,20 @@ VERSION=1.2.3
 
 | Jail | Trigger | Ban Duration |
 |------|---------|--------------|
-| secureguard-auth | 5 failed logins in 5 min | 1 hour |
-| secureguard-enrollment | 10 failed attempts in 1 min | 30 minutes |
-| secureguard-api | 20 errors in 1 min | 15 minutes |
+| minnowvpn-auth | 5 failed logins in 5 min | 1 hour |
+| minnowvpn-enrollment | 10 failed attempts in 1 min | 30 minutes |
+| minnowvpn-api | 20 errors in 1 min | 15 minutes |
 
 View banned IPs:
 
 ```bash
-docker compose exec fail2ban fail2ban-client status secureguard-auth
+docker compose exec fail2ban fail2ban-client status minnowvpn-auth
 ```
 
 Unban an IP:
 
 ```bash
-docker compose exec fail2ban fail2ban-client set secureguard-auth unbanip 1.2.3.4
+docker compose exec fail2ban fail2ban-client set minnowvpn-auth unbanip 1.2.3.4
 ```
 
 ### Firewall Configuration
@@ -434,16 +434,16 @@ docker compose down -v
 
 # Remove the directory
 cd ..
-rm -rf secureguard/
+rm -rf minnowvpn/
 ```
 
 ---
 
 ## Support
 
-- **Issues**: https://github.com/YOUR_ORG/secureguard/issues
-- **Discussions**: https://github.com/YOUR_ORG/secureguard/discussions
-- **Documentation**: https://docs.secureguard.dev
+- **Issues**: https://github.com/YOUR_ORG/minnowvpn/issues
+- **Discussions**: https://github.com/YOUR_ORG/minnowvpn/discussions
+- **Documentation**: https://docs.minnowvpn.dev
 
 ---
 

@@ -1,5 +1,5 @@
 #!/bin/bash
-# SecureGuard VPN - PKG Creation Script
+# MinnowVPN VPN - PKG Creation Script
 # Creates a unified installer package for both the app and daemon service
 
 set -euo pipefail
@@ -9,14 +9,14 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_ROOT="$(dirname "$(dirname "$SCRIPT_DIR")")"
 BUILD_DIR="$SCRIPT_DIR/build"
 PKG_ROOT="$BUILD_DIR/pkg-root"
-FLUTTER_PROJECT="$PROJECT_ROOT/secureguard_client"
+FLUTTER_PROJECT="$PROJECT_ROOT/minnowvpn_client"
 
 # Version (can be overridden)
 VERSION="${1:-1.0.0}"
 
 # Configuration
-IDENTIFIER="com.secureguard.installer"
-SERVICE_NAME="com.secureguard.vpn-service"
+IDENTIFIER="com.minnowvpn.installer"
+SERVICE_NAME="com.minnowvpn.vpn-service"
 
 # Colors for output
 RED='\033[0;31m'
@@ -40,10 +40,10 @@ check_daemon_binary() {
     local binary_path=""
 
     # Check build output locations
-    if [ -f "$BUILD_DIR/secureguard-service" ]; then
-        binary_path="$BUILD_DIR/secureguard-service"
-    elif [ -f "$PROJECT_ROOT/target/release/secureguard-poc" ]; then
-        binary_path="$PROJECT_ROOT/target/release/secureguard-poc"
+    if [ -f "$BUILD_DIR/minnowvpn-service" ]; then
+        binary_path="$BUILD_DIR/minnowvpn-service"
+    elif [ -f "$PROJECT_ROOT/target/release/minnowvpn" ]; then
+        binary_path="$PROJECT_ROOT/target/release/minnowvpn"
     fi
 
     if [ -z "$binary_path" ]; then
@@ -58,11 +58,11 @@ check_daemon_binary() {
 
 # Check for Flutter app
 check_flutter_app() {
-    local app_path="$FLUTTER_PROJECT/build/macos/Build/Products/Release/secureguard_client.app"
+    local app_path="$FLUTTER_PROJECT/build/macos/Build/Products/Release/minnowvpn_client.app"
 
     if [ ! -d "$app_path" ]; then
         log_error "Flutter app not found at: $app_path"
-        echo "  Please run: cd secureguard_client && flutter build macos --release"
+        echo "  Please run: cd minnowvpn_client && flutter build macos --release"
         exit 1
     fi
 
@@ -77,7 +77,7 @@ prepare_build_dir() {
     mkdir -p "$PKG_ROOT/Applications"
     mkdir -p "$PKG_ROOT/Library/PrivilegedHelperTools"
     mkdir -p "$PKG_ROOT/Library/LaunchDaemons"
-    mkdir -p "$PKG_ROOT/Library/Application Support/SecureGuard"
+    mkdir -p "$PKG_ROOT/Library/Application Support/MinnowVPN"
     mkdir -p "$BUILD_DIR"
 }
 
@@ -93,17 +93,17 @@ copy_files() {
     log_info "Flutter app copied to /Applications"
 
     # Copy daemon binary
-    cp "$daemon_binary" "$PKG_ROOT/Library/PrivilegedHelperTools/secureguard-service"
+    cp "$daemon_binary" "$PKG_ROOT/Library/PrivilegedHelperTools/minnowvpn-service"
     log_info "Daemon binary copied"
 
     # Copy LaunchDaemon plist
-    cp "$SCRIPT_DIR/com.secureguard.vpn-service.plist" \
+    cp "$SCRIPT_DIR/com.minnowvpn.vpn-service.plist" \
        "$PKG_ROOT/Library/LaunchDaemons/$SERVICE_NAME.plist"
     log_info "LaunchDaemon plist copied"
 
     # Copy uninstall script for in-app uninstallation
     cp "$SCRIPT_DIR/uninstall.sh" \
-       "$PKG_ROOT/Library/Application Support/SecureGuard/uninstall.sh"
+       "$PKG_ROOT/Library/Application Support/MinnowVPN/uninstall.sh"
     log_info "Uninstall script copied"
 }
 
@@ -125,7 +125,7 @@ build_component_pkg() {
         --identifier "$IDENTIFIER" \
         --version "$VERSION" \
         --ownership recommended \
-        "$BUILD_DIR/secureguard-component.pkg"
+        "$BUILD_DIR/minnowvpn-component.pkg"
 
     log_info "Component package created"
 }
@@ -148,7 +148,7 @@ cleanup() {
     log_info "Cleaning up intermediate files..."
 
     rm -rf "$PKG_ROOT"
-    rm -f "$BUILD_DIR/secureguard-component.pkg"
+    rm -f "$BUILD_DIR/minnowvpn-component.pkg"
     rm -f "$BUILD_DIR/Distribution.xml"
 }
 

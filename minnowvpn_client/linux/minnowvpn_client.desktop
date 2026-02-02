@@ -1,11 +1,11 @@
 [Desktop Entry]
 Name=MinnowVPN
 Comment=Secure VPN Client
-Exec=secureguard_client %u
-Icon=secureguard_client
+Exec=minnowvpn_client %u
+Icon=minnowvpn_client
 Terminal=false
 Type=Application
 Categories=Network;VPN;Security;
 Keywords=vpn;wireguard;security;
-MimeType=x-scheme-handler/secureguard;
-StartupWMClass=secureguard_client
+MimeType=x-scheme-handler/minnowvpn;
+StartupWMClass=minnowvpn_client

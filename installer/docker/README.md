@@ -15,8 +15,8 @@ Production-ready Docker deployment for MinnowVPN Server with automatic HTTPS, mo
 
 ```bash
 # Clone the repository
-git clone https://github.com/yourorg/secureguard.git
-cd secureguard/installer/docker
+git clone https://github.com/yourorg/minnowvpn.git
+cd minnowvpn/installer/docker
 
 # Run the setup wizard
 ./scripts/setup.sh
@@ -143,8 +143,8 @@ docker compose up -d
 ./scripts/backup.sh /path/to/backups
 
 # Restore from backup
-./scripts/restore.sh ./backups/secureguard_20240101_120000
-./scripts/restore.sh ./backups/secureguard_20240101_120000.tar.gz
+./scripts/restore.sh ./backups/minnowvpn_20240101_120000
+./scripts/restore.sh ./backups/minnowvpn_20240101_120000.tar.gz
 ```
 
 ### Maintenance
@@ -154,7 +154,7 @@ docker compose up -d
 docker compose logs fail2ban
 
 # Unban an IP
-docker compose exec fail2ban fail2ban-client set secureguard-auth unbanip 1.2.3.4
+docker compose exec fail2ban fail2ban-client set minnowvpn-auth unbanip 1.2.3.4
 
 # Force Watchtower update check
 docker compose exec watchtower /watchtower --run-once
@@ -171,9 +171,9 @@ The following jails are configured:
 
 | Jail | Trigger | Ban Time |
 |------|---------|----------|
-| `secureguard-auth` | 5 failed logins in 5 min | 1 hour |
-| `secureguard-enrollment` | 10 failed enrollments in 1 min | 30 min |
-| `secureguard-api` | 20 API errors in 1 min | 15 min |
+| `minnowvpn-auth` | 5 failed logins in 5 min | 1 hour |
+| `minnowvpn-enrollment` | 10 failed enrollments in 1 min | 30 min |
+| `minnowvpn-api` | 20 API errors in 1 min | 15 min |
 
 ### Security Headers
 
@@ -221,7 +221,7 @@ docker compose exec caddy caddy reload --config /etc/caddy/Caddyfile
 
 ```bash
 # Check PostgreSQL is healthy
-docker compose exec postgres pg_isready -U secureguard
+docker compose exec postgres pg_isready -U minnowvpn
 
 # Check database logs
 docker compose logs postgres

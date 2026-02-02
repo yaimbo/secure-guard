@@ -73,12 +73,12 @@ impl Default for ConnectionStateFile {
 pub fn get_state_dir() -> PathBuf {
     #[cfg(target_os = "windows")]
     {
-        PathBuf::from(r"C:\ProgramData\SecureGuard")
+        PathBuf::from(r"C:\ProgramData\MinnowVPN")
     }
 
     #[cfg(not(target_os = "windows"))]
     {
-        PathBuf::from("/var/lib/secureguard")
+        PathBuf::from("/var/lib/minnowvpn")
     }
 }
 
@@ -150,7 +150,7 @@ pub fn save_connection_state(state: &ConnectionStateFile) -> Result<(), std::io:
 
     std::fs::write(&path, json)?;
 
-    // Set file permissions on Unix (readable by secureguard group)
+    // Set file permissions on Unix (readable by minnowvpn group)
     #[cfg(unix)]
     {
         use std::os::unix::fs::PermissionsExt;
@@ -317,10 +317,10 @@ mod tests {
         let dir = get_state_dir();
 
         #[cfg(target_os = "windows")]
-        assert_eq!(dir, PathBuf::from(r"C:\ProgramData\SecureGuard"));
+        assert_eq!(dir, PathBuf::from(r"C:\ProgramData\MinnowVPN"));
 
         #[cfg(not(target_os = "windows"))]
-        assert_eq!(dir, PathBuf::from("/var/lib/secureguard"));
+        assert_eq!(dir, PathBuf::from("/var/lib/minnowvpn"));
     }
 
     #[test]
@@ -328,10 +328,10 @@ mod tests {
         let path = get_state_file_path();
 
         #[cfg(target_os = "windows")]
-        assert_eq!(path, PathBuf::from(r"C:\ProgramData\SecureGuard\connection-state.json"));
+        assert_eq!(path, PathBuf::from(r"C:\ProgramData\MinnowVPN\connection-state.json"));
 
         #[cfg(not(target_os = "windows"))]
-        assert_eq!(path, PathBuf::from("/var/lib/secureguard/connection-state.json"));
+        assert_eq!(path, PathBuf::from("/var/lib/minnowvpn/connection-state.json"));
     }
 
     #[test]

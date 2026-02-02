@@ -3,8 +3,8 @@
 //! This can run without sudo since it doesn't create TUN devices.
 
 use base64::{engine::general_purpose::STANDARD as BASE64, Engine};
-use secureguard_poc::config::WireGuardConfig;
-use secureguard_poc::protocol::handshake::InitiatorHandshake;
+use minnowvpn::config::WireGuardConfig;
+use minnowvpn::protocol::handshake::InitiatorHandshake;
 use std::net::UdpSocket;
 use std::time::Duration;
 
@@ -28,7 +28,7 @@ fn main() {
     println!("Peer public key: {}", hex::encode(&peer_public));
 
     // Derive our public key
-    let our_public = secureguard_poc::crypto::x25519::public_key(&private_key);
+    let our_public = minnowvpn::crypto::x25519::public_key(&private_key);
     println!("Our public key: {}", hex::encode(&our_public));
     println!("Our public key (base64): {}", BASE64.encode(&our_public));
     println!("Endpoint: {}", endpoint);

@@ -24,9 +24,9 @@ class EnrollmentData {
   EnrollmentData({required this.serverUrl, required this.code});
 }
 
-/// Parse a secureguard:// deep link URL
+/// Parse a minnowvpn:// deep link URL
 EnrollmentData? parseEnrollmentDeepLink(Uri uri) {
-  if (uri.scheme != 'secureguard' || uri.host != 'enroll') {
+  if (uri.scheme != 'minnowvpn' || uri.host != 'enroll') {
     return null;
   }
 
@@ -145,20 +145,20 @@ void main() async {
   };
 
   runApp(ProviderScope(
-    child: SecureGuardApp(initialEnrollment: initialEnrollment),
+    child: MinnowVpnApp(initialEnrollment: initialEnrollment),
   ));
 }
 
-class SecureGuardApp extends StatefulWidget {
+class MinnowVpnApp extends StatefulWidget {
   final EnrollmentData? initialEnrollment;
 
-  const SecureGuardApp({super.key, this.initialEnrollment});
+  const MinnowVpnApp({super.key, this.initialEnrollment});
 
   @override
-  State<SecureGuardApp> createState() => _SecureGuardAppState();
+  State<MinnowVpnApp> createState() => _MinnowVpnAppState();
 }
 
-class _SecureGuardAppState extends State<SecureGuardApp> with WindowListener {
+class _MinnowVpnAppState extends State<MinnowVpnApp> with WindowListener {
   @override
   void initState() {
     super.initState();

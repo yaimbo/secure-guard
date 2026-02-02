@@ -1,4 +1,4 @@
-# SecureGuard VPN Service Uninstaller for Windows
+# MinnowVPN VPN Service Uninstaller for Windows
 # This script removes the daemon service and cleans up
 
 param(
@@ -9,10 +9,10 @@ param(
 )
 
 # Configuration
-$ServiceName = "SecureGuardVPN"
-$InstallDir = "$env:ProgramFiles\SecureGuard"
-$DataDir = "$env:ProgramData\SecureGuard"
-$LogDir = "$env:ProgramData\SecureGuard\logs"
+$ServiceName = "MinnowVPN"
+$InstallDir = "$env:ProgramFiles\MinnowVPN"
+$DataDir = "$env:ProgramData\MinnowVPN"
+$LogDir = "$env:ProgramData\MinnowVPN\logs"
 
 # Show help
 if ($Help) {
@@ -51,11 +51,11 @@ if ($All) {
 }
 
 # Stop Flutter desktop app if running
-function Stop-SecureGuardApp {
+function Stop-MinnowVPNApp {
     Write-Host "[INFO] Checking for running MinnowVPN app..." -ForegroundColor Green
 
     # Try various possible process names for the Flutter app
-    $processNames = @("SecureGuard", "secureguard_client", "secureguard")
+    $processNames = @("MinnowVPN", "minnowvpn_client", "minnowvpn")
 
     foreach ($procName in $processNames) {
         $procs = Get-Process -Name $procName -ErrorAction SilentlyContinue
@@ -68,7 +68,7 @@ function Stop-SecureGuardApp {
 }
 
 # Stop and remove service
-function Remove-SecureGuardService {
+function Remove-MinnowVPNService {
     Write-Host "[INFO] Checking for service..." -ForegroundColor Green
 
     $service = Get-Service -Name $ServiceName -ErrorAction SilentlyContinue
@@ -136,7 +136,7 @@ function Remove-DesktopShortcuts {
 
 # Remove URL scheme registration
 function Remove-UrlScheme {
-    $regPath = "HKCR:\secureguard"
+    $regPath = "HKCR:\minnowvpn"
     if (Test-Path $regPath) {
         Write-Host "[INFO] Removing URL scheme registration..." -ForegroundColor Green
         Remove-Item -Path $regPath -Recurse -Force
@@ -164,8 +164,8 @@ function Show-CompletionMessage {
 
 # Main uninstallation flow
 try {
-    Stop-SecureGuardApp
-    Remove-SecureGuardService
+    Stop-MinnowVPNApp
+    Remove-MinnowVPNService
     Remove-StartMenuShortcut
     Remove-DesktopShortcuts
     Remove-UrlScheme

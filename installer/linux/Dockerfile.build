@@ -1,4 +1,4 @@
-# SecureGuard Linux Package Builder
+# MinnowVPN Linux Package Builder
 # Builds .deb and .rpm packages for Linux
 
 FROM debian:bookworm-slim AS builder
@@ -52,7 +52,7 @@ WORKDIR /build
 # Copy only what's needed for the build
 COPY Cargo.toml Cargo.lock ./
 COPY src ./src
-COPY secureguard_client ./secureguard_client
+COPY minnowvpn_client ./minnowvpn_client
 COPY installer/linux ./installer/linux
 
 # Create build output directory
@@ -60,10 +60,10 @@ RUN mkdir -p installer/linux/build
 
 # Build Rust daemon
 RUN cargo build --release && \
-    cp target/release/secureguard-poc installer/linux/build/secureguard-service
+    cp target/release/minnowvpn installer/linux/build/minnowvpn-service
 
 # Build Flutter client
-WORKDIR /build/secureguard_client
+WORKDIR /build/minnowvpn_client
 RUN flutter pub get && \
     flutter build linux --release && \
     cp -r build/linux/*/release/bundle /build/installer/linux/build/flutter-bundle

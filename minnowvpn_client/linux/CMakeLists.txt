@@ -4,10 +4,10 @@ project(runner LANGUAGES CXX)
 
 # The name of the executable created for the application. Change this to change
 # the on-disk name of your application.
-set(BINARY_NAME "secureguard_client")
+set(BINARY_NAME "minnowvpn_client")
 # The unique GTK application identifier for this application. See:
 # https://wiki.gnome.org/HowDoI/ChooseApplicationID
-set(APPLICATION_ID "com.secureguard.secureguard_client")
+set(APPLICATION_ID "com.minnowvpn.minnowvpn_client")
 
 # Explicitly opt in to modern CMake behaviors to avoid warnings with recent
 # versions of CMake.
@@ -128,6 +128,6 @@ if(NOT CMAKE_BUILD_TYPE MATCHES "Debug")
 endif()
 
 # Install .desktop file for URL scheme registration
-install(FILES "${CMAKE_CURRENT_SOURCE_DIR}/secureguard_client.desktop"
+install(FILES "${CMAKE_CURRENT_SOURCE_DIR}/minnowvpn_client.desktop"
   DESTINATION "${CMAKE_INSTALL_PREFIX}/share/applications"
   COMPONENT Runtime)

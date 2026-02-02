@@ -1,5 +1,5 @@
 #!/bin/bash
-# SecureGuard Linux Package Builder using Docker
+# MinnowVPN Linux Package Builder using Docker
 # Builds .deb and .rpm packages for ARM64 (and optionally x86_64)
 
 set -euo pipefail
@@ -40,7 +40,7 @@ docker build \
     --platform "$PLATFORM" \
     --build-arg VERSION="$VERSION" \
     -f "$SCRIPT_DIR/Dockerfile.build" \
-    -t secureguard-linux-builder \
+    -t minnowvpn-linux-builder \
     "$PROJECT_ROOT"
 
 # Extract packages from the image
@@ -49,7 +49,7 @@ log_step "Extracting packages..."
 mkdir -p "$SCRIPT_DIR/build"
 
 # Create a temporary container and copy files out
-CONTAINER_ID=$(docker create --platform "$PLATFORM" secureguard-linux-builder)
+CONTAINER_ID=$(docker create --platform "$PLATFORM" minnowvpn-linux-builder)
 docker cp "$CONTAINER_ID:/build/installer/linux/build/." "$SCRIPT_DIR/build/" 2>/dev/null || true
 docker rm "$CONTAINER_ID"
 

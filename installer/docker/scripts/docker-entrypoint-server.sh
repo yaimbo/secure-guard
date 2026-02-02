@@ -39,7 +39,7 @@ read_secret "ENCRYPTION_KEY"
 # Log startup info
 echo "[entrypoint] Starting MinnowVPN API Server..."
 echo "[entrypoint] Host: ${HOST:-0.0.0.0}:${PORT:-8080}"
-echo "[entrypoint] Database: ${DB_HOST:-localhost}:${DB_PORT:-5432}/${DB_NAME:-secureguard}"
+echo "[entrypoint] Database: ${DB_HOST:-localhost}:${DB_PORT:-5432}/${DB_NAME:-minnowvpn}"
 echo "[entrypoint] Redis: ${REDIS_HOST:-localhost}:${REDIS_PORT:-6379}"
 
 # Execute the main command

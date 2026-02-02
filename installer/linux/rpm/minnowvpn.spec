@@ -1,11 +1,11 @@
-Name:           secureguard
+Name:           minnowvpn
 Version:        %{VERSION}
 Release:        1%{?dist}
 Summary:        MinnowVPN Client
 
 License:        Proprietary
 URL:            https://minnowvpn.com
-Source0:        secureguard-%{VERSION}.tar.gz
+Source0:        minnowvpn-%{VERSION}.tar.gz
 
 Requires:       gtk3
 Requires:       libsecret
@@ -15,81 +15,81 @@ WireGuard-compatible VPN client with a modern GUI.
 Includes background daemon service and Flutter desktop client.
 
 %prep
-%setup -q -n secureguard-%{VERSION}
+%setup -q -n minnowvpn-%{VERSION}
 
 %install
 rm -rf %{buildroot}
 
 # Create directories
 mkdir -p %{buildroot}/usr/local/bin
-mkdir -p %{buildroot}/opt/secureguard
+mkdir -p %{buildroot}/opt/minnowvpn
 mkdir -p %{buildroot}/etc/systemd/system
 mkdir -p %{buildroot}/usr/share/applications
 mkdir -p %{buildroot}/usr/share/icons/hicolor/48x48/apps
 mkdir -p %{buildroot}/usr/share/icons/hicolor/128x128/apps
 mkdir -p %{buildroot}/usr/share/icons/hicolor/256x256/apps
-mkdir -p %{buildroot}/var/lib/secureguard
-mkdir -p %{buildroot}/var/run/secureguard
-mkdir -p %{buildroot}/var/log/secureguard
+mkdir -p %{buildroot}/var/lib/minnowvpn
+mkdir -p %{buildroot}/var/run/minnowvpn
+mkdir -p %{buildroot}/var/log/minnowvpn
 
 # Install daemon binary
-install -m 755 secureguard-service %{buildroot}/usr/local/bin/
+install -m 755 minnowvpn-service %{buildroot}/usr/local/bin/
 
 # Install Flutter client
-cp -r flutter-bundle/* %{buildroot}/opt/secureguard/
-chmod 755 %{buildroot}/opt/secureguard/secureguard_client
+cp -r flutter-bundle/* %{buildroot}/opt/minnowvpn/
+chmod 755 %{buildroot}/opt/minnowvpn/minnowvpn_client
 
 # Create symlink
-ln -sf /opt/secureguard/secureguard_client %{buildroot}/usr/local/bin/secureguard
+ln -sf /opt/minnowvpn/minnowvpn_client %{buildroot}/usr/local/bin/minnowvpn
 
 # Install service file
-install -m 644 secureguard.service %{buildroot}/etc/systemd/system/
+install -m 644 minnowvpn.service %{buildroot}/etc/systemd/system/
 
 # Install desktop file
-install -m 644 secureguard.desktop %{buildroot}/usr/share/applications/
+install -m 644 minnowvpn.desktop %{buildroot}/usr/share/applications/
 
 # Install icons (properly sized - guaranteed to exist by build-rpm.sh)
-install -m 644 icons/secureguard-48.png %{buildroot}/usr/share/icons/hicolor/48x48/apps/secureguard.png
-install -m 644 icons/secureguard-128.png %{buildroot}/usr/share/icons/hicolor/128x128/apps/secureguard.png
-install -m 644 icons/secureguard-256.png %{buildroot}/usr/share/icons/hicolor/256x256/apps/secureguard.png
+install -m 644 icons/minnowvpn-48.png %{buildroot}/usr/share/icons/hicolor/48x48/apps/minnowvpn.png
+install -m 644 icons/minnowvpn-128.png %{buildroot}/usr/share/icons/hicolor/128x128/apps/minnowvpn.png
+install -m 644 icons/minnowvpn-256.png %{buildroot}/usr/share/icons/hicolor/256x256/apps/minnowvpn.png
 
 %pre
 # Pre-installation: Stop existing service
-if systemctl is-active --quiet secureguard 2>/dev/null; then
-    systemctl stop secureguard || true
+if systemctl is-active --quiet minnowvpn 2>/dev/null; then
+    systemctl stop minnowvpn || true
     sleep 2
 fi
 
-if systemctl is-enabled --quiet secureguard 2>/dev/null; then
-    systemctl disable secureguard || true
+if systemctl is-enabled --quiet minnowvpn 2>/dev/null; then
+    systemctl disable minnowvpn || true
 fi
 
 # Remove old auth token
-rm -f /var/run/secureguard/auth-token
+rm -f /var/run/minnowvpn/auth-token
 
 %post
 # Post-installation: Set up group and start service
 
 # Create group
-if ! getent group secureguard > /dev/null 2>&1; then
-    groupadd -f secureguard
+if ! getent group minnowvpn > /dev/null 2>&1; then
+    groupadd -f minnowvpn
 fi
 
 # Set directory permissions
-chown root:secureguard /var/run/secureguard
-chmod 750 /var/run/secureguard
-chmod 700 /var/lib/secureguard
-chown root:secureguard /var/log/secureguard
-chmod 750 /var/log/secureguard
+chown root:minnowvpn /var/run/minnowvpn
+chmod 750 /var/run/minnowvpn
+chmod 700 /var/lib/minnowvpn
+chown root:minnowvpn /var/log/minnowvpn
+chmod 750 /var/log/minnowvpn
 
 # Set capabilities
-setcap cap_net_admin,cap_net_raw,cap_net_bind_service=eip /usr/local/bin/secureguard-service 2>/dev/null || true
+setcap cap_net_admin,cap_net_raw,cap_net_bind_service=eip /usr/local/bin/minnowvpn-service 2>/dev/null || true
 
 # Enable and start service (if systemd is running)
 if pidof systemd &>/dev/null; then
     systemctl daemon-reload
-    systemctl enable secureguard
-    systemctl start secureguard
+    systemctl enable minnowvpn
+    systemctl start minnowvpn
 fi
 
 # Update desktop database
@@ -100,11 +100,11 @@ gtk-update-icon-cache -f -t /usr/share/icons/hicolor 2>/dev/null || true
 # Pre-uninstall: Stop service
 if [ $1 -eq 0 ]; then
     # Complete removal (not upgrade)
-    if systemctl is-active --quiet secureguard 2>/dev/null; then
-        systemctl stop secureguard || true
+    if systemctl is-active --quiet minnowvpn 2>/dev/null; then
+        systemctl stop minnowvpn || true
     fi
-    if systemctl is-enabled --quiet secureguard 2>/dev/null; then
-        systemctl disable secureguard || true
+    if systemctl is-enabled --quiet minnowvpn 2>/dev/null; then
+        systemctl disable minnowvpn || true
     fi
 fi
 
@@ -112,24 +112,24 @@ fi
 # Post-uninstall: Cleanup
 if [ $1 -eq 0 ]; then
     # Complete removal (not upgrade)
-    rm -rf /var/run/secureguard
+    rm -rf /var/run/minnowvpn
     systemctl daemon-reload 2>/dev/null || true
     update-desktop-database /usr/share/applications 2>/dev/null || true
     gtk-update-icon-cache -f -t /usr/share/icons/hicolor 2>/dev/null || true
 fi
 
 %files
-%attr(755, root, root) /usr/local/bin/secureguard-service
-/usr/local/bin/secureguard
-/opt/secureguard/
-%config /etc/systemd/system/secureguard.service
-/usr/share/applications/secureguard.desktop
-/usr/share/icons/hicolor/48x48/apps/secureguard.png
-/usr/share/icons/hicolor/128x128/apps/secureguard.png
-/usr/share/icons/hicolor/256x256/apps/secureguard.png
-%dir %attr(700, root, root) /var/lib/secureguard
-%dir %attr(750, root, secureguard) /var/run/secureguard
-%dir %attr(750, root, secureguard) /var/log/secureguard
+%attr(755, root, root) /usr/local/bin/minnowvpn-service
+/usr/local/bin/minnowvpn
+/opt/minnowvpn/
+%config /etc/systemd/system/minnowvpn.service
+/usr/share/applications/minnowvpn.desktop
+/usr/share/icons/hicolor/48x48/apps/minnowvpn.png
+/usr/share/icons/hicolor/128x128/apps/minnowvpn.png
+/usr/share/icons/hicolor/256x256/apps/minnowvpn.png
+%dir %attr(700, root, root) /var/lib/minnowvpn
+%dir %attr(750, root, minnowvpn) /var/run/minnowvpn
+%dir %attr(750, root, minnowvpn) /var/log/minnowvpn
 
 %changelog
 * %(date +"%a %b %d %Y") MinnowVPN Team <support@minnowvpn.com> - %{version}-1

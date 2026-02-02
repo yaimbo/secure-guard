@@ -52,7 +52,7 @@ class ServerConfig {
       port: int.parse(_env('PORT', '8080')),
       dbHost: _env('DB_HOST', 'localhost'),
       dbPort: int.parse(_env('DB_PORT', '5432')),
-      dbName: _env('DB_NAME', 'secureguard'),
+      dbName: _env('DB_NAME', 'minnowvpn'),
       dbUser: _env('DB_USER', 'postgres'),
       dbPassword: _envOrSecret('DB_PASSWORD', ''),
       redisHost: _env('REDIS_HOST', 'localhost'),

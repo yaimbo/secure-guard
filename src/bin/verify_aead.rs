@@ -1,6 +1,6 @@
 //! Verify AEAD encryption format
 
-use secureguard_poc::crypto::aead;
+use minnowvpn::crypto::aead;
 
 fn main() {
     println!("=== AEAD Format Verification ===\n");

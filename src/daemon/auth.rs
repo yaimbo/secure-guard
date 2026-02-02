@@ -16,11 +16,11 @@ use std::sync::Arc;
 
 /// Default token file path for Unix systems
 #[cfg(unix)]
-pub const DEFAULT_TOKEN_PATH: &str = "/var/run/secureguard/auth-token";
+pub const DEFAULT_TOKEN_PATH: &str = "/var/run/minnowvpn/auth-token";
 
 /// Default token file path for Windows
 #[cfg(windows)]
-pub const DEFAULT_TOKEN_PATH: &str = r"C:\ProgramData\SecureGuard\auth-token";
+pub const DEFAULT_TOKEN_PATH: &str = r"C:\ProgramData\MinnowVPN\auth-token";
 
 /// Authentication state shared across handlers
 #[derive(Clone)]
@@ -72,7 +72,7 @@ pub fn write_token_file(token: &str, path: Option<PathBuf>) -> Result<PathBuf, s
 }
 
 /// Set Unix file permissions (0o640 - owner rw, group r)
-/// Also sets group ownership to 'secureguard' for secure token access
+/// Also sets group ownership to 'minnowvpn' for secure token access
 #[cfg(unix)]
 fn set_unix_permissions(path: &PathBuf) -> Result<(), std::io::Error> {
     use std::os::unix::fs::PermissionsExt;
@@ -81,8 +81,8 @@ fn set_unix_permissions(path: &PathBuf) -> Result<(), std::io::Error> {
     let permissions = std::fs::Permissions::from_mode(0o640);
     std::fs::set_permissions(path, permissions)?;
 
-    // Set group ownership to 'secureguard' if the group exists
-    set_group_ownership(path, "secureguard");
+    // Set group ownership to 'minnowvpn' if the group exists
+    set_group_ownership(path, "minnowvpn");
 
     tracing::debug!("Token file created with 0o640 permissions");
     Ok(())

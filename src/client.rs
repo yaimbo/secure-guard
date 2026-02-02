@@ -16,7 +16,7 @@ use tokio::time::{interval, Interval};
 
 use crate::config::WireGuardConfig;
 use crate::daemon::TrafficStats;
-use crate::error::{NetworkError, ProtocolError, SecureGuardError};
+use crate::error::{NetworkError, ProtocolError, MinnowVpnError};
 use crate::protocol::{
     CookieReply, CookieState, HandshakeResponse, InitiatorHandshake,
     MessageType, Session, SessionManager, TransportHeader,
@@ -79,14 +79,14 @@ impl WireGuardClient {
     pub async fn new(
         config: WireGuardConfig,
         traffic_stats: Option<Arc<TrafficStats>>,
-    ) -> Result<Self, SecureGuardError> {
+    ) -> Result<Self, MinnowVpnError> {
         // Clean up any stale routes from crashed previous sessions
         RouteManager::cleanup_stale_routes();
 
         // Parse our interface address
         let our_address = config.interface.address
             .first()
-            .ok_or_else(|| SecureGuardError::Config(crate::error::ConfigError::MissingField {
+            .ok_or_else(|| MinnowVpnError::Config(crate::error::ConfigError::MissingField {
                 field: "Address".to_string(),
             }))?;
 
@@ -102,12 +102,12 @@ impl WireGuardClient {
 
         // Get peer endpoint first to determine bind address
         let peer = config.peers.first()
-            .ok_or_else(|| SecureGuardError::Config(crate::error::ConfigError::MissingField {
+            .ok_or_else(|| MinnowVpnError::Config(crate::error::ConfigError::MissingField {
                 field: "Peer".to_string(),
             }))?;
 
         let peer_endpoint = peer.endpoint
-            .ok_or_else(|| SecureGuardError::Config(crate::error::ConfigError::MissingField {
+            .ok_or_else(|| MinnowVpnError::Config(crate::error::ConfigError::MissingField {
                 field: "Endpoint".to_string(),
             }))?;
 
@@ -146,7 +146,7 @@ impl WireGuardClient {
     }
 
     /// Run the client (main event loop)
-    pub async fn run(&mut self) -> Result<(), SecureGuardError> {
+    pub async fn run(&mut self) -> Result<(), MinnowVpnError> {
         // Connect with retry (handshake must complete BEFORE setting up routes,
         // otherwise the VPN endpoint gets routed through the non-existent tunnel)
         self.connect_with_retry().await?;
@@ -159,7 +159,7 @@ impl WireGuardClient {
     }
 
     /// Set up routes for peer's allowed IPs
-    async fn setup_routes(&mut self) -> Result<(), SecureGuardError> {
+    async fn setup_routes(&mut self) -> Result<(), MinnowVpnError> {
         let peer = &self.config.peers[0];
 
         // CRITICAL: First add a route for the VPN endpoint to bypass the tunnel
@@ -188,7 +188,7 @@ impl WireGuardClient {
     }
 
     /// Connect with automatic retry and exponential backoff
-    async fn connect_with_retry(&mut self) -> Result<(), SecureGuardError> {
+    async fn connect_with_retry(&mut self) -> Result<(), MinnowVpnError> {
         let mut delay = INITIAL_RETRY_DELAY;
         let mut attempts = 0u32;
 
@@ -211,7 +211,7 @@ impl WireGuardClient {
     }
 
     /// Perform the WireGuard handshake
-    async fn perform_handshake(&mut self) -> Result<(), SecureGuardError> {
+    async fn perform_handshake(&mut self) -> Result<(), MinnowVpnError> {
         // Loop to handle cookie retry without recursion
         loop {
             let peer = &self.config.peers[0];
@@ -271,7 +271,7 @@ impl WireGuardClient {
         &mut self,
         packet: &[u8],
         from: SocketAddr,
-    ) -> Result<HandshakeResult, SecureGuardError> {
+    ) -> Result<HandshakeResult, MinnowVpnError> {
         let msg_type = get_message_type(packet)?;
 
         match msg_type {
@@ -326,7 +326,7 @@ impl WireGuardClient {
     }
 
     /// Main event loop
-    async fn event_loop(&mut self) -> Result<(), SecureGuardError> {
+    async fn event_loop(&mut self) -> Result<(), MinnowVpnError> {
         let mut tun_buf = [0u8; BUFFER_SIZE];
         let mut udp_buf = [0u8; BUFFER_SIZE];
 
@@ -396,7 +396,7 @@ impl WireGuardClient {
     }
 
     /// Handle a packet from the TUN device (outgoing traffic)
-    async fn handle_tun_packet(&mut self, packet: &[u8]) -> Result<(), SecureGuardError> {
+    async fn handle_tun_packet(&mut self, packet: &[u8]) -> Result<(), MinnowVpnError> {
         // Get current session
         let session = self.sessions.current_mut()
             .ok_or(ProtocolError::NoSession)?;
@@ -423,7 +423,7 @@ impl WireGuardClient {
         &mut self,
         packet: &[u8],
         from: SocketAddr,
-    ) -> Result<(), SecureGuardError> {
+    ) -> Result<(), MinnowVpnError> {
         if packet.is_empty() {
             return Ok(());
         }
@@ -470,7 +470,7 @@ impl WireGuardClient {
         &mut self,
         packet: &[u8],
         from: SocketAddr,
-    ) -> Result<(), SecureGuardError> {
+    ) -> Result<(), MinnowVpnError> {
         // Update traffic statistics (count full encrypted packet)
         if let Some(ref stats) = self.traffic_stats {
             stats.add_received(packet.len() as u64);
@@ -503,7 +503,7 @@ impl WireGuardClient {
     }
 
     /// Send a keepalive packet (empty encrypted packet)
-    async fn send_keepalive(&mut self) -> Result<(), SecureGuardError> {
+    async fn send_keepalive(&mut self) -> Result<(), MinnowVpnError> {
         let session = self.sessions.current_mut()
             .ok_or(ProtocolError::NoSession)?;
 
@@ -527,7 +527,7 @@ impl WireGuardClient {
     }
 
     /// Clean up routes on shutdown
-    pub async fn cleanup(&mut self) -> Result<(), SecureGuardError> {
+    pub async fn cleanup(&mut self) -> Result<(), MinnowVpnError> {
         tracing::info!("Cleaning up routes...");
         self.routes.cleanup().await?;
         tracing::info!("Cleanup complete");

@@ -8,7 +8,7 @@ void main() {
 
   runApp(
     const ProviderScope(
-      child: SecureGuardConsole(),
+      child: MinnowVpnConsole(),
     ),
   );
 }

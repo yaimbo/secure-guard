@@ -1,7 +1,7 @@
 <?xml version="1.0" encoding="utf-8"?>
 <installer-gui-script minSpecVersion="2">
     <title>MinnowVPN</title>
-    <organization>com.secureguard</organization>
+    <organization>com.minnowvpn</organization>
     <domains enable_anywhere="false" enable_localSystem="true"/>
     <options customize="never" require-scripts="true" hostArchitectures="x86_64,arm64"/>
 
@@ -19,16 +19,16 @@
     <!-- Package choices -->
     <choices-outline>
         <line choice="default">
-            <line choice="com.secureguard.installer"/>
+            <line choice="com.minnowvpn.installer"/>
         </line>
     </choices-outline>
 
     <choice id="default"/>
-    <choice id="com.secureguard.installer" visible="false">
-        <pkg-ref id="com.secureguard.installer"/>
+    <choice id="com.minnowvpn.installer" visible="false">
+        <pkg-ref id="com.minnowvpn.installer"/>
     </choice>
 
-    <pkg-ref id="com.secureguard.installer" version="VERSION" onConclusion="none">
-        secureguard-component.pkg
+    <pkg-ref id="com.minnowvpn.installer" version="VERSION" onConclusion="none">
+        minnowvpn-component.pkg
     </pkg-ref>
 </installer-gui-script>

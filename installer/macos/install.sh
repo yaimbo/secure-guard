@@ -1,22 +1,22 @@
 #!/bin/bash
-# SecureGuard VPN Service Installer for macOS
+# MinnowVPN VPN Service Installer for macOS
 # This script installs the daemon service with proper permissions and security
 
 set -euo pipefail
 
 # Configuration
-SERVICE_NAME="com.secureguard.vpn-service"
+SERVICE_NAME="com.minnowvpn.vpn-service"
 HELPER_TOOLS_DIR="/Library/PrivilegedHelperTools"
 LAUNCH_DAEMONS_DIR="/Library/LaunchDaemons"
-APPLICATION_SUPPORT_DIR="/Library/Application Support/SecureGuard"
+APPLICATION_SUPPORT_DIR="/Library/Application Support/MinnowVPN"
 LOG_DIR="/var/log"
-DATA_DIR="/var/lib/secureguard"
-TOKEN_DIR="/var/run/secureguard"
+DATA_DIR="/var/lib/minnowvpn"
+TOKEN_DIR="/var/run/minnowvpn"
 TOKEN_FILE="$TOKEN_DIR/auth-token"
 HTTP_PORT=51820
 MIN_MACOS_VERSION="10.15"
-SECUREGUARD_GROUP="secureguard"
-SECUREGUARD_GID=1100
+MINNOWVPN_GROUP="minnowvpn"
+MINNOWVPN_GID=1100
 
 # Colors for output
 RED='\033[0;31m'
@@ -64,20 +64,20 @@ find_binary() {
     local binary_path=""
 
     # Check various locations
-    if [ -f "$SCRIPT_DIR/../../target/release/secureguard-poc" ]; then
-        binary_path="$SCRIPT_DIR/../../target/release/secureguard-poc"
-    elif [ -f "$SCRIPT_DIR/secureguard-service" ]; then
-        binary_path="$SCRIPT_DIR/secureguard-service"
-    elif [ -f "/tmp/secureguard-service" ]; then
-        binary_path="/tmp/secureguard-service"
+    if [ -f "$SCRIPT_DIR/../../target/release/minnowvpn" ]; then
+        binary_path="$SCRIPT_DIR/../../target/release/minnowvpn"
+    elif [ -f "$SCRIPT_DIR/minnowvpn-service" ]; then
+        binary_path="$SCRIPT_DIR/minnowvpn-service"
+    elif [ -f "/tmp/minnowvpn-service" ]; then
+        binary_path="/tmp/minnowvpn-service"
     fi
 
     if [ -z "$binary_path" ]; then
-        log_error "Could not find secureguard binary"
+        log_error "Could not find minnowvpn binary"
         echo ""
         echo "Please either:"
         echo "  1. Build with: cargo build --release"
-        echo "  2. Place binary at: $SCRIPT_DIR/secureguard-service"
+        echo "  2. Place binary at: $SCRIPT_DIR/minnowvpn-service"
         exit 1
     fi
 
@@ -117,14 +117,14 @@ calculate_hash() {
 
 # Backup existing installation
 backup_existing() {
-    local backup_dir="/tmp/secureguard-backup-$(date +%Y%m%d-%H%M%S)"
+    local backup_dir="/tmp/minnowvpn-backup-$(date +%Y%m%d-%H%M%S)"
 
-    if [ -f "$HELPER_TOOLS_DIR/secureguard-service" ] || [ -f "$LAUNCH_DAEMONS_DIR/$SERVICE_NAME.plist" ]; then
+    if [ -f "$HELPER_TOOLS_DIR/minnowvpn-service" ] || [ -f "$LAUNCH_DAEMONS_DIR/$SERVICE_NAME.plist" ]; then
         log_info "Backing up existing installation to $backup_dir"
         mkdir -p "$backup_dir"
 
-        [ -f "$HELPER_TOOLS_DIR/secureguard-service" ] && \
-            cp "$HELPER_TOOLS_DIR/secureguard-service" "$backup_dir/" 2>/dev/null || true
+        [ -f "$HELPER_TOOLS_DIR/minnowvpn-service" ] && \
+            cp "$HELPER_TOOLS_DIR/minnowvpn-service" "$backup_dir/" 2>/dev/null || true
         [ -f "$LAUNCH_DAEMONS_DIR/$SERVICE_NAME.plist" ] && \
             cp "$LAUNCH_DAEMONS_DIR/$SERVICE_NAME.plist" "$backup_dir/" 2>/dev/null || true
 
@@ -142,27 +142,27 @@ stop_existing_service() {
     fi
 }
 
-# Create secureguard group for token access
-create_secureguard_group() {
-    log_info "Setting up secureguard group..."
+# Create minnowvpn group for token access
+create_minnowvpn_group() {
+    log_info "Setting up minnowvpn group..."
 
     # Check if group exists
-    if ! dscl . -read /Groups/$SECUREGUARD_GROUP &>/dev/null; then
-        log_info "Creating group: $SECUREGUARD_GROUP"
-        dscl . -create /Groups/$SECUREGUARD_GROUP
-        dscl . -create /Groups/$SECUREGUARD_GROUP PrimaryGroupID $SECUREGUARD_GID
-        dscl . -create /Groups/$SECUREGUARD_GROUP RealName "MinnowVPN Users"
+    if ! dscl . -read /Groups/$MINNOWVPN_GROUP &>/dev/null; then
+        log_info "Creating group: $MINNOWVPN_GROUP"
+        dscl . -create /Groups/$MINNOWVPN_GROUP
+        dscl . -create /Groups/$MINNOWVPN_GROUP PrimaryGroupID $MINNOWVPN_GID
+        dscl . -create /Groups/$MINNOWVPN_GROUP RealName "MinnowVPN Users"
     else
-        log_info "Group $SECUREGUARD_GROUP already exists"
+        log_info "Group $MINNOWVPN_GROUP already exists"
     fi
 
     # Add the invoking user to the group (if SUDO_USER is set)
     if [ -n "${SUDO_USER:-}" ] && [ "$SUDO_USER" != "root" ]; then
-        if ! dscl . -read /Groups/$SECUREGUARD_GROUP GroupMembership 2>/dev/null | grep -q "$SUDO_USER"; then
-            log_info "Adding user $SUDO_USER to $SECUREGUARD_GROUP group"
-            dscl . -append /Groups/$SECUREGUARD_GROUP GroupMembership "$SUDO_USER"
+        if ! dscl . -read /Groups/$MINNOWVPN_GROUP GroupMembership 2>/dev/null | grep -q "$SUDO_USER"; then
+            log_info "Adding user $SUDO_USER to $MINNOWVPN_GROUP group"
+            dscl . -append /Groups/$MINNOWVPN_GROUP GroupMembership "$SUDO_USER"
         else
-            log_info "User $SUDO_USER already in $SECUREGUARD_GROUP group"
+            log_info "User $SUDO_USER already in $MINNOWVPN_GROUP group"
         fi
     fi
 }
@@ -179,15 +179,15 @@ create_directories() {
     # Set permissions on data directory
     chmod 700 "$DATA_DIR"
 
-    # Set permissions on token directory (root:secureguard, 750)
-    chown root:$SECUREGUARD_GROUP "$TOKEN_DIR"
+    # Set permissions on token directory (root:minnowvpn, 750)
+    chown root:$MINNOWVPN_GROUP "$TOKEN_DIR"
     chmod 750 "$TOKEN_DIR"
 }
 
 # Install binary
 install_binary() {
     local binary_path="$1"
-    local dest="$HELPER_TOOLS_DIR/secureguard-service"
+    local dest="$HELPER_TOOLS_DIR/minnowvpn-service"
 
     log_info "Installing binary..."
 
@@ -216,16 +216,16 @@ install_configs() {
     log_info "Installing LaunchDaemon configuration..."
 
     # Install plist
-    cp "$SCRIPT_DIR/com.secureguard.vpn-service.plist" "$LAUNCH_DAEMONS_DIR/"
+    cp "$SCRIPT_DIR/com.minnowvpn.vpn-service.plist" "$LAUNCH_DAEMONS_DIR/"
     chown root:wheel "$LAUNCH_DAEMONS_DIR/$SERVICE_NAME.plist"
     chmod 644 "$LAUNCH_DAEMONS_DIR/$SERVICE_NAME.plist"
 
     # Install sandbox profile (if exists)
-    if [ -f "$SCRIPT_DIR/com.secureguard.vpn-service.sb" ]; then
+    if [ -f "$SCRIPT_DIR/com.minnowvpn.vpn-service.sb" ]; then
         log_info "Installing sandbox profile..."
-        cp "$SCRIPT_DIR/com.secureguard.vpn-service.sb" "$APPLICATION_SUPPORT_DIR/"
-        chown root:wheel "$APPLICATION_SUPPORT_DIR/com.secureguard.vpn-service.sb"
-        chmod 644 "$APPLICATION_SUPPORT_DIR/com.secureguard.vpn-service.sb"
+        cp "$SCRIPT_DIR/com.minnowvpn.vpn-service.sb" "$APPLICATION_SUPPORT_DIR/"
+        chown root:wheel "$APPLICATION_SUPPORT_DIR/com.minnowvpn.vpn-service.sb"
+        chmod 644 "$APPLICATION_SUPPORT_DIR/com.minnowvpn.vpn-service.sb"
     fi
 }
 
@@ -233,12 +233,12 @@ install_configs() {
 setup_logging() {
     log_info "Setting up logging..."
 
-    touch "$LOG_DIR/secureguard.log"
-    touch "$LOG_DIR/secureguard.error.log"
+    touch "$LOG_DIR/minnowvpn.log"
+    touch "$LOG_DIR/minnowvpn.error.log"
 
     # Secure log permissions
-    chmod 640 "$LOG_DIR/secureguard.log" "$LOG_DIR/secureguard.error.log"
-    chown root:wheel "$LOG_DIR/secureguard.log" "$LOG_DIR/secureguard.error.log"
+    chmod 640 "$LOG_DIR/minnowvpn.log" "$LOG_DIR/minnowvpn.error.log"
+    chown root:wheel "$LOG_DIR/minnowvpn.log" "$LOG_DIR/minnowvpn.error.log"
 }
 
 # Start the service
@@ -295,24 +295,24 @@ print_success() {
     echo "╚═══════════════════════════════════════════════════════════╝"
     echo ""
     echo "Service Details:"
-    echo "  Binary:  $HELPER_TOOLS_DIR/secureguard-service"
+    echo "  Binary:  $HELPER_TOOLS_DIR/minnowvpn-service"
     echo "  API:     http://127.0.0.1:$HTTP_PORT/api/v1"
     echo "  Token:   $TOKEN_FILE"
-    echo "  Logs:    $LOG_DIR/secureguard.log"
+    echo "  Logs:    $LOG_DIR/minnowvpn.log"
     echo "  Data:    $DATA_DIR"
     echo ""
     echo "Authentication:"
-    echo "  Users in the '$SECUREGUARD_GROUP' group can access the daemon API."
+    echo "  Users in the '$MINNOWVPN_GROUP' group can access the daemon API."
     if [ -n "${SUDO_USER:-}" ] && [ "$SUDO_USER" != "root" ]; then
         echo "  User '$SUDO_USER' has been added to this group."
         echo "  NOTE: You may need to log out and back in for group changes to take effect."
     fi
     echo ""
     echo "Management Commands:"
-    echo "  Status:  sudo launchctl list | grep secureguard"
+    echo "  Status:  sudo launchctl list | grep minnowvpn"
     echo "  Stop:    sudo launchctl bootout system/$SERVICE_NAME"
     echo "  Start:   sudo launchctl bootstrap system $LAUNCH_DAEMONS_DIR/$SERVICE_NAME.plist"
-    echo "  Logs:    tail -f $LOG_DIR/secureguard.log"
+    echo "  Logs:    tail -f $LOG_DIR/minnowvpn.log"
     echo ""
 }
 
@@ -322,9 +322,9 @@ print_failure() {
     log_error "Installation may have encountered issues."
     echo ""
     echo "Troubleshooting:"
-    echo "  Check logs:  tail $LOG_DIR/secureguard.error.log"
-    echo "  Check service: sudo launchctl list | grep secureguard"
-    echo "  Verify binary: $HELPER_TOOLS_DIR/secureguard-service --version"
+    echo "  Check logs:  tail $LOG_DIR/minnowvpn.error.log"
+    echo "  Check service: sudo launchctl list | grep minnowvpn"
+    echo "  Verify binary: $HELPER_TOOLS_DIR/minnowvpn-service --version"
     echo ""
 }
 
@@ -338,7 +338,7 @@ main() {
 
     backup_existing
     stop_existing_service
-    create_secureguard_group
+    create_minnowvpn_group
     create_directories
     install_binary "$binary_path"
     install_configs

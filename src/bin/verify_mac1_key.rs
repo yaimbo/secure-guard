@@ -1,7 +1,7 @@
 //! Verify MAC1 key computation against peer's public key
 
 use base64::{engine::general_purpose::STANDARD as BASE64, Engine};
-use secureguard_poc::crypto::{blake2s, noise};
+use minnowvpn::crypto::{blake2s, noise};
 
 fn main() {
     // Peer's public key from config

@@ -1,4 +1,4 @@
-//! Daemon mode for SecureGuard VPN service
+//! Daemon mode for MinnowVPN VPN service
 //!
 //! Runs as a background service, accepting commands via REST API (HTTP).
 //! The Flutter UI client and Dart server communicate with this daemon
@@ -20,7 +20,7 @@ use ipnet::IpNet;
 use crate::error::ConfigError;
 use crate::protocol::session::PeerManager;
 use crate::server::{PeerEvent, PeerUpdate};
-use crate::{SecureGuardError, WireGuardClient, WireGuardConfig, WireGuardServer};
+use crate::{MinnowVpnError, WireGuardClient, WireGuardConfig, WireGuardServer};
 
 use ipc::*;
 
@@ -102,7 +102,7 @@ impl DaemonService {
     ///
     /// This is the preferred method for running the daemon, providing a REST API
     /// with Bearer token authentication instead of Unix sockets.
-    pub async fn run_http(&self, port: u16, token_path: Option<std::path::PathBuf>) -> Result<(), SecureGuardError> {
+    pub async fn run_http(&self, port: u16, token_path: Option<std::path::PathBuf>) -> Result<(), MinnowVpnError> {
         use axum::middleware;
         use std::net::SocketAddr;
 
@@ -111,7 +111,7 @@ impl DaemonService {
 
         // Write token to file
         let token_file_path = auth::write_token_file(&token, token_path).map_err(|e| {
-            SecureGuardError::Config(ConfigError::ParseError {
+            MinnowVpnError::Config(ConfigError::ParseError {
                 line: 0,
                 message: format!("Failed to write auth token: {}", e),
             })
@@ -140,7 +140,7 @@ impl DaemonService {
         // Bind to localhost only
         let addr = SocketAddr::from(([127, 0, 0, 1], port));
         let listener = tokio::net::TcpListener::bind(addr).await.map_err(|e| {
-            SecureGuardError::Config(ConfigError::ParseError {
+            MinnowVpnError::Config(ConfigError::ParseError {
                 line: 0,
                 message: format!("Failed to bind HTTP server to {}: {}", addr, e),
             })
@@ -170,7 +170,7 @@ impl DaemonService {
 
         // Run the server
         axum::serve(listener, app).await.map_err(|e| {
-            SecureGuardError::Config(ConfigError::ParseError {
+            MinnowVpnError::Config(ConfigError::ParseError {
                 line: 0,
                 message: format!("HTTP server error: {}", e),
             })
@@ -1509,7 +1509,7 @@ impl DaemonService {
     }
 
     /// Cleanup on shutdown
-    pub async fn cleanup(&self) -> Result<(), SecureGuardError> {
+    pub async fn cleanup(&self) -> Result<(), MinnowVpnError> {
         let s = self.state.lock().await;
 
         // Send shutdown signal if VPN is running

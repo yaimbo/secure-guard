@@ -1,17 +1,17 @@
 #!/bin/bash
-# SecureGuard VPN Service Uninstaller for macOS
+# MinnowVPN VPN Service Uninstaller for macOS
 # This script removes the daemon service and cleans up
 
 set -euo pipefail
 
 # Configuration
-SERVICE_NAME="com.secureguard.vpn-service"
+SERVICE_NAME="com.minnowvpn.vpn-service"
 HELPER_TOOLS_DIR="/Library/PrivilegedHelperTools"
 LAUNCH_DAEMONS_DIR="/Library/LaunchDaemons"
-APPLICATION_SUPPORT_DIR="/Library/Application Support/SecureGuard"
+APPLICATION_SUPPORT_DIR="/Library/Application Support/MinnowVPN"
 LOG_DIR="/var/log"
-DATA_DIR="/var/lib/secureguard"
-TOKEN_DIR="/var/run/secureguard"
+DATA_DIR="/var/lib/minnowvpn"
+TOKEN_DIR="/var/run/minnowvpn"
 APP_PATH="/Applications/MinnowVPN.app"
 
 # Colors for output
@@ -70,8 +70,8 @@ while [[ $# -gt 0 ]]; do
             echo "Options:"
             echo "  --all     Remove everything including app, data, and logs"
             echo "  --app     Remove MinnowVPN.app from /Applications"
-            echo "  --data    Remove data directory (/var/lib/secureguard)"
-            echo "  --logs    Remove log files (/var/log/secureguard*.log)"
+            echo "  --data    Remove data directory (/var/lib/minnowvpn)"
+            echo "  --logs    Remove log files (/var/log/minnowvpn*.log)"
             echo "  -h, --help  Show this help message"
             exit 0
             ;;
@@ -105,9 +105,9 @@ remove_plist() {
 
 # Remove binary
 remove_binary() {
-    if [ -f "$HELPER_TOOLS_DIR/secureguard-service" ]; then
+    if [ -f "$HELPER_TOOLS_DIR/minnowvpn-service" ]; then
         log_info "Removing binary..."
-        rm -f "$HELPER_TOOLS_DIR/secureguard-service"
+        rm -f "$HELPER_TOOLS_DIR/minnowvpn-service"
     fi
 }
 
@@ -147,7 +147,7 @@ remove_data() {
 remove_logs() {
     if [ "$REMOVE_LOGS" = true ]; then
         log_info "Removing log files..."
-        rm -f "$LOG_DIR/secureguard.log" "$LOG_DIR/secureguard.error.log"
+        rm -f "$LOG_DIR/minnowvpn.log" "$LOG_DIR/minnowvpn.error.log"
     fi
 }
 
@@ -172,8 +172,8 @@ print_completion() {
     fi
 
     if [ "$REMOVE_LOGS" = false ]; then
-        echo "Note: Log files preserved at $LOG_DIR/secureguard*.log"
-        echo "      To remove: sudo rm -f $LOG_DIR/secureguard*.log"
+        echo "Note: Log files preserved at $LOG_DIR/minnowvpn*.log"
+        echo "      To remove: sudo rm -f $LOG_DIR/minnowvpn*.log"
         echo ""
     fi
 

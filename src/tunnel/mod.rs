@@ -13,12 +13,12 @@ use serde::{Deserialize, Serialize};
 use tokio::process::Command;
 use tun_rs::{AsyncDevice, DeviceBuilder};
 
-use crate::error::{SecureGuardError, TunnelError};
+use crate::error::{MinnowVpnError, TunnelError};
 
 /// Persistent state for route cleanup after crashes
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct RouteState {
-    /// Interface name (e.g., "utun5", "tun0", "SecureGuard")
+    /// Interface name (e.g., "utun5", "tun0", "MinnowVPN")
     pub interface: String,
     /// Interface index (Windows only, for precise route deletion)
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -39,7 +39,7 @@ pub struct RouteState {
 fn get_state_file_path() -> PathBuf {
     #[cfg(target_os = "windows")]
     {
-        let path = PathBuf::from(r"C:\ProgramData\SecureGuard");
+        let path = PathBuf::from(r"C:\ProgramData\MinnowVPN");
         // Create directory if needed (ignore errors, will fail on save if needed)
         let _ = std::fs::create_dir_all(&path);
         path.join("routes.json")
@@ -47,7 +47,7 @@ fn get_state_file_path() -> PathBuf {
 
     #[cfg(not(target_os = "windows"))]
     {
-        PathBuf::from("/var/run/secureguard_routes.json")
+        PathBuf::from("/var/run/minnowvpn_routes.json")
     }
 }
 
@@ -388,7 +388,7 @@ impl TunDevice {
         address: Ipv4Addr,
         prefix_len: u8,
         mtu: u16,
-    ) -> Result<Self, SecureGuardError> {
+    ) -> Result<Self, MinnowVpnError> {
         // Check for required privileges first
         check_privileges()?;
 
@@ -396,7 +396,7 @@ impl TunDevice {
 
         #[cfg(target_os = "windows")]
         {
-            builder = builder.name("SecureGuard");
+            builder = builder.name("MinnowVPN");
         }
 
         let device = builder
@@ -427,7 +427,7 @@ impl TunDevice {
     }
 
     /// Read a packet from the TUN device
-    pub async fn read(&self, buf: &mut [u8]) -> Result<usize, SecureGuardError> {
+    pub async fn read(&self, buf: &mut [u8]) -> Result<usize, MinnowVpnError> {
         self.device
             .recv(buf)
             .await
@@ -437,7 +437,7 @@ impl TunDevice {
     }
 
     /// Write a packet to the TUN device
-    pub async fn write(&self, packet: &[u8]) -> Result<usize, SecureGuardError> {
+    pub async fn write(&self, packet: &[u8]) -> Result<usize, MinnowVpnError> {
         self.device
             .send(packet)
             .await
@@ -448,7 +448,7 @@ impl TunDevice {
 }
 
 /// Check for required privileges to create TUN devices
-fn check_privileges() -> Result<(), SecureGuardError> {
+fn check_privileges() -> Result<(), MinnowVpnError> {
     #[cfg(unix)]
     {
         // On Unix, we need root or CAP_NET_ADMIN
@@ -459,7 +459,7 @@ fn check_privileges() -> Result<(), SecureGuardError> {
                 // For now, just warn - the tun creation will fail with a clear error
                 tracing::warn!("Running without root. TUN creation may fail.");
                 tracing::warn!("Either run with sudo or grant CAP_NET_ADMIN:");
-                tracing::warn!("  sudo setcap cap_net_admin=eip ./secureguard-poc");
+                tracing::warn!("  sudo setcap cap_net_admin=eip ./minnowvpn");
             }
 
             #[cfg(target_os = "macos")]
@@ -555,7 +555,7 @@ impl RouteManager {
         }
     }
 
-    /// Clean up any stale routes from previous SecureGuard sessions.
+    /// Clean up any stale routes from previous MinnowVPN sessions.
     /// This should be called on startup before adding new routes.
     /// Uses the persistent state file approach for safe, deterministic cleanup.
     pub fn cleanup_stale_routes() {
@@ -587,7 +587,7 @@ impl RouteManager {
 
     /// Add a bypass route for the VPN endpoint to go through the default gateway
     /// This prevents a routing loop where encrypted packets would be re-routed through the tunnel
-    pub async fn add_endpoint_bypass(&mut self, endpoint: Ipv4Addr) -> Result<(), SecureGuardError> {
+    pub async fn add_endpoint_bypass(&mut self, endpoint: Ipv4Addr) -> Result<(), MinnowVpnError> {
         add_endpoint_bypass_platform(endpoint).await?;
         self.endpoint_bypass = Some(endpoint);
         self.save_state();
@@ -596,7 +596,7 @@ impl RouteManager {
     }
 
     /// Add a route for the given network
-    pub async fn add_route(&mut self, network: Ipv4Net) -> Result<(), SecureGuardError> {
+    pub async fn add_route(&mut self, network: Ipv4Net) -> Result<(), MinnowVpnError> {
         add_route_platform(&self.device_name, &network).await?;
         self.added_routes.push(network);
         self.save_state();
@@ -605,7 +605,7 @@ impl RouteManager {
     }
 
     /// Remove a single route (for dynamic peer removal)
-    pub async fn remove_route(&mut self, network: Ipv4Net) -> Result<(), SecureGuardError> {
+    pub async fn remove_route(&mut self, network: Ipv4Net) -> Result<(), MinnowVpnError> {
         if let Err(e) = remove_route_platform(&self.device_name, &network).await {
             tracing::warn!("Failed to remove route {}: {}", network, e);
             return Err(e);
@@ -620,7 +620,7 @@ impl RouteManager {
     }
 
     /// Remove all routes that were added
-    pub async fn cleanup(&mut self) -> Result<(), SecureGuardError> {
+    pub async fn cleanup(&mut self) -> Result<(), MinnowVpnError> {
         let mut errors = Vec::new();
 
         // Clean up endpoint bypass route first
@@ -659,7 +659,7 @@ impl RouteManager {
 }
 
 /// Platform-specific route addition
-async fn add_route_platform(device: &str, network: &Ipv4Net) -> Result<(), SecureGuardError> {
+async fn add_route_platform(device: &str, network: &Ipv4Net) -> Result<(), MinnowVpnError> {
     #[cfg(target_os = "macos")]
     {
         let status = Command::new("route")
@@ -742,7 +742,7 @@ async fn add_route_platform(device: &str, network: &Ipv4Net) -> Result<(), Secur
 }
 
 /// Platform-specific route removal
-async fn remove_route_platform(device: &str, network: &Ipv4Net) -> Result<(), SecureGuardError> {
+async fn remove_route_platform(device: &str, network: &Ipv4Net) -> Result<(), MinnowVpnError> {
     #[cfg(target_os = "macos")]
     {
         let _ = device; // Device not needed for macOS route removal
@@ -825,7 +825,7 @@ async fn remove_route_platform(device: &str, network: &Ipv4Net) -> Result<(), Se
 }
 
 /// Add a route for the VPN endpoint to bypass the tunnel (go through default gateway)
-async fn add_endpoint_bypass_platform(endpoint: Ipv4Addr) -> Result<(), SecureGuardError> {
+async fn add_endpoint_bypass_platform(endpoint: Ipv4Addr) -> Result<(), MinnowVpnError> {
     let endpoint_str = endpoint.to_string();
 
     #[cfg(target_os = "macos")]
@@ -945,7 +945,7 @@ async fn add_endpoint_bypass_platform(endpoint: Ipv4Addr) -> Result<(), SecureGu
 }
 
 /// Remove the VPN endpoint bypass route
-async fn remove_endpoint_bypass_platform(endpoint: Ipv4Addr) -> Result<(), SecureGuardError> {
+async fn remove_endpoint_bypass_platform(endpoint: Ipv4Addr) -> Result<(), MinnowVpnError> {
     let endpoint_str = endpoint.to_string();
 
     #[cfg(target_os = "macos")]
@@ -1037,7 +1037,7 @@ mod tests {
     #[test]
     fn test_route_state_with_windows_fields() {
         let state = RouteState {
-            interface: "SecureGuard".to_string(),
+            interface: "MinnowVPN".to_string(),
             interface_index: Some(12),
             endpoint_bypass: Some("10.0.0.1".to_string()),
             default_gateway: Some("192.168.0.1".to_string()),

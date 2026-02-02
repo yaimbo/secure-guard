@@ -1,6 +1,6 @@
 [Unit]
 Description=MinnowVPN Service
-Documentation=https://github.com/secureguard/secureguard
+Documentation=https://github.com/minnowvpn/minnowvpn
 After=network-online.target
 Wants=network-online.target
 
@@ -10,7 +10,7 @@ Conflicts=shutdown.target
 
 [Service]
 Type=simple
-ExecStart=/usr/local/bin/secureguard-service --daemon
+ExecStart=/usr/local/bin/minnowvpn-service --daemon
 ExecReload=/bin/kill -HUP $MAINPID
 ExecStop=/bin/kill -TERM $MAINPID
 
@@ -34,7 +34,7 @@ ProtectHome=yes
 PrivateTmp=yes
 
 # Read-write paths (whitelist)
-ReadWritePaths=/var/lib/secureguard /var/run/secureguard
+ReadWritePaths=/var/lib/minnowvpn /var/run/minnowvpn
 
 # Make /usr, /boot, /efi read-only
 ProtectKernelTunables=yes
@@ -105,13 +105,13 @@ RestrictNamespaces=yes
 # ═══════════════════════════════════════════════════════════════════
 # DIRECTORIES AND STATE
 # ═══════════════════════════════════════════════════════════════════
-WorkingDirectory=/var/lib/secureguard
-RuntimeDirectory=secureguard
+WorkingDirectory=/var/lib/minnowvpn
+RuntimeDirectory=minnowvpn
 RuntimeDirectoryMode=0755
 # State directory for persistent connection state (auto-reconnect on boot)
-StateDirectory=secureguard
+StateDirectory=minnowvpn
 StateDirectoryMode=0750
-LogsDirectory=secureguard
+LogsDirectory=minnowvpn
 LogsDirectoryMode=0750
 
 # ═══════════════════════════════════════════════════════════════════
@@ -119,7 +119,7 @@ LogsDirectoryMode=0750
 # ═══════════════════════════════════════════════════════════════════
 StandardOutput=journal
 StandardError=journal
-SyslogIdentifier=secureguard
+SyslogIdentifier=minnowvpn
 SyslogFacility=daemon
 SyslogLevel=info
 
