@@ -2,7 +2,7 @@ name: minnowvpn_client
 description: "MinnowVPN Desktop Client"
 publish_to: 'none'
 
-version: 1.0.0+1
+version: 1.0.0+10000
 
 environment:
   sdk: ^3.10.7

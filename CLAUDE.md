@@ -258,6 +258,51 @@ The Flutter desktop client connects to the client port. The Dart REST server con
 - Windows: `installer/windows/uninstall.ps1` (PowerShell uninstall)
 - Docker: `installer/docker/` (Docker Compose deployment)
 
+### Version Management
+
+The project uses a unified versioning system with a single source of truth.
+
+**Version file:** `/VERSION` contains the current version (e.g., `1.0.0`)
+
+**Bump version:**
+```bash
+./scripts/version-bump.sh patch              # 1.0.0 -> 1.0.1
+./scripts/version-bump.sh minor              # 1.0.0 -> 1.1.0
+./scripts/version-bump.sh major              # 1.0.0 -> 2.0.0
+./scripts/version-bump.sh 2.0.0-beta.1       # Explicit version
+./scripts/version-bump.sh --dry-run patch    # Preview changes
+./scripts/version-bump.sh --current          # Show current version
+```
+
+The version bump script updates:
+- `/VERSION` - Source of truth
+- `/Cargo.toml` - Rust daemon
+- `/secureguard-server/pubspec.yaml` - Dart server
+- `/secureguard_client/pubspec.yaml` - Flutter client (with build number)
+- `/secureguard_console/pubspec.yaml` - Flutter console (with build number)
+- `/installer/windows/secureguard.nsi` - Windows installer
+- `/secureguard_client/lib/version.dart` - Generated constants
+- `/secureguard_console/lib/version.dart` - Generated constants
+
+**Full release build:**
+```bash
+./scripts/release-build.sh 1.2.0              # Build all with explicit version
+./scripts/release-build.sh patch              # Bump patch and build all
+./scripts/release-build.sh 1.2.0 --skip-docker
+./scripts/release-build.sh 1.2.0 --skip-linux
+./scripts/release-build.sh 1.2.0 --macos-only
+./scripts/release-build.sh 1.2.0 --dry-run
+```
+
+The release build script:
+1. Bumps version across all files
+2. Builds macOS universal PKG
+3. Builds Linux packages (amd64 + arm64, deb + rpm)
+4. Builds and pushes Docker images (amd64 + arm64)
+5. Collects artifacts to `/release-artifacts/<VERSION>/`
+
+Windows version is updated but must be built separately on Windows.
+
 **macOS Installer Build:**
 
 Prerequisites:

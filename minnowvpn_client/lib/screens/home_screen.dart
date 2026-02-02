@@ -14,6 +14,7 @@ import '../widgets/disconnected_hero.dart';
 import '../widgets/status_card.dart';
 import '../widgets/traffic_stats.dart';
 import '../widgets/welcome_hero.dart';
+import 'about_screen.dart';
 import 'enrollment_screen.dart';
 
 class HomeScreen extends ConsumerStatefulWidget {
@@ -231,15 +232,34 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
       child: Container(
         height: 48,
         color: isDark ? const Color(0xFF1E1E1E) : Colors.white,
-        child: Center(
-          child: Text(
-            'MinnowVPN',
-            style: TextStyle(
-              fontSize: 14,
-              fontWeight: FontWeight.w500,
-              color: isDark ? Colors.white : Colors.black87,
+        child: Row(
+          children: [
+            // Spacer for visual balance (matches info button width)
+            const SizedBox(width: 48),
+            const Spacer(),
+            Text(
+              'MinnowVPN',
+              style: TextStyle(
+                fontSize: 14,
+                fontWeight: FontWeight.w500,
+                color: isDark ? Colors.white : Colors.black87,
+              ),
             ),
-          ),
+            const Spacer(),
+            // About button
+            IconButton(
+              icon: Icon(
+                Icons.info_outline,
+                size: 18,
+                color: isDark ? Colors.white60 : Colors.black54,
+              ),
+              onPressed: () => Navigator.push(
+                context,
+                MaterialPageRoute(builder: (_) => const AboutScreen()),
+              ),
+              tooltip: 'About',
+            ),
+          ],
         ),
       ),
     );

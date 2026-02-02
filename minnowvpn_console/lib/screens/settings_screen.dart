@@ -6,6 +6,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 import '../config/theme.dart';
 import '../providers/settings_provider.dart';
 import '../services/api_service.dart';
+import '../version.dart';
 
 class SettingsScreen extends ConsumerWidget {
   const SettingsScreen({super.key});
@@ -1969,9 +1970,10 @@ class _AboutSection extends StatelessWidget {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        _buildInfoRow('Version', '1.0.0'),
-        _buildInfoRow('Server Version', '1.0.0'),
-        _buildInfoRow('Build', '2024.01.15'),
+        _buildInfoRow('Console Version', AppVersion.version),
+        _buildInfoRow('Build Number', AppVersion.buildNumber.toString()),
+        _buildInfoRow('Git Commit', AppVersion.gitCommit),
+        _buildInfoRow('Build Date', _formatBuildDate(AppVersion.buildDate)),
         const SizedBox(height: 16),
         Row(
           children: [
@@ -1992,6 +1994,15 @@ class _AboutSection extends StatelessWidget {
     );
   }
 
+  String _formatBuildDate(String isoDate) {
+    try {
+      final date = DateTime.parse(isoDate);
+      return '${date.year}.${date.month.toString().padLeft(2, '0')}.${date.day.toString().padLeft(2, '0')}';
+    } catch (e) {
+      return isoDate;
+    }
+  }
+
   Widget _buildInfoRow(String label, String value) {
     return Padding(
       padding: const EdgeInsets.symmetric(vertical: 4),
@@ -2001,7 +2012,7 @@ class _AboutSection extends StatelessWidget {
             width: 120,
             child: Text(label, style: const TextStyle(color: Colors.grey)),
           ),
-          Text(value),
+          SelectableText(value),
         ],
       ),
     );

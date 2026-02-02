@@ -45,6 +45,9 @@ Thumbs.db
 # Installer build artifacts
 installer/*/build/
 
+# Release build artifacts
+/release-artifacts/
+
 # Docker deployment secrets and backups
 installer/docker/secrets/
 installer/docker/backups/

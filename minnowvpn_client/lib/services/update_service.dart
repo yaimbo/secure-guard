@@ -7,6 +7,7 @@ import 'package:crypto/crypto.dart';
 import 'package:cryptography/cryptography.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
+import '../version.dart';
 import 'api_client.dart';
 import 'ipc_client.dart';
 
@@ -24,7 +25,7 @@ class UpdateService {
   Timer? _configCheckTimer;
   Timer? _updateCheckTimer;
   String? _currentConfigVersion;
-  final String _clientVersion = '1.0.0';
+  final String _clientVersion = AppVersion.version;
 
   /// IPC client for direct daemon communication (optional)
   /// If set, config updates will use the daemon's update_config method
