@@ -48,7 +48,28 @@ Co-Authored-By: Claude Opus 4.5 <noreply@anthropic.com>
 - NEVER assume the user knows what you're thinking
 - **Always narrate your process** so the user can follow along
 
+---
 
+## CRITICAL: PROJECT RENAME (secureguard → minnowvpn)
+
+**The project has been renamed from SecureGuard to MinnowVPN.**
+
+When working on this codebase:
+- **Watch for any legacy `secureguard` naming** in code, comments, configs, paths, or documentation
+- **Change all instances to `minnowvpn`** (lowercase for paths/code) or `MinnowVPN` (display names)
+- This includes: variable names, function names, file paths, Docker images, service names, group names, URLs, comments, and documentation
+
+Legacy naming to look for:
+- `secureguard`, `SecureGuard`, `SECUREGUARD`
+- `secure-guard`, `secure_guard`
+- Directory names like `secureguard-server`, `secureguard_client`
+
+Replace with:
+- `minnowvpn`, `MinnowVPN`, `MINNOWVPN`
+- `minnow-vpn` (if hyphens needed)
+- Directory names like `minnowvpn-server`, `minnowvpn_client`
+
+---
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
